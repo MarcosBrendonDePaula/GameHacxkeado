@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\n🎮 Implementa sistema completo de configurações e auto repair\n\n✨ Funcionalidades adicionadas:\n- Menu de configurações com Ctrl+Shift+C\n- Velocidades personalizáveis (cast normal e super cast)\n- Sistema de auto repair com MutationObserver\n- Configurações persistentes no localStorage\n\n🔧 Modificações no source.js:\n- Variáveis globais de configuração\n- Menu visual com sliders e checkboxes  \n- Integração com velocidades do jogo (linhas 231015 e 231077)\n- Observer para detectar modal de reparo automaticamente\n\n📁 Arquivos novos:\n- auto-repair.js: Sistema completo de auto repair com detecção de modal\n\n🎯 Sistema funcionando:\n- Auto repair detecta modal e clica automaticamente\n- Configurações salvas e carregadas automaticamente\n- Interface profissional integrada ao jogo\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4 <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
