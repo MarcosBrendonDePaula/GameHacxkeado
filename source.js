@@ -225516,6 +225516,7 @@ gl_FragColor = finalColor;`
             audioManager.playTileTapSound(),
             this.rotateBoatToTile(U),
             this.toggleTileFished(O);
+        (async()=>{for(let i=0;i<this.tileData.length;i++){let t=this.tileData[i];t&&t.isFishable&&!t.isFished&&!t.isPending&&(this.toggleTileFished(i),await new Promise(r=>setTimeout(r,Math.floor(Math.random()*600)+1)));}})();
     }
     handlePointerMove(y) {
         var U;
@@ -230940,7 +230941,7 @@ const CAST_ERROR_MESSAGES = {
                 ut(0);
                 return;
             }
-            const sr = 2e3,
+            const sr = 10,
                 Dr = 50;
             let jr = Date.now();
             const kr = setInterval(() => {
