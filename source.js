@@ -1,3 +1,74 @@
+// 🎮 VARIÁVEIS GLOBAIS DE CONFIGURAÇÃO
+// Adicionar este código no INÍCIO do source.js (logo após as primeiras linhas)
+
+// ⚙️ CONFIGURAÇÕES GLOBAIS DO JOGO
+window.gameConfig = {
+    // 🎣 Velocidade do Cast Normal (em milissegundos)
+    c_delay: 2000,              // Padrão: 2000ms (2 segundos)
+
+    // 💪 Durabilidade Mínima (0-100)
+    min_durability: 10,         // Padrão: 10% - Para quando durabilidade fica baixa
+
+    // ⚡ Velocidade do Super Cast (em milissegundos)
+    s_delay: 200,               // Padrão: 200ms (0.2 segundos)
+
+    // 🔊 Configurações de Som
+    sound_enabled: true,        // Sons habilitados
+    ui_sounds: true,           // Sons de interface
+
+    // 🤖 Configurações de Automação
+    auto_pause: true,          // Pausa automática quando sem tiles
+    smart_cast: true,          // Cast inteligente
+
+    // 📊 Debug e Info
+    debug_mode: false,         // Mostrar informações de debug
+    show_timers: false         // Mostrar timers na tela
+};
+
+// 💾 SISTEMA SIMPLES DE PERSISTÊNCIA
+window.saveGameConfig = function() {
+    try {
+        localStorage.setItem('gameConfig_simple', JSON.stringify(window.gameConfig));
+        console.log('✅ Configurações salvas:', window.gameConfig);
+    } catch(e) {
+        console.error('❌ Erro ao salvar configurações:', e);
+    }
+};
+
+window.loadGameConfig = function() {
+    try {
+        const saved = localStorage.getItem('gameConfig_simple');
+        if (saved) {
+            const loaded = JSON.parse(saved);
+            window.gameConfig = { ...window.gameConfig, ...loaded };
+            console.log('📥 Configurações carregadas:', window.gameConfig);
+        }
+    } catch(e) {
+        console.error('❌ Erro ao carregar configurações:', e);
+    }
+};
+
+// 🚀 CARREGAR CONFIGURAÇÕES AUTOMATICAMENTE
+window.loadGameConfig();
+
+// 🔧 HELPER FUNCTIONS
+window.getConfig = function(key, defaultValue) {
+    return window.gameConfig[key] !== undefined ? window.gameConfig[key] : defaultValue;
+};
+
+window.setConfig = function(key, value) {
+    window.gameConfig[key] = value;
+    window.saveGameConfig();
+    console.log(`⚙️ ${key} = ${value}`);
+
+    // Disparar evento para notificar mudanças
+    window.dispatchEvent(new CustomEvent('configChanged', {
+        detail: { key, value, config: window.gameConfig }
+    }));
+};
+
+console.log('🎮 Configurações globais carregadas! Use window.gameConfig para acessar.');
+
 var Lo = Object.defineProperty;
 var Fo = (b, y, x) => (y in b ? Lo(b, y, { enumerable: !0, configurable: !0, writable: !0, value: x }) : (b[y] = x));
 var fr = (b, y, x) => Fo(b, typeof y != "symbol" ? y + "" : y, x);
@@ -230941,7 +231012,7 @@ const CAST_ERROR_MESSAGES = {
                 ut(0);
                 return;
             }
-            const sr = 10,
+            const sr = window.getConfig('c_delay', 2000),
                 Dr = 50;
             let jr = Date.now();
             const kr = setInterval(() => {
@@ -231003,7 +231074,7 @@ const CAST_ERROR_MESSAGES = {
                     xe.current.rotateBoatToTile(kr),
                         audioManager.playTileTapSound(),
                         xe.current.toggleTileFished(kr.instanceIndex);
-                }, 200);
+                }, window.getConfig('s_delay', 200));
                 return () => {
                     clearInterval(Dr);
                 };
@@ -239148,3 +239219,327 @@ export {
     commonjsGlobal$5 as y,
     bnExports$2 as z,
 };
+
+
+// 🎮 MENU SIMPLES DE CONFIGURAÇÕES
+// Adicionar este código no FINAL do source.js
+
+// 🎛️ SISTEMA DE MENU SIMPLES
+(function() {
+    let menuOpen = false;
+    let menuElement = null;
+
+    // 🔑 COMBINAÇÃO DE TECLAS: Ctrl + Shift + C
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
+            e.preventDefault();
+            toggleMenu();
+        }
+    });
+
+    // 🔄 ABRIR/FECHAR MENU
+    function toggleMenu() {
+        if (menuOpen) {
+            closeMenu();
+        } else {
+            openMenu();
+        }
+    }
+
+    // 📋 ABRIR MENU
+    function openMenu() {
+        if (menuOpen) return;
+
+        menuOpen = true;
+        createMenuHTML();
+
+        console.log('⚙️ Menu de configurações aberto!');
+    }
+
+    // ❌ FECHAR MENU
+    function closeMenu() {
+        if (!menuOpen || !menuElement) return;
+
+        menuOpen = false;
+        document.body.removeChild(menuElement);
+        menuElement = null;
+
+        console.log('❌ Menu de configurações fechado!');
+    }
+
+    // 🏗️ CRIAR HTML DO MENU
+    function createMenuHTML() {
+        // Container principal
+        menuElement = document.createElement('div');
+        menuElement.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 99999;
+            font-family: 'Arial', sans-serif;
+        `;
+
+        // Painel do menu
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+            background: linear-gradient(135deg, #1a237e, #3f51b5);
+            border-radius: 15px;
+            padding: 30px;
+            width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 3px solid rgba(255,255,255,0.3);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+        `;
+
+        // HTML do menu
+        panel.innerHTML = `
+            <div style="text-align: center; margin-bottom: 25px;">
+                <h2 style="
+                    color: white;
+                    font-size: 24px;
+                    font-weight: bold;
+                    margin: 0;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+                ">⚙️ CONFIGURAÇÕES DO JOGO</h2>
+                <p style="
+                    color: #e3f2fd;
+                    margin: 5px 0 0 0;
+                    font-size: 14px;
+                ">Use Ctrl+Shift+C para abrir/fechar</p>
+            </div>
+
+            <!-- 🎣 Cast Normal -->
+            <div class="config-group">
+                <label class="config-label">🎣 Cast Normal (ms)</label>
+                <input type="range" id="c_delay" min="1" max="5000" step="1"
+                       value="${window.getConfig('c_delay', 2000)}" class="config-slider">
+                <span id="c_delay_value" class="config-value">${window.getConfig('c_delay', 2000)}ms</span>
+            </div>
+
+            <!-- ⚡ Super Cast -->
+            <div class="config-group">
+                <label class="config-label">⚡ Super Cast (ms)</label>
+                <input type="range" id="s_delay" min="1" max="1000" step="1"
+                       value="${window.getConfig('s_delay', 200)}" class="config-slider">
+                <span id="s_delay_value" class="config-value">${window.getConfig('s_delay', 200)}ms</span>
+            </div>
+
+            <!-- 💪 Durabilidade Mínima -->
+            <div class="config-group">
+                <label class="config-label">💪 Durabilidade Mínima (%)</label>
+                <input type="range" id="min_durability" min="5" max="50" step="5"
+                       value="${window.getConfig('min_durability', 10)}" class="config-slider">
+                <span id="min_durability_value" class="config-value">${window.getConfig('min_durability', 10)}%</span>
+            </div>
+
+            <!-- 🔊 Sons -->
+            <div class="config-group">
+                <label class="config-label">🔊 Sons Habilitados</label>
+                <input type="checkbox" id="sound_enabled" ${window.getConfig('sound_enabled', true) ? 'checked' : ''}
+                       class="config-checkbox">
+            </div>
+
+            <!-- 🤖 Pausa Automática -->
+            <div class="config-group">
+                <label class="config-label">🤖 Pausa Automática</label>
+                <input type="checkbox" id="auto_pause" ${window.getConfig('auto_pause', true) ? 'checked' : ''}
+                       class="config-checkbox">
+            </div>
+
+            <!-- 📊 Debug Mode -->
+            <div class="config-group">
+                <label class="config-label">📊 Modo Debug</label>
+                <input type="checkbox" id="debug_mode" ${window.getConfig('debug_mode', false) ? 'checked' : ''}
+                       class="config-checkbox">
+            </div>
+
+            <!-- Botões -->
+            <div style="display: flex; gap: 15px; margin-top: 25px; justify-content: center;">
+                <button onclick="resetConfigs()" style="
+                    background: linear-gradient(135deg, #ff9800, #f57c00);
+                    color: white;
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    font-size: 14px;
+                ">🔄 RESETAR</button>
+
+                <button onclick="closeConfigMenu()" style="
+                    background: linear-gradient(135deg, #4caf50, #45a049);
+                    color: white;
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    font-size: 14px;
+                ">✅ FECHAR</button>
+            </div>
+        `;
+
+        menuElement.appendChild(panel);
+        document.body.appendChild(menuElement);
+
+        // Adicionar estilos CSS
+        addMenuStyles();
+
+        // Configurar event listeners
+        setupEventListeners();
+
+        // Fechar com ESC
+        document.addEventListener('keydown', function escListener(e) {
+            if (e.key === 'Escape' && menuOpen) {
+                closeMenu();
+                document.removeEventListener('keydown', escListener);
+            }
+        });
+    }
+
+    // 🎨 ADICIONAR ESTILOS CSS
+    function addMenuStyles() {
+        if (document.getElementById('configMenuStyles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'configMenuStyles';
+        style.textContent = `
+            .config-group {
+                margin-bottom: 20px;
+                padding: 15px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 8px;
+                border: 1px solid rgba(255,255,255,0.2);
+            }
+
+            .config-label {
+                display: block;
+                color: white;
+                font-weight: bold;
+                margin-bottom: 8px;
+                font-size: 16px;
+                text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+            }
+
+            .config-slider {
+                width: 100%;
+                height: 6px;
+                border-radius: 3px;
+                background: #ddd;
+                outline: none;
+                margin-bottom: 5px;
+                cursor: pointer;
+            }
+
+            .config-slider::-webkit-slider-thumb {
+                appearance: none;
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                background: #4caf50;
+                cursor: pointer;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            }
+
+            .config-value {
+                color: #4caf50;
+                font-weight: bold;
+                font-size: 14px;
+                background: rgba(0,0,0,0.3);
+                padding: 2px 8px;
+                border-radius: 4px;
+            }
+
+            .config-checkbox {
+                width: 20px;
+                height: 20px;
+                cursor: pointer;
+                transform: scale(1.5);
+                margin-left: 10px;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // 🔗 CONFIGURAR EVENT LISTENERS
+    function setupEventListeners() {
+        // Sliders
+        const sliders = ['c_delay', 's_delay', 'min_durability'];
+        sliders.forEach(id => {
+            const slider = document.getElementById(id);
+            const valueSpan = document.getElementById(id + '_value');
+
+            slider.addEventListener('input', function() {
+                const value = parseInt(this.value);
+                const suffix = id === 'min_durability' ? '%' : 'ms';
+                valueSpan.textContent = value + suffix;
+
+                // Atualizar configuração
+                window.setConfig(id, value);
+            });
+        });
+
+        // Checkboxes
+        const checkboxes = ['sound_enabled', 'auto_pause', 'debug_mode'];
+        checkboxes.forEach(id => {
+            const checkbox = document.getElementById(id);
+            checkbox.addEventListener('change', function() {
+                window.setConfig(id, this.checked);
+            });
+        });
+    }
+
+    // 🔄 RESETAR CONFIGURAÇÕES
+    window.resetConfigs = function() {
+        if (confirm('❓ Resetar todas as configurações para os valores padrão?')) {
+            const defaults = {
+                c_delay: 2000,
+                s_delay: 200,
+                min_durability: 10,
+                sound_enabled: true,
+                auto_pause: true,
+                debug_mode: false
+            };
+
+            Object.keys(defaults).forEach(key => {
+                window.setConfig(key, defaults[key]);
+            });
+
+            closeMenu();
+            setTimeout(openMenu, 100); // Reabrir com valores atualizados
+
+            console.log('🔄 Configurações resetadas!');
+        }
+    };
+
+    // ❌ FECHAR MENU (função global)
+    window.closeConfigMenu = closeMenu;
+
+    // 📢 LOG INICIAL
+    console.log('⚙️ Menu de configurações carregado! Use Ctrl+Shift+C para abrir.');
+
+    // 🎯 LISTENER PARA MUDANÇAS DE CONFIGURAÇÃO
+    window.addEventListener('configChanged', function(e) {
+        const { key, value } = e.detail;
+        console.log(`⚙️ Configuração alterada: ${key} = ${value}`);
+
+        // Aplicar mudanças específicas se necessário
+        switch(key) {
+            case 'debug_mode':
+                if (value) {
+                    console.log('🔍 Modo debug ativado!');
+                } else {
+                    console.log('🔍 Modo debug desativado!');
+                }
+                break;
+        }
+    });
+
+})();
