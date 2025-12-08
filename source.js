@@ -239231,7 +239231,7 @@ export {
 
     // 🔑 COMBINAÇÃO DE TECLAS: Ctrl + Shift + C
     document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
+        if (e.ctrlKey && e.code === 'KeyM') {
             e.preventDefault();
             toggleMenu();
         }
@@ -239668,7 +239668,7 @@ export {
 
             // Reset do estado
             autoCastWasActive = false;
-        }, 2000); // 2 segundos de delay para garantir que o jogo processou
+        }, 100); // 2 segundos de delay para garantir que o jogo processou
         showNotification('✅ Reparo concluído!', '#4CAF50');
     }
 
@@ -239827,5 +239827,3 @@ export {
     console.log('🧪 Use window.testAutoRepairSimple() para testar');
 
 })();
-
-// 🏁 FIM DO SISTEMA SIMPLES
