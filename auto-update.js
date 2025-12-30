@@ -182,6 +182,46 @@ async function runUnminify(inputFile) {
     }
 }
 
+// Função para resetar patches aplicados
+function resetAppliedPatches() {
+    const appliedPatchesFile = './patches/applied/applied.json';
+
+    if (!fs.existsSync(appliedPatchesFile)) {
+        console.log('ℹ️  Nenhum patch aplicado para resetar');
+        return false;
+    }
+
+    try {
+        // Ler patches aplicados antes de resetar
+        const appliedData = JSON.parse(fs.readFileSync(appliedPatchesFile, 'utf8'));
+        const appliedPatches = appliedData.patches || [];
+
+        if (appliedPatches.length === 0) {
+            console.log('ℹ️  Nenhum patch aplicado para resetar');
+            return false;
+        }
+
+        // Resetar lista de patches
+        const resetData = {
+            patches: [],
+            lastUpdate: new Date().toISOString(),
+            resetReason: 'Game code updated'
+        };
+
+        fs.writeFileSync(appliedPatchesFile, JSON.stringify(resetData, null, 2), 'utf8');
+
+        console.log('🔄 Patches aplicados foram resetados devido ao update do jogo');
+        console.log(`📋 Patches anteriores: ${appliedPatches.join(', ')}`);
+        console.log('💡 Recomenda-se reaplicar os patches necessários após o update');
+
+        return true;
+
+    } catch (error) {
+        console.warn('⚠️  Erro ao resetar patches aplicados:', error.message);
+        return false;
+    }
+}
+
 // Função para verificar se houve mudanças
 function checkForChanges(downloadedFile) {
     if (!fs.existsSync(CONFIG.sourceFile)) {
@@ -242,11 +282,18 @@ async function main() {
         console.log('⬇️  Iniciando download...');
         await downloadFile(downloadUrl, tempFile);
 
-        // Verificar se houve mudanças
-        if (!checkForChanges(tempFile)) {
+        // Verificar se houve mudanças (ou forçar update)
+        const forceUpdate = process.argv.includes('--force');
+        const hasChanges = checkForChanges(tempFile);
+
+        if (!hasChanges && !forceUpdate) {
             console.log('✨ Arquivo já está atualizado!');
             fs.unlinkSync(tempFile);
             return;
+        }
+
+        if (forceUpdate && !hasChanges) {
+            console.log('⚡ Forçando update mesmo sem mudanças detectadas');
         }
 
         // Criar backup
@@ -256,12 +303,24 @@ async function main() {
         const unminifySuccess = await runUnminify(tempFile);
 
         if (unminifySuccess) {
+            // Resetar patches aplicados pois o código mudou
+            console.log('');
+            resetAppliedPatches();
+            console.log('');
+
             console.log('🎉 Update concluído com sucesso!');
             console.log(`📄 Novo arquivo: ${CONFIG.sourceFile}`);
 
             if (backupFile) {
                 console.log(`💾 Backup anterior: ${backupFile}`);
             }
+
+            // Sugerir reaplicar patches
+            console.log('');
+            console.log('📋 Próximos passos recomendados:');
+            console.log('   1. Verificar se o source.js está correto');
+            console.log('   2. Reaplicar patches necessários: ./scripts/apply-all.sh');
+            console.log('   3. Testar as modificações no jogo');
 
             // Limpar arquivo temporário
             fs.unlinkSync(tempFile);
@@ -302,6 +361,7 @@ Funcionalidades:
     ✅ Backup automático do source.js atual
     ✅ Integração com sistema unminify existente
     ✅ Rollback automático em caso de erro
+    ✅ Reset automático de patches aplicados após update
 
 Arquivos gerados:
     source.js                           # Código unminified atualizado

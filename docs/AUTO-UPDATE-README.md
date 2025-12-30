@@ -23,6 +23,7 @@ Sistema automatizado para baixar e processar automaticamente a versão mais rece
 - **Backup antes de modificar** qualquer arquivo
 - **Validação de mudanças** antes de aplicar
 - **Recuperação automática** em caso de falha
+- **Reset automático** de patches aplicados quando o jogo atualiza
 
 ## 🚀 Como Usar
 
@@ -99,11 +100,23 @@ node auto-update.js --help
 ✅ Unminify concluído!
 ```
 
-### 6. 🎉 Finalização
+### 6. 🔄 Reset de Patches
+```
+🔄 Patches aplicados foram resetados devido ao update do jogo
+📋 Patches anteriores: auto-cast-speed, super-cast-speed, auto-repair, config-menu
+💡 Recomenda-se reaplicar os patches necessários após o update
+```
+
+### 7. 🎉 Finalização
 ```
 🎉 Update concluído com sucesso!
 📄 Novo arquivo: source.js
 💾 Backup anterior: old-source-2025-12-29T22-15-30-123Z.js
+
+📋 Próximos passos recomendados:
+   1. Verificar se o source.js está correto
+   2. Reaplicar patches necessários: ./scripts/apply-all.sh
+   3. Testar as modificações no jogo
 ```
 
 ## ⚙️ Configurações
@@ -124,6 +137,12 @@ headers: {
 - **Tamanho do arquivo**: Diferença > 1% = mudança detectada
 - **Conteúdo**: Comparação dos primeiros 1000 bytes
 - **Fallback**: Em caso de erro, assume que há mudanças
+
+### Reset Automático de Patches
+- **Quando**: Sempre que mudanças são detectadas e aplicadas
+- **Por que**: O código do jogo mudou, patches antigos podem não funcionar
+- **Como**: Limpa o arquivo `patches/applied/applied.json`
+- **Preserva**: Histórico dos patches anteriores para referência
 
 ## 🔧 Resolução de Problemas
 
@@ -151,6 +170,11 @@ headers: {
 ### ⚠️ Aviso: Nenhuma mudança detectada
 **Normal**: O código já está atualizado
 **Forçar update**: Use `--force` se necessário
+
+### ❓ Pergunta: Meus patches sumiram após o update
+**Explicação**: Comportamento normal e esperado
+**Solução**: Reaplique os patches necessários com `./scripts/apply-all.sh`
+**Por que**: Código do jogo mudou, patches antigos podem causar problemas
 
 ## 📁 Arquivos Gerados
 
@@ -192,7 +216,10 @@ node auto-update.js  # Faz tudo automaticamente
 ### 🔄 Workflow Recomendado
 1. `./scripts/check-updates.sh` - Verificar se há updates
 2. `./scripts/update.sh` - Baixar e processar se necessário
-3. `./scripts/apply-all.sh` - Aplicar patches desejados
+3. `./scripts/apply-all.sh` - Reaplicar patches necessários
+4. Testar funcionamento no jogo
+
+**⚠️ Importante**: Sempre reaplique os patches após um update!
 
 ### 🛡️ Backup Strategy
 - O sistema mantém **apenas 1 backup** por execução
