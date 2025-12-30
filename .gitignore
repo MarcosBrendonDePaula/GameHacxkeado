@@ -142,10 +142,22 @@ old-source-*.js
 *.backup
 *.bak
 
+# Downloaded game files
+index-*.js
+temp-index-*.js
+
+# Test and temporary files
+test-*.js
+*-test.js
+*.tmp
+
 # Runtime generated files
 autocast_delays_results.json
 durability_points.json
 game_events_complete.json
+
+# Reference files
+links.txt
 
 # IDE and editor files
 .vscode/
