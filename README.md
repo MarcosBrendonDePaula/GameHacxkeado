@@ -4,6 +4,12 @@ Ferramentas avançadas para desminificação e modificação de jogos JavaScript
 
 ## ✨ Funcionalidades Principais
 
+### 🌐 Sistema de Auto-Update
+- **Download automático** do JavaScript mais recente do site
+- **Detecção inteligente** de mudanças no código
+- **Backup automático** antes de cada update
+- **Integração completa** com o sistema de unminify
+
 ### 🔄 Sistema de Unminify
 - **Detecção automática** de arquivos `index-*.js`
 - **Desminificação inteligente** usando Prettier
@@ -28,19 +34,34 @@ cd GameHacxkeado
 npm install
 ```
 
-### 2. Desminify Automático
+### 2. Update Automático (Recomendado)
 ```bash
 # Windows
-unminify.bat
+scripts\update.bat
 
 # Linux/Mac
-./unminify.sh
+./scripts/update.sh
+
+# Verificar se há updates sem baixar
+./scripts/check-updates.sh
+
+# Ou direto com Node.js
+node auto-update.js
+```
+
+### 3. Desminify Manual (Alternativo)
+```bash
+# Windows
+scripts\unminify.bat
+
+# Linux/Mac
+./scripts/unminify.sh
 
 # Ou direto com Node.js
 node auto-unminify.js
 ```
 
-### 3. Sistema de Patches
+### 4. Sistema de Patches
 ```bash
 # Ver patches disponíveis
 ./patch.sh list
@@ -59,6 +80,7 @@ node auto-unminify.js
 ```
 GameHacxkeado/
 ├── 📄 Sistemas Principais
+│   ├── auto-update.js            # Sistema de auto-update
 │   ├── auto-unminify.js          # Sistema de desminificação
 │   ├── patch-system.js           # Sistema de patches
 │   └── codigo-site.js            # Sistema web original

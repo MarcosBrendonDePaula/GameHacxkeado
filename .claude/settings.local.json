@@ -16,7 +16,10 @@
       "Bash(node:*)",
       "Bash(./patch.sh:*)",
       "Bash(tree:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n🧹 Organização completa do projeto GameHacxkeado\n\n✨ Estrutura reorganizada:\n- 📁 docs/ - Documentação específica movida\n- 🛠️ scripts/ - Scripts .bat/.sh organizados  \n- 🔧 tools/ - Utilitários e debug movidos\n- 📦 src/ - Ferramentas Python mantidas\n- 🗂️ patches/ - Sistema de patches organizado\n\n🧽 Limpeza realizada:\n- 🗑️ Backups reduzidos de 333MB para 41MB \\(4 arquivos mais recentes\\)\n- 🗑️ Arquivos source antigos removidos\n- 📋 .gitignore atualizado com patterns específicos\n\n📁 Nova estrutura:\n```\n├── docs/                    # Documentação específica\n├── scripts/                 # Scripts executáveis\n├── tools/                   # Utilitários e debug\n├── src/                     # Ferramentas Python\n├── patches/                 # Sistema de patches\n│   ├── definitions/         # Definições dos patches\n│   ├── backups/            # Backups \\(apenas recentes\\)\n│   └── applied/            # Estado dos patches\n├── source.js               # Código principal\n└── README.md              # Documentação principal\n\n🎯 Benefícios:\n- Estrutura mais limpa e organizada\n- Documentação consolidada\n- Redução significativa de espaço em disco\n- Melhor navegação no projeto\n- .gitignore adequado para o projeto\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "WebFetch(domain:app.fogofishing.com)",
+      "Bash(./scripts/check-updates.sh:*)"
     ],
     "deny": [],
     "ask": []
