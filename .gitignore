@@ -154,7 +154,19 @@ test-*.js
 # Runtime generated files
 autocast_delays_results.json
 durability_points.json
+durability_points_guide.txt
 game_events_complete.json
+game_events_complete_mod_loader.json
+auto_pause_system_data.json
+auto_pause_system_guide.txt
+
+# Python script generated data
+src/utils/*.json
+src/utils/*_guide.txt
+src/utils/*_data.json
+
+# Patch system backups
+patches/backups/*.js
 
 # Reference files
 links.txt
