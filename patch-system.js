@@ -80,19 +80,10 @@ class PatchManager {
         return crypto.createHash('md5').update(content).digest('hex');
     }
 
-    // Faz backup do source.js atual
+    // Faz backup do source.js atual (DESABILITADO)
     createBackup(patchName) {
-        if (!fs.existsSync(this.sourceFile)) {
-            this.error('source.js não encontrado!');
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const hash = this.getFileHash(this.sourceFile).substring(0, 8);
-        const backupFile = path.join(this.backupsDir, `source_${patchName}_${timestamp}_${hash}.js`);
-
-        fs.copyFileSync(this.sourceFile, backupFile);
-        this.log(`Backup criado: ${path.basename(backupFile)}`);
-        return backupFile;
+        this.log(`Sistema de backup desabilitado - não será criado backup para '${patchName}'`);
+        return null;
     }
 
     // Carrega definição de um patch
@@ -151,7 +142,7 @@ class PatchManager {
             this.error(`Patch '${patchName}' é inválido`);
         }
 
-        // Faz backup
+        // Pular backup (sistema desabilitado)
         const backupFile = this.createBackup(patchName);
 
         try {
@@ -175,17 +166,13 @@ class PatchManager {
             this.saveAppliedPatches();
 
             this.log(`✅ Patch '${patchName}' aplicado com sucesso!`);
-            this.log(`📁 Backup salvo: ${path.basename(backupFile)}`);
 
             return true;
         } catch (error) {
             this.error(`Erro ao aplicar patch '${patchName}': ${error.message}`, false);
 
-            // Restaura backup em caso de erro
-            if (fs.existsSync(backupFile)) {
-                fs.copyFileSync(backupFile, this.sourceFile);
-                this.log('Arquivo restaurado do backup devido ao erro');
-            }
+            // Sistema de backup desabilitado - não há backup para restaurar
+            this.log('⚠️  Erro aplicando patch - sem backup disponível para restaurar');
 
             return false;
         }
@@ -442,41 +429,27 @@ class PatchManager {
                 this.log(`✅ Patch '${patchName}' removido com sucesso!`);
                 return true;
             } catch (error) {
-                // Restaura backup em caso de erro
-                fs.copyFileSync(backupFile, this.sourceFile);
                 this.error(`Erro ao remover patch: ${error.message}`, false);
+                this.log('⚠️  Sistema de backup desabilitado - não há backup para restaurar');
                 return false;
             }
         }
 
-        // Se não tem função de remoção, precisa restaurar de backup
-        this.log(`Patch '${patchName}' não tem função de remoção. Use 'restore' para voltar a um backup.`);
+        // Se não tem função de remoção, não pode ser removido
+        this.log(`Patch '${patchName}' não tem função de remoção e sistema de backup está desabilitado.`);
         return false;
     }
 
     // Restaura de um backup específico
     restoreFromBackup(backupName) {
-        const backupFile = path.join(this.backupsDir, backupName);
-
-        if (!fs.existsSync(backupFile)) {
-            this.error(`Backup '${backupName}' não encontrado`);
-        }
-
-        const currentBackup = this.createBackup('before_restore');
-        fs.copyFileSync(backupFile, this.sourceFile);
-
-        this.log(`✅ Arquivo restaurado do backup: ${backupName}`);
-        this.log(`📁 Estado anterior salvo: ${path.basename(currentBackup)}`);
+        this.log('⚠️  Sistema de backup desabilitado - função restore não disponível');
+        this.error('Use auto-update.js para obter código atualizado');
     }
 
     // Lista backups disponíveis
     listBackups() {
-        try {
-            const files = fs.readdirSync(this.backupsDir);
-            return files.filter(file => file.endsWith('.js')).sort().reverse();
-        } catch (error) {
-            return [];
-        }
+        // Sistema de backup desabilitado
+        return [];
     }
 
     // Aplica todos os patches disponíveis
@@ -665,14 +638,7 @@ class PatchManager {
         });
 
         console.log(`\n✅ Patches aplicados: ${applied.length}`);
-        console.log(`💾 Backups salvos: ${backups.length}`);
-
-        if (backups.length > 0) {
-            console.log('\n📁 Backups recentes:');
-            backups.slice(0, 5).forEach(backup => {
-                console.log(`  ${backup}`);
-            });
-        }
+        console.log(`💾 Sistema de backup: DESABILITADO`);
     }
 }
 
@@ -734,19 +700,14 @@ async function main() {
             break;
 
         case 'backups':
-            const backups = patchManager.listBackups();
-            console.log('\n=== BACKUPS DISPONÍVEIS ===');
-            backups.forEach((backup, index) => {
-                console.log(`${index + 1}. ${backup}`);
-            });
+            console.log('\n=== SISTEMA DE BACKUP DESABILITADO ===');
+            console.log('⚠️  O sistema de backup foi desabilitado.');
+            console.log('💡 Use "auto-update.js" para obter código atualizado.');
             break;
 
         case 'restore':
-            if (!patchName) {
-                console.log('Uso: node patch-system.js restore <backup-name>');
-                process.exit(1);
-            }
-            patchManager.restoreFromBackup(patchName);
+            console.log('\n⚠️  Sistema de backup desabilitado');
+            console.log('💡 Use "auto-update.js" para obter código atualizado.');
             break;
 
         case 'help':
@@ -762,8 +723,8 @@ COMANDOS BÁSICOS:
   remove-all [--verbose]               - Remove TODOS os patches aplicados
   list                                 - Lista status de todos os patches
   status                              - Mostra status do sistema
-  backups                             - Lista backups disponíveis
-  restore <backup>                    - Restaura de um backup específico
+  backups                             - [DESABILITADO] Sistema de backup desabilitado
+  restore <backup>                    - [DESABILITADO] Sistema de backup desabilitado
   help                                - Mostra esta ajuda
 
 OPÇÕES APPLY-ALL:

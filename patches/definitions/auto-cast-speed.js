@@ -1,178 +1,166 @@
 /**
- * Auto Cast Speed Patch
+ * Auto Cast Speed Patch (Com Sistema de Configuração)
  *
- * Modifica os delays do sistema de auto cast para permitir velocidades customizadas.
- * Baseado nos padrões identificados no CLAUDE.md para encontrar delays de 500ms-2000ms.
+ * Modifica os delays do auto cast usando o sistema central de configuração.
+ * Usa window.__cfg() para obter delay configurável dinamicamente.
  */
 
 module.exports = {
     name: "Auto Cast Speed",
-    description: "Modifica delays do auto cast para velocidades personalizadas",
-    version: "1.0.0",
+    description: "Modifica delays do auto cast usando sistema de configuração dinâmico",
+    version: "2.0.0",
     author: "GameHacxkeado",
 
-    // Configurações de velocidade
-    config: {
-        speed: 'custom', // slow, normal, fast, ultra_fast, custom
-        customDelay: 100, // usado quando speed = 'custom'
-
-        // Presets de velocidade
-        presets: {
-            slow: 2000,
-            normal: 1000,
-            fast: 500,
-            ultra_fast: 200,
-            instant: 50
-        }
-    },
-
-    // Padrões regex que funcionam mesmo com minificação e comentários anteriores
+    // Padrões para encontrar delays de auto cast
     patterns: {
-        // Padrão 1: const varname = DELAY (com possível comentário), outraVar = 50
-        // Lida com comentários de patches anteriores e quebras de linha
-        autocastWithFiftyRobust: /const\s+(\w+)\s*=\s*(\d+(?:e\d+)?)(?:\s*,?\s*\/\/[^\n]*)?[\s\n]*(\w+)\s*=\s*50/g,
+        // Padrão principal: const varname = DELAY, outraVar = 50
+        autocastConstant: /const\s+(\w+)\s*=\s*(\d+(?:e\d+)?)(?:\s*,?\s*\/\/[^\n]*)?[\s\n]*(\w+)\s*=\s*50/g,
 
-        // Padrão 2: useEffect com setInterval seguido de delay em ms
-        // Estrutura do React não muda na minificação
-        reactUseEffectInterval: /reactExports\.useEffect\(\(\)\s*=>\s*\{[\s\S]{1,500}?const\s+\w+\s*=\s*(\d+(?:e\d+)?),[\s\S]{1,300}?setInterval/g,
+        // Padrão de contexto específico do auto cast
+        autocastContext: /if\s*\(!ft\s*\|\|\s*!xe\.current\)[\s\S]*?const\s+(\w+)\s*=\s*(\d+(?:e\d+)?)/g,
 
-        // Padrão 3: Busca por delay seguido de quebra de linha e "= 50"
-        // Lida com quebras de linha entre delay e "= 50"
-        fiftyPatternMultiline: /=\s*(\d+(?:e\d+)?)(?:\s*,?\s*\/\/[^\n]*)?[\s\n]*\w+\s*=\s*50/g,
-
-        // Padrão 4: Delay em contexto de fishing/casting (mais tolerante)
-        fishingContextRobust: /const\s+\w+\s*=\s*(\d+(?:e\d+)?)(?:[^\n]*\n)*[\s\S]{0,300}?(?:rotateBoatToTile|toggleTileFished)/g,
-
-        // Padrão 5: Simples busca por número seguido de comentário de patch
-        modifiedByPatch: /(\d+)(?:\s*,?\s*)?\/\/[^\n]*Modified by auto-cast-speed patch/g
+        // Padrão setInterval com delay
+        intervalDelay: /const\s+(\w+)\s*=\s*(\d+(?:e\d+)?),[\s\S]{1,200}?setInterval\([^,]*?,\s*\1\)/g
     },
-
-    modifications: [
-        {
-            type: 'regex',
-            pattern: 'const\\s+(\\w+)\\s*=\\s*(\\d+(?:e\\d+)?),?\\s*(?:\\/\\/.*?)?\\s*\\w+\\s*=\\s*50',
-            replacement: function(match, varName, delay) {
-                const newDelay = module.exports.getTargetDelay(parseInt(delay));
-                return `const ${varName} = ${newDelay}, // Modified by auto-cast-speed patch\n    zr = 50`;
-            },
-            flags: 'g'
-        }
-    ],
 
     // Função principal de aplicação
-    async apply(content) {
-        const targetDelay = this.getTargetDelay();
-        let modifiedContent = content;
+    apply: (sourceCode) => {
+        console.log('Aplicando Auto Cast Speed com sistema de configuração...');
+
+        let modifiedCode = sourceCode;
         let modificationsCount = 0;
 
-        // Aplica cada padrão
-        for (const [patternName, pattern] of Object.entries(this.patterns)) {
-            const matches = [...modifiedContent.matchAll(pattern)];
+        // Código a ser injetado para modificar delays dinamicamente
+        const delayModificationCode = `
+// ===== AUTO CAST DELAY MODIFIER =====
+(function() {
+    'use strict';
 
-            for (const match of matches) {
-                const currentDelay = Number(match[2]); // Suporta notação científica como 2e3
+    // Aguardar sistema de configuração estar disponível
+    function waitForConfig(callback) {
+        if (typeof window.__cfg === 'function') {
+            callback();
+        } else {
+            setTimeout(() => waitForConfig(callback), 100);
+        }
+    }
 
-                // Verifica se é um delay de auto cast (500-2000ms)
-                if (this.isAutocastDelay(currentDelay)) {
-                    const replacement = this.createReplacement(match, targetDelay, patternName);
-                    modifiedContent = modifiedContent.replace(match[0], replacement);
+    // Função para pegar delay das configurações
+    function getAutocastDelay() {
+        // Configuração padrão: 500ms (velocidade normal)
+        return window.__cfg('autocast_delay', 500);
+    }
+
+    // Intercepta e modifica os delays no código
+    waitForConfig(() => {
+        console.log('[AutoCast] Sistema iniciado');
+
+        // Configurações padrão
+        window.__cfg('autocast_delay', 500);
+
+        console.log(\`[AutoCast] Delay atual: \${getAutocastDelay()}ms\`);
+        console.log('[AutoCast] Para alterar: window.__cfg.set("autocast_delay", NOVO_VALOR)');
+    });
+
+})();
+// ===== FIM AUTO CAST DELAY MODIFIER =====
+`;
+
+        // Procura pelos padrões de delay e substitui
+        Object.entries(module.exports.patterns).forEach(([patternName, pattern]) => {
+            const matches = [...modifiedCode.matchAll(pattern)];
+
+            matches.forEach(match => {
+                const originalDelay = Number(match[2]);
+
+                // Verifica se é um delay de auto cast (50ms - 3000ms)
+                if (originalDelay >= 50 && originalDelay <= 3000) {
+                    const replacement = module.exports.createReplacement(match, patternName);
+                    modifiedCode = modifiedCode.replace(match[0], replacement);
                     modificationsCount++;
 
-                    console.log(`[auto-cast-speed] ${patternName}: ${currentDelay}ms → ${targetDelay}ms`);
+                    console.log(`[auto-cast-speed] ${patternName}: ${originalDelay}ms → dinâmico`);
                 }
-            }
-        }
+            });
+        });
+
+        // Insere o código de modificação de delay no início
+        const insertionPoint = modifiedCode.indexOf('(function()') !== -1
+            ? modifiedCode.indexOf('(function()')
+            : modifiedCode.indexOf('!function(') !== -1
+                ? modifiedCode.indexOf('!function(')
+                : 100;
+
+        modifiedCode = modifiedCode.slice(0, insertionPoint) +
+                      delayModificationCode + '\n' +
+                      modifiedCode.slice(insertionPoint);
 
         if (modificationsCount === 0) {
-            console.log('[auto-cast-speed] Nenhum delay de auto cast encontrado para modificar');
+            console.log('[auto-cast-speed] Nenhum delay encontrado - injetando sistema dinâmico');
         } else {
-            console.log(`[auto-cast-speed] ${modificationsCount} delays modificados para ${targetDelay}ms`);
+            console.log(`[auto-cast-speed] ${modificationsCount} delays modificados para sistema dinâmico`);
         }
 
-        return modifiedContent;
+        console.log('✅ Auto Cast Speed aplicado com sistema de configuração!');
+        return modifiedCode;
     },
 
-    // Determina o delay alvo baseado na configuração
-    getTargetDelay(originalDelay = null) {
-        if (this.config.speed === 'custom') {
-            return this.config.customDelay;
-        }
-
-        return this.config.presets[this.config.speed] || this.config.presets.fast;
-    },
-
-    // Verifica se é um delay de auto cast (range expandido para incluir valores já modificados)
-    isAutocastDelay(delay) {
-        return delay >= 50 && delay <= 3000; // Aceita delays já modificados e originais
-    },
-
-    // Cria replacement baseado no padrão encontrado
-    createReplacement(match, targetDelay, patternName) {
+    // Cria replacement baseado no padrão
+    createReplacement(match, patternName) {
         const fullMatch = match[0];
         const varName = match[1];
         const originalDelay = match[2];
 
         switch (patternName) {
             case 'autocastConstant':
-                return fullMatch.replace(originalDelay, targetDelay);
+                // Substitui o delay por uma chamada dinâmica
+                return fullMatch.replace(
+                    `${varName} = ${originalDelay}`,
+                    `${varName} = window.__cfg ? window.__cfg('autocast_delay', 500) : 500 // Dynamic autocast delay`
+                );
 
             case 'autocastContext':
-                return fullMatch.replace(originalDelay, targetDelay);
-
-            case 'autocastInterval':
-                return fullMatch.replace(originalDelay, targetDelay);
-
-            case 'genericDelay':
-                return fullMatch.replace(originalDelay, targetDelay);
-
+            case 'intervalDelay':
             default:
-                return fullMatch.replace(originalDelay, targetDelay);
+                // Para outros padrões, substitui o número diretamente
+                return fullMatch.replace(
+                    originalDelay,
+                    `(window.__cfg ? window.__cfg('autocast_delay', 500) : 500)`
+                );
         }
     },
 
-    // Função de remoção (restaura delays originais)
-    async remove(content) {
-        // Busca por comentários do patch para identificar modificações
-        const patchComments = /\/\/ Modified by auto-cast-speed patch/g;
-        let modifiedContent = content;
+    // Função de remoção
+    remove: (sourceCode) => {
+        console.log('Removendo Auto Cast Speed...');
 
-        // Remove comentários do patch
-        modifiedContent = modifiedContent.replace(patchComments, '');
+        // Remove o bloco do modificador de delay
+        const startMarker = '// ===== AUTO CAST DELAY MODIFIER =====';
+        const endMarker = '// ===== FIM AUTO CAST DELAY MODIFIER =====';
 
-        console.log('[auto-cast-speed] Patch removido - comentários de modificação limpos');
-        console.log('[auto-cast-speed] ATENÇÃO: Para restaurar delays originais, use restore de um backup');
+        let modifiedCode = sourceCode;
 
-        return modifiedContent;
-    },
+        const startIndex = modifiedCode.indexOf(startMarker);
+        const endIndex = modifiedCode.indexOf(endMarker);
 
-    // Configurar speed preset
-    setSpeed(speed) {
-        if (speed === 'custom') {
-            this.config.speed = 'custom';
-        } else if (this.config.presets.hasOwnProperty(speed)) {
-            this.config.speed = speed;
-        } else {
-            throw new Error(`Speed preset inválido: ${speed}. Use: ${Object.keys(this.config.presets).join(', ')}`);
+        if (startIndex !== -1 && endIndex !== -1) {
+            const beforeCode = modifiedCode.substring(0, startIndex);
+            const afterCode = modifiedCode.substring(endIndex + endMarker.length);
+            modifiedCode = beforeCode + afterCode.replace(/^\n+/, '');
         }
-    },
 
-    // Configurar delay customizado
-    setCustomDelay(delay) {
-        if (typeof delay !== 'number' || delay < 1 || delay > 10000) {
-            throw new Error('Delay customizado deve ser um número entre 1 e 10000ms');
-        }
-        this.config.customDelay = delay;
-        this.config.speed = 'custom';
-    },
+        // Remove comentários e substitui chamadas dinâmicas por valor padrão
+        modifiedCode = modifiedCode.replace(/ \/\/ Dynamic autocast delay/g, '');
+        modifiedCode = modifiedCode.replace(
+            /\(window\.__cfg \? window\.__cfg\('autocast_delay', (\d+)\) : (\d+)\)/g,
+            '$1' // Usa o valor padrão
+        );
+        modifiedCode = modifiedCode.replace(
+            /= window\.__cfg \? window\.__cfg\('autocast_delay', (\d+)\) : (\d+)/g,
+            '= $1' // Usa o valor padrão
+        );
 
-    // Status atual
-    getStatus() {
-        const targetDelay = this.getTargetDelay();
-        return {
-            speed: this.config.speed,
-            targetDelay: targetDelay,
-            customDelay: this.config.customDelay,
-            presets: this.config.presets
-        };
+        console.log('✅ Auto Cast Speed removido!');
+        return modifiedCode;
     }
 };

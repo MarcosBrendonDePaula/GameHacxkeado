@@ -7,20 +7,21 @@ Ferramentas avançadas para desminificação e modificação de jogos JavaScript
 ### 🌐 Sistema de Auto-Update
 - **Download automático** do JavaScript mais recente do site
 - **Detecção inteligente** de mudanças no código
-- **Backup automático** antes de cada update
 - **Integração completa** com o sistema de unminify
+- ⚠️ **Sistema de backup DESABILITADO**
 
 ### 🔄 Sistema de Unminify
 - **Detecção automática** de arquivos `index-*.js`
 - **Desminificação inteligente** usando Prettier
-- **Backup automático** do source.js atual
 - **Processo completamente automatizado**
+- ⚠️ **Sistema de backup DESABILITADO**
 
-### 🔧 Sistema de Patches
-- **Patches modulares** para auto-cast, auto-repair e mais
-- **Aplicação e remoção** reversível de patches
-- **Sistema de backup** completo
+### 🔧 Sistema de Patches Simplificado
+- **2 patches essenciais:** Config System + Auto Cast Speed
+- **Sistema de configuração dinâmico** via `window.__cfg()`
 - **Interface CLI** intuitiva
+- **Configurações em tempo real** sem reaplicar patches
+- ⚠️ **Sistema de backup DESABILITADO**
 
 ## 🚀 Quick Start
 

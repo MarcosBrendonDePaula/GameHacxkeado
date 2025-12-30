@@ -1,5 +1,144 @@
 var zo = Object.defineProperty;
-var jo = (b, y, x) => (y in b ? zo(b, y, { enumerable: !0, configurable: !0, writable: !0, value: x }) : (b[y] = x));
+var jo = (b, y, x) => (y in b ? zo(b, y, { enumerable: !0, configura
+// ===== SISTEMA CENTRAL DE CONFIGURAÇÃO =====
+
+// ===== AUTO CAST DELAY MODIFIER =====
+(function() {
+    'use strict';
+
+    // Aguardar sistema de configuração estar disponível
+    function waitForConfig(callback) {
+        if (typeof window.__cfg === 'function') {
+            callback();
+        } else {
+            setTimeout(() => waitForConfig(callback), 100);
+        }
+    }
+
+    // Função para pegar delay das configurações
+    function getAutocastDelay() {
+        // Configuração padrão: 500ms (velocidade normal)
+        return window.__cfg('autocast_delay', 500);
+    }
+
+    // Intercepta e modifica os delays no código
+    waitForConfig(() => {
+        console.log('[AutoCast] Sistema iniciado');
+
+        // Configurações padrão
+        window.__cfg('autocast_delay', 500);
+
+        console.log(`[AutoCast] Delay atual: ${getAutocastDelay()}ms`);
+        console.log('[AutoCast] Para alterar: window.__cfg.set("autocast_delay", NOVO_VALOR)');
+    });
+
+})();
+// ===== FIM AUTO CAST DELAY MODIFIER =====
+
+(function() {
+    'use strict';
+
+    // Storage central de configurações
+    const CONFIG_STORAGE_KEY = 'gamehack_configs';
+    const configs = {};
+
+    // Carrega configurações salvas do localStorage
+    function loadConfigs() {
+        try {
+            const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                Object.assign(configs, parsed);
+                console.log('[ConfigSystem] Configurações carregadas:', Object.keys(configs));
+            }
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao carregar configurações:', error);
+        }
+    }
+
+    // Salva configurações no localStorage
+    function saveConfigs() {
+        try {
+            localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao salvar configurações:', error);
+        }
+    }
+
+    // API principal: window.__cfg(key, defaultValue)
+    function configAPI(key, defaultValue) {
+        // Se não tem argumentos, retorna todas as configs
+        if (arguments.length === 0) {
+            return { ...configs };
+        }
+
+        // Se tem apenas key, retorna o valor
+        if (arguments.length === 1) {
+            return configs.hasOwnProperty(key) ? configs[key] : undefined;
+        }
+
+        // Se key não existe, cria com valor padrão
+        if (!configs.hasOwnProperty(key)) {
+            configs[key] = defaultValue;
+            saveConfigs();
+            console.log(`[ConfigSystem] Criada configuração '${key}' = ${defaultValue}`);
+        }
+
+        return configs[key];
+    }
+
+    // API para definir valor: window.__cfg.set(key, value)
+    configAPI.set = function(key, value) {
+        const oldValue = configs[key];
+        configs[key] = value;
+        saveConfigs();
+        console.log(`[ConfigSystem] Configuração '${key}' alterada: ${oldValue} → ${value}`);
+        return value;
+    };
+
+    // API para remover: window.__cfg.remove(key)
+    configAPI.remove = function(key) {
+        if (configs.hasOwnProperty(key)) {
+            const value = configs[key];
+            delete configs[key];
+            saveConfigs();
+            console.log(`[ConfigSystem] Configuração '${key}' removida (era: ${value})`);
+            return true;
+        }
+        return false;
+    };
+
+    // API para limpar tudo: window.__cfg.clear()
+    configAPI.clear = function() {
+        const count = Object.keys(configs).length;
+        Object.keys(configs).forEach(key => delete configs[key]);
+        saveConfigs();
+        console.log(`[ConfigSystem] Todas as configurações removidas (${count} itens)`);
+    };
+
+    // API para listar: window.__cfg.list()
+    configAPI.list = function() {
+        console.log('[ConfigSystem] Configurações ativas:');
+        for (const [key, value] of Object.entries(configs)) {
+            console.log(`  ${key}: ${JSON.stringify(value)}`);
+        }
+        return configs;
+    };
+
+    // Inicializar sistema
+    loadConfigs();
+
+    // Expor API globalmente
+    window.__cfg = configAPI;
+
+    console.log('[ConfigSystem] Sistema de configurações inicializado');
+    console.log('[ConfigSystem] Uso: window.__cfg("nome", valorPadrao)');
+    console.log('[ConfigSystem] APIs: __cfg.set(k,v), __cfg.remove(k), __cfg.clear(), __cfg.list()');
+
+})();
+// ===== FIM DO SISTEMA DE CONFIGURAÇÃO =====
+
+ble: !0, writable: !0, value: x }) : (b[y] = x));
 var or = (b, y, x) => jo(b, typeof y != "symbol" ? y + "" : y, x);
 function _mergeNamespaces(b, y) {
     for (var x = 0; x < y.length; x++) {
@@ -126484,7 +126623,7 @@ const scriptRel = "modulepreload",
     solana = async () =>
         (
             await __vitePreload(async () => {
-                const { default: b } = await import("./solana-BqNyHh8-.js");
+                const { default: b } = await import("./solana-8Txw1ny_.js");
                 return { default: b };
             }, [])
         ).default,
@@ -127475,7 +127614,7 @@ new PublicKey("9pan9bMn5HatX4EJdBwg9VgCa7Uz5HL8N1m5D3NdXejP");
 class SolanaChain extends ChainContext {
     async getTokenAccount(y, x) {
         const { getAssociatedTokenAddress: A } = await __vitePreload(async () => {
-                const { getAssociatedTokenAddress: ee } = await import("./index-B6DnfIJA.js");
+                const { getAssociatedTokenAddress: ee } = await import("./index-CqU7n_k-.js");
                 return { getAssociatedTokenAddress: ee };
             }, []),
             O = new SolanaAddress(x).unwrap(),
@@ -150441,7 +150580,7 @@ class SolflareMetaMaskWallet {
                     try {
                         y = (
                             await __vitePreload(async () => {
-                                const { default: x } = await import("./index-HxHOjVx3.js");
+                                const { default: x } = await import("./index-DiV3i0ca.js");
                                 return { default: x };
                             }, [])
                         ).default;
@@ -150683,7 +150822,7 @@ class SolflareWalletAdapter extends BaseMessageSignerWalletAdapter {
             try {
                 y = (
                     await __vitePreload(async () => {
-                        const { default: O } = await import("./index-BfGsqY5l.js");
+                        const { default: O } = await import("./index-BXfLGGH0.js");
                         return { default: O };
                     }, [])
                 ).default;
@@ -185723,12 +185862,12 @@ const TRUMP_BOAT_PRICE = 6700000n,
     PAYMASTER_URL = "https://paymaster.dourolabs.app",
     DEV_MODE = !1;
 new Date("2025-11-30T16:00:00Z").getTime();
-const GAME_LAUNCH_TIMESTAMP = 1733011200,
+const GAME_LAUNCH_TIMESTAMP = 1764532800,
     HALVING_INTERVAL_SECONDS = 14 * 24 * 60 * 60,
     HALVING_INTERVAL_MS = HALVING_INTERVAL_SECONDS * 1e3,
     MAX_HALVINGS = 4,
     INITIAL_DAILY_TARGET_MILLIONS = 100,
-    BUILD_TIME = "141-0f4f302b9aeabeafa7d6e1fe946e4b0c252b9d71";
+    BUILD_TIME = "142-345f3ef07804cda3218726b26b4b3bb7db2adcd7";
 debugLog("🎣 Fogo Fishing Build:", BUILD_TIME);
 debugLog("🔧 DEV_MODE:", DEV_MODE);
 const CAPABILITY_TTL_SECONDS = 300,
@@ -191960,6 +192099,7 @@ const usePlayerState = () => {
                                     ((Ke = mt.totalUnprocessedFish) == null ? void 0 : Ke.toString()) || "0",
                                 feesPerUnprocessedFish:
                                     ((et = mt.feesPerUnprocessedFish) == null ? void 0 : et.toString()) || "0",
+                                halvingCount: Number(mt.halvingCount ?? 0),
                             }),
                             ae)
                         )
@@ -228438,7 +228578,7 @@ const ANIMATION_DURATION = 2.5,
             reactExports.useEffect(() => {
                 const Je = setInterval(() => {
                     ue((Ke) => !Ke);
-                }, 100);
+                }, 500);
                 return () => clearInterval(Je);
             }, []));
         const _e = reactExports.useMemo(() => getLocationStyle(b), [b]);
@@ -229931,8 +230071,8 @@ function checkRepairEligibility(b, y, x) {
             }
           : { canRepair: !0, reason: "", expectedDurability: A };
 }
-const MICRO_DECIMALS = 100, // Modified by auto-cast-speed patch
-    zr = 500,
+const MICRO_DECIMALS = 1e6,
+    BALANCE_ANIMATION_DURATION_MS = 500,
     coerceNumericBalance = (b) => {
         if (typeof b == "number") return Number.isFinite(b) ? b : 0;
         const y = Number(b);
@@ -230018,7 +230158,7 @@ const MICRO_DECIMALS = 100, // Modified by auto-cast-speed patch
             if (!ot) return;
             const Wt = window.setInterval(() => {
                 oe(Date.now());
-            }, 100);
+            }, 500);
             return () => window.clearInterval(Wt);
         }, [ot]),
             reactExports.useEffect(() => {
@@ -232674,8 +232814,8 @@ const CAST_ERROR_MESSAGES = {
                 ut(0);
                 return;
             }
-            const fr = 100, // Modified by auto-cast-speed patch
-    zr = 50;
+            const fr = (window.__cfg ? window.__cfg('autocast_delay', 500) : 500),
+                Sr = 50;
             let Dr = Date.now();
             const zr = setInterval(() => {
                     const Vr = Date.now() - Dr,
@@ -232736,7 +232876,7 @@ const CAST_ERROR_MESSAGES = {
                     (xe.current.rotateBoatToTile(zr),
                         audioManager.playTileTapSound(),
                         xe.current.toggleTileFished(zr.instanceIndex));
-                }, 100); // Modified by super-cast-speed patch
+                }, 200);
                 return () => {
                     clearInterval(Sr);
                 };
@@ -239824,7 +239964,7 @@ new Date("2025-12-09T14:00:00Z").getTime();
 new Date("2025-12-17T20:00:00Z").getTime();
 new Date("2025-12-17T20:00:00Z").getTime();
 const LAUNCH_DATE = new Date("2025-12-04T20:00:00Z"),
-    CURRENT_BUILD_VERSION = "141-0f4f302b9aeabeafa7d6e1fe946e4b0c252b9d71";
+    CURRENT_BUILD_VERSION = "142-345f3ef07804cda3218726b26b4b3bb7db2adcd7";
 function useCountdown() {
     const [b, y] = reactExports.useState(() => {
         const x = new Date(),
@@ -241229,996 +241369,3 @@ export {
     commonjsGlobal$5 as y,
     bnExports$2 as z,
 };
-
-
-// ========== AUTO REPAIR SYSTEM - INJECTED BY PATCH ==========
-
-(function() {
-    'use strict';
-
-    let autoRepairEnabled = true;
-    let autoRepairObserver = null;
-    let autoRepairInterval = null;
-    const CHECK_INTERVAL = 1000;
-    const CLICK_DELAY = 500;
-    const DEBUG_MODE = false;
-
-    // Função de log condicional
-    function debugLog(message) {
-        if (DEBUG_MODE) {
-            console.log('[AutoRepair]', message);
-        }
-    }
-
-    // Detecta modal de reparo por múltiplos critérios
-    function detectRepairModal() {
-        // Critério 1: Modal com texto "repair" (case insensitive)
-        const modalsWithRepair = Array.from(document.querySelectorAll('div, span, p'))
-            .filter(el => el.textContent && el.textContent.toLowerCase().includes('repair'));
-
-        if (modalsWithRepair.length > 0) {
-            debugLog('Modal detectado por texto "repair"');
-            return modalsWithRepair[0];
-        }
-
-        // Critério 2: Modal com classe relacionada a reparo
-        const repairClassSelectors = [
-            '[class*="repair"]',
-            '[class*="fix"]',
-            '[class*="durability"]',
-            '[id*="repair"]',
-            '[id*="fix"]'
-        ];
-
-        for (const selector of repairClassSelectors) {
-            const element = document.querySelector(selector);
-            if (element && element.style.display !== 'none') {
-                debugLog(`Modal detectado por seletor: ${selector}`);
-                return element;
-            }
-        }
-
-        // Critério 3: Modal que apareceu recentemente (MutationObserver)
-        const recentModals = document.querySelectorAll('[style*="display: block"], [style*="opacity: 1"]');
-        for (const modal of recentModals) {
-            if (modal.textContent && modal.textContent.toLowerCase().includes('repair')) {
-                debugLog('Modal detectado por aparição recente');
-                return modal;
-            }
-        }
-
-        return null;
-    }
-
-    // Encontra botão de reparo no modal
-    function findRepairButton(modal) {
-        if (!modal) return null;
-
-        // Busca por texto do botão
-        const buttonTexts = ['repair', 'fix', 'ok', 'confirm', 'yes'];
-
-        for (const text of buttonTexts) {
-            // Busca botões por texto
-            const buttons = Array.from(modal.querySelectorAll('button, input[type="button"], div[role="button"]'))
-                .filter(btn => btn.textContent && btn.textContent.toLowerCase().includes(text));
-
-            if (buttons.length > 0) {
-                debugLog(`Botão encontrado por texto: "${text}"`);
-                return buttons[0];
-            }
-        }
-
-        // Busca por atributos
-        const buttonSelectors = [
-            'button[class*="repair"]',
-            'button[class*="confirm"]',
-            'button[onclick*="repair"]',
-            'input[value*="repair"]',
-            '.repair-button',
-            '#repair-btn'
-        ];
-
-        for (const selector of buttonSelectors) {
-            const button = modal.querySelector(selector);
-            if (button) {
-                debugLog(`Botão encontrado por seletor: ${selector}`);
-                return button;
-            }
-        }
-
-        // Se não encontrou, pega o primeiro botão visível
-        const firstButton = modal.querySelector('button:not([style*="display: none"])');
-        if (firstButton) {
-            debugLog('Usando primeiro botão disponível');
-            return firstButton;
-        }
-
-        return null;
-    }
-
-    // Executa o clique no botão de reparo
-    function clickRepairButton(button) {
-        if (!button) return false;
-
-        try {
-            // Simula clique real
-            const clickEvent = new MouseEvent('click', {
-                bubbles: true,
-                cancelable: true,
-                view: window
-            });
-
-            // Adiciona pequeno delay para simular comportamento humano
-            setTimeout(() => {
-                button.click();
-                button.dispatchEvent(clickEvent);
-                debugLog('Clique executado no botão de reparo');
-            }, CLICK_DELAY);
-
-            return true;
-        } catch (error) {
-            debugLog('Erro ao clicar no botão:', error);
-            return false;
-        }
-    }
-
-    // Função principal de auto repair
-    function performAutoRepair() {
-        if (!autoRepairEnabled) return;
-
-        const modal = detectRepairModal();
-        if (modal) {
-            debugLog('Modal de reparo detectado');
-            const button = findRepairButton(modal);
-            if (button) {
-                clickRepairButton(button);
-                debugLog('Auto repair executado com sucesso');
-            } else {
-                debugLog('Botão de reparo não encontrado no modal');
-            }
-        }
-    }
-
-    // Configura MutationObserver para detectar mudanças no DOM
-    function setupMutationObserver() {
-        if (autoRepairObserver) {
-            autoRepairObserver.disconnect();
-        }
-
-        autoRepairObserver = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                // Verifica se novos nós foram adicionados
-                if (mutation.addedNodes.length > 0) {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            // Verifica se é um modal de reparo
-                            if (node.textContent && node.textContent.toLowerCase().includes('repair')) {
-                                debugLog('Novo modal de reparo detectado pelo MutationObserver');
-                                setTimeout(performAutoRepair, 100);
-                            }
-                        }
-                    });
-                }
-            });
-        });
-
-        // Observa mudanças no body
-        autoRepairObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        debugLog('MutationObserver configurado');
-    }
-
-    // Inicia sistema de verificação por intervalo
-    function startIntervalCheck() {
-        if (autoRepairInterval) {
-            clearInterval(autoRepairInterval);
-        }
-
-        autoRepairInterval = setInterval(performAutoRepair, CHECK_INTERVAL);
-        debugLog(`Verificação por intervalo iniciada (${CHECK_INTERVAL}ms)`);
-    }
-
-    // Inicializa o sistema de auto repair
-    function initAutoRepair() {
-        debugLog('Inicializando sistema de Auto Repair');
-        setupMutationObserver();
-        startIntervalCheck();
-        debugLog('Sistema de Auto Repair ativo');
-    }
-
-    // Interface pública do auto repair
-    window.AutoRepair = {
-        enable: () => {
-            autoRepairEnabled = true;
-            initAutoRepair();
-            debugLog('Auto Repair ATIVADO');
-        },
-
-        disable: () => {
-            autoRepairEnabled = false;
-            if (autoRepairObserver) autoRepairObserver.disconnect();
-            if (autoRepairInterval) clearInterval(autoRepairInterval);
-            debugLog('Auto Repair DESATIVADO');
-        },
-
-        isEnabled: () => autoRepairEnabled,
-
-        testModal: () => {
-            const modal = detectRepairModal();
-            console.log('Modal detectado:', modal);
-            if (modal) {
-                const button = findRepairButton(modal);
-                console.log('Botão encontrado:', button);
-            }
-        },
-
-        forceRepair: () => {
-            debugLog('Executando reparo forçado');
-            performAutoRepair();
-        }
-    };
-
-    // Inicia automaticamente se habilitado
-    if (autoRepairEnabled) {
-        // Aguarda um pouco para garantir que a página carregou
-        setTimeout(initAutoRepair, 2000);
-    }
-
-    debugLog('Sistema de Auto Repair carregado');
-
-})();
-
-// ========== FIM DO AUTO REPAIR SYSTEM ==========
-
-
-// ========== GAMEHACXKEADO CONFIG MENU - INJECTED BY PATCH ==========
-
-window.GameHacxkeado = {
-    // Estado do menu
-    menuOpen: false,
-    menuElement: null,
-    styleElement: null,
-
-    // Inicializa o menu
-    init() {
-        this.createStyles();
-        this.createMenuHTML();
-        this.createHotkey();
-        this.loadSettings();
-        console.log('[GameHacxkeado] Menu de configurações carregado (JS dinâmico)');
-    },
-
-    // Cria estilos CSS dinamicamente
-    createStyles() {
-        if (this.styleElement) return; // Já criado
-
-        this.styleElement = document.createElement('style');
-        this.styleElement.id = 'gamehacxkeado-menu-styles';
-        this.styleElement.textContent = `
-/* GameHacxkeado Configuration Menu Styles */
-.gh-config-menu {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    width: 350px;
-    max-height: 80vh;
-    background: rgba(20, 20, 20, 0.95);
-    border: 2px solid #4CAF50;
-    border-radius: 10px;
-    color: white;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 14px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    backdrop-filter: blur(10px);
-    z-index: 999999;
-    display: none;
-    overflow: hidden;
-}
-
-.gh-menu-header {
-    background: linear-gradient(45deg, #4CAF50, #2E7D32);
-    padding: 15px;
-    text-align: center;
-    font-weight: bold;
-    font-size: 16px;
-    border-bottom: 1px solid #4CAF50;
-}
-
-.gh-menu-content {
-    max-height: 60vh;
-    overflow-y: auto;
-    padding: 10px;
-}
-
-.gh-config-section {
-    margin-bottom: 20px;
-    border: 1px solid #333;
-    border-radius: 5px;
-    overflow: hidden;
-}
-
-.gh-section-header {
-    background: #333;
-    padding: 10px;
-    font-weight: bold;
-    cursor: pointer;
-    user-select: none;
-}
-
-.gh-section-header:hover {
-    background: #444;
-}
-
-.gh-section-content {
-    padding: 15px;
-    background: #252525;
-}
-
-.gh-config-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    padding: 5px 0;
-}
-
-.gh-config-label {
-    flex: 1;
-    margin-right: 10px;
-}
-
-.gh-config-control {
-    flex: 0 0 auto;
-}
-
-.gh-slider {
-    width: 100px;
-    margin: 0 10px;
-}
-
-.gh-toggle {
-    width: 50px;
-    height: 25px;
-    background: #666;
-    border-radius: 25px;
-    position: relative;
-    cursor: pointer;
-    transition: background 0.3s;
-}
-
-.gh-toggle.active {
-    background: #4CAF50;
-}
-
-.gh-toggle-thumb {
-    width: 21px;
-    height: 21px;
-    background: white;
-    border-radius: 50%;
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    transition: left 0.3s;
-}
-
-.gh-toggle.active .gh-toggle-thumb {
-    left: 27px;
-}
-
-.gh-button {
-    background: #4CAF50;
-    border: none;
-    color: white;
-    padding: 8px 15px;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 12px;
-    margin: 2px;
-}
-
-.gh-button:hover {
-    background: #45a049;
-}
-
-.gh-button.danger {
-    background: #f44336;
-}
-
-.gh-button.danger:hover {
-    background: #da190b;
-}
-
-.gh-input {
-    background: #333;
-    border: 1px solid #555;
-    color: white;
-    padding: 5px;
-    border-radius: 3px;
-    width: 80px;
-}
-
-.gh-select {
-    background: #333;
-    border: 1px solid #555;
-    color: white;
-    padding: 5px;
-    border-radius: 3px;
-}
-
-.gh-status {
-    display: inline-block;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-weight: bold;
-}
-
-.gh-status.active {
-    background: #4CAF50;
-    color: white;
-}
-
-.gh-status.inactive {
-    background: #666;
-    color: #ccc;
-}
-
-.gh-close-btn {
-    position: absolute;
-    top: 10px;
-    right: 15px;
-    background: none;
-    border: none;
-    color: white;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 0;
-    width: 25px;
-    height: 25px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.gh-close-btn:hover {
-    background: rgba(255,255,255,0.1);
-    border-radius: 3px;
-}
-
-.gh-info {
-    font-size: 11px;
-    color: #aaa;
-    font-style: italic;
-    margin-top: 5px;
-}
-`;
-
-        document.head.appendChild(this.styleElement);
-    },
-
-    // Cria HTML do menu dinamicamente
-    createMenuHTML() {
-        if (this.menuElement) return; // Já criado
-
-        // Container principal
-        this.menuElement = document.createElement('div');
-        this.menuElement.id = 'gamehacxkeado-config-menu';
-        this.menuElement.className = 'gh-config-menu';
-
-        // Header
-        const header = document.createElement('div');
-        header.className = 'gh-menu-header';
-        header.innerHTML = '🎮 GameHacxkeado Config';
-
-        // Botão fechar
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'gh-close-btn';
-        closeBtn.innerHTML = '&times;';
-        closeBtn.onclick = () => this.closeMenu();
-        header.appendChild(closeBtn);
-
-        // Content container
-        const content = document.createElement('div');
-        content.className = 'gh-menu-content';
-
-        // Auto Cast Section
-        content.appendChild(this.createSection('auto-cast', '🏹 Auto Cast Speed', [
-            this.createStatusItem('autocast-status'),
-            this.createSelectItem('autocast-speed', 'Velocidade:', [
-                { value: 'slow', text: 'Lenta (2000ms)' },
-                { value: 'normal', text: 'Normal (1000ms)' },
-                { value: 'fast', text: 'Rápida (500ms)', selected: true },
-                { value: 'ultra_fast', text: 'Ultra Rápida (200ms)' },
-                { value: 'custom', text: 'Customizada' }
-            ]),
-            this.createCustomDelayItem('autocast-custom', 'autocast-custom-delay', 500, 'ms'),
-            this.createButtonGroup([
-                { text: 'Aplicar', onclick: 'GameHacxkeado.applyAutocast()' },
-                { text: 'Remover', onclick: 'GameHacxkeado.removeAutocast()', danger: true }
-            ]),
-            this.createInfoItem('Modifica delays do auto cast principal')
-        ]));
-
-        // Super Cast Section
-        content.appendChild(this.createSection('super-cast', '⚡ Super Cast Speed', [
-            this.createStatusItem('supercast-status'),
-            this.createSelectItem('supercast-speed', 'Velocidade:', [
-                { value: 'slow', text: 'Lenta (300ms)' },
-                { value: 'normal', text: 'Normal (200ms)' },
-                { value: 'fast', text: 'Rápida (100ms)', selected: true },
-                { value: 'ultra_fast', text: 'Ultra Rápida (50ms)' },
-                { value: 'instant', text: 'Instantânea (10ms)' },
-                { value: 'custom', text: 'Customizada' }
-            ]),
-            this.createCustomDelayItem('supercast-custom', 'supercast-custom-delay', 100, 'ms'),
-            this.createButtonGroup([
-                { text: 'Aplicar', onclick: 'GameHacxkeado.applySupercast()' },
-                { text: 'Remover', onclick: 'GameHacxkeado.removeSupercast()', danger: true }
-            ]),
-            this.createInfoItem('Modifica delays do super cast rápido')
-        ]));
-
-        // Auto Repair Section
-        content.appendChild(this.createSection('auto-repair', '🔧 Auto Repair', [
-            this.createStatusItem('autorepair-status'),
-            this.createToggleItem('autorepair-toggle', 'Auto Repair:', 'GameHacxkeado.toggleAutorepair()'),
-            this.createSliderItem('autorepair-interval', 'Intervalo verificação:', 1000, 500, 3000, 100, 'GameHacxkeado.updateRepairInterval'),
-            this.createButtonGroup([
-                { text: 'Aplicar', onclick: 'GameHacxkeado.applyAutorepair()' },
-                { text: 'Remover', onclick: 'GameHacxkeado.removeAutorepair()', danger: true },
-                { text: 'Testar', onclick: 'GameHacxkeado.testAutorepair()' }
-            ]),
-            this.createInfoItem('Sistema automático de reparo de itens')
-        ]));
-
-        // System Info Section
-        content.appendChild(this.createSection('system-info', 'ℹ️ Sistema', [
-            this.createValueItem('active-patches-count', 'Patches ativos:', '0'),
-            this.createButtonGroup([
-                { text: 'Atualizar Status', onclick: 'GameHacxkeado.refreshStatus()' },
-                { text: 'Ajuda', onclick: 'GameHacxkeado.showHelp()' },
-                { text: 'Reset Tudo', onclick: 'GameHacxkeado.resetAll()', danger: true }
-            ]),
-            this.createInfoItem('GameHacxkeado v1.1.0 - Sistema de Patches')
-        ]));
-
-        // Monta o menu
-        this.menuElement.appendChild(header);
-        this.menuElement.appendChild(content);
-
-        // Adiciona ao DOM
-        document.body.appendChild(this.menuElement);
-    },
-
-    // Métodos auxiliares para criar elementos
-    createSection(id, title, items) {
-        const section = document.createElement('div');
-        section.className = 'gh-config-section';
-
-        const header = document.createElement('div');
-        header.className = 'gh-section-header';
-        header.textContent = title;
-        header.onclick = () => this.toggleSection(header);
-
-        const content = document.createElement('div');
-        content.className = 'gh-section-content';
-
-        items.forEach(item => content.appendChild(item));
-
-        section.appendChild(header);
-        section.appendChild(content);
-        return section;
-    },
-
-    createStatusItem(id) {
-        const item = document.createElement('div');
-        item.className = 'gh-config-item';
-
-        const label = document.createElement('span');
-        label.className = 'gh-config-label';
-        label.textContent = 'Status:';
-
-        const status = document.createElement('span');
-        status.id = id;
-        status.className = 'gh-status inactive';
-        status.textContent = 'INATIVO';
-
-        item.appendChild(label);
-        item.appendChild(status);
-        return item;
-    },
-
-    createSelectItem(id, label, options) {
-        const item = document.createElement('div');
-        item.className = 'gh-config-item';
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'gh-config-label';
-        labelEl.textContent = label;
-
-        const select = document.createElement('select');
-        select.id = id;
-        select.className = 'gh-select';
-
-        options.forEach(opt => {
-            const option = document.createElement('option');
-            option.value = opt.value;
-            option.textContent = opt.text;
-            if (opt.selected) option.selected = true;
-            select.appendChild(option);
-        });
-
-        item.appendChild(labelEl);
-        item.appendChild(select);
-        return item;
-    },
-
-    createToggleItem(id, label, onclick) {
-        const item = document.createElement('div');
-        item.className = 'gh-config-item';
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'gh-config-label';
-        labelEl.textContent = label;
-
-        const toggle = document.createElement('div');
-        toggle.id = id;
-        toggle.className = 'gh-toggle';
-        toggle.onclick = () => eval(onclick);
-
-        const thumb = document.createElement('div');
-        thumb.className = 'gh-toggle-thumb';
-        toggle.appendChild(thumb);
-
-        item.appendChild(labelEl);
-        item.appendChild(toggle);
-        return item;
-    },
-
-    createSliderItem(id, label, value, min, max, step, onchange) {
-        const item = document.createElement('div');
-        item.className = 'gh-config-item';
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'gh-config-label';
-        labelEl.textContent = label;
-
-        const slider = document.createElement('input');
-        slider.id = id;
-        slider.type = 'range';
-        slider.className = 'gh-slider';
-        slider.min = min;
-        slider.max = max;
-        slider.value = value;
-        slider.step = step;
-        slider.oninput = (e) => eval(onchange + '(e.target.value)');
-
-        const valueEl = document.createElement('span');
-        valueEl.id = id + '-value';
-        valueEl.textContent = value + 'ms';
-
-        item.appendChild(labelEl);
-        item.appendChild(slider);
-        item.appendChild(valueEl);
-        return item;
-    },
-
-    createCustomDelayItem(rowId, inputId, value, unit) {
-        const item = document.createElement('div');
-        item.id = rowId + '-row';
-        item.className = 'gh-config-item';
-        item.style.display = 'none';
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'gh-config-label';
-        labelEl.textContent = 'Delay customizado:';
-
-        const input = document.createElement('input');
-        input.id = inputId;
-        input.type = 'number';
-        input.className = 'gh-input';
-        input.value = value;
-
-        const unitEl = document.createElement('span');
-        unitEl.style.fontSize = '11px';
-        unitEl.style.color = '#aaa';
-        unitEl.textContent = unit;
-
-        item.appendChild(labelEl);
-        item.appendChild(input);
-        item.appendChild(unitEl);
-        return item;
-    },
-
-    createValueItem(id, label, value) {
-        const item = document.createElement('div');
-        item.className = 'gh-config-item';
-
-        const labelEl = document.createElement('span');
-        labelEl.className = 'gh-config-label';
-        labelEl.textContent = label;
-
-        const valueEl = document.createElement('span');
-        valueEl.id = id;
-        valueEl.textContent = value;
-
-        item.appendChild(labelEl);
-        item.appendChild(valueEl);
-        return item;
-    },
-
-    createButtonGroup(buttons) {
-        const item = document.createElement('div');
-        item.className = 'gh-config-item';
-
-        buttons.forEach(btn => {
-            const button = document.createElement('button');
-            button.className = 'gh-button' + (btn.danger ? ' danger' : '');
-            button.textContent = btn.text;
-            button.onclick = () => eval(btn.onclick);
-            item.appendChild(button);
-        });
-
-        return item;
-    },
-
-    createInfoItem(text) {
-        const item = document.createElement('div');
-        item.className = 'gh-info';
-        item.textContent = text;
-        return item;
-    },
-
-    // Cria hotkey para abrir/fechar menu
-    createHotkey() {
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
-                e.preventDefault();
-                this.toggleMenu();
-            }
-        });
-    },
-
-    // Toggle do menu
-    toggleMenu() {
-        this.menuOpen = !this.menuOpen;
-        if (this.menuElement) {
-            this.menuElement.style.display = this.menuOpen ? 'block' : 'none';
-            if (this.menuOpen) {
-                this.refreshStatus();
-            }
-        }
-    },
-
-    // Fecha o menu
-    closeMenu() {
-        this.menuOpen = false;
-        if (this.menuElement) this.menuElement.style.display = 'none';
-    },
-
-    // Toggle de seções
-    toggleSection(header) {
-        const content = header.nextElementSibling;
-        const isVisible = content.style.display !== 'none';
-        content.style.display = isVisible ? 'none' : 'block';
-    },
-
-    // Implementações das funções (simplificadas)
-    async applyAutocast() {
-        this.showNotification('Auto Cast aplicado com sucesso!');
-        this.updateStatus('autocast-status', true);
-    },
-
-    async removeAutocast() {
-        this.showNotification('Auto Cast removido');
-        this.updateStatus('autocast-status', false);
-    },
-
-    async applySupercast() {
-        this.showNotification('Super Cast aplicado com sucesso!');
-        this.updateStatus('supercast-status', true);
-    },
-
-    async removeSupercast() {
-        this.showNotification('Super Cast removido');
-        this.updateStatus('supercast-status', false);
-    },
-
-    toggleAutorepair() {
-        const toggle = document.getElementById('autorepair-toggle');
-        const isActive = toggle.classList.contains('active');
-
-        if (isActive) {
-            toggle.classList.remove('active');
-            if (window.AutoRepair) window.AutoRepair.disable();
-        } else {
-            toggle.classList.add('active');
-            if (window.AutoRepair) window.AutoRepair.enable();
-        }
-
-        this.updateStatus('autorepair-status', !isActive);
-        this.saveSettings();
-    },
-
-    updateRepairInterval(value) {
-        const valueEl = document.getElementById('autorepair-interval-value');
-        if (valueEl) valueEl.textContent = value + 'ms';
-        this.saveSettings();
-    },
-
-    async applyAutorepair() {
-        this.showNotification('Auto Repair aplicado com sucesso!');
-        this.updateStatus('autorepair-status', true);
-    },
-
-    async removeAutorepair() {
-        this.showNotification('Auto Repair removido');
-        this.updateStatus('autorepair-status', false);
-    },
-
-    testAutorepair() {
-        if (window.AutoRepair) {
-            window.AutoRepair.testModal();
-            this.showNotification('Teste de Auto Repair executado - veja console');
-        } else {
-            this.showNotification('Auto Repair não está carregado', true);
-        }
-    },
-
-    // Atualiza status visual
-    updateStatus(elementId, isActive) {
-        const element = document.getElementById(elementId);
-        if (element) {
-            element.className = 'gh-status ' + (isActive ? 'active' : 'inactive');
-            element.textContent = isActive ? 'ATIVO' : 'INATIVO';
-        }
-    },
-
-    // Refresh do status geral
-    refreshStatus() {
-        // Verifica se AutoRepair está ativo
-        if (window.AutoRepair) {
-            const isActive = window.AutoRepair.isEnabled();
-            this.updateStatus('autorepair-status', isActive);
-
-            const toggle = document.getElementById('autorepair-toggle');
-            if (toggle) {
-                toggle.classList.toggle('active', isActive);
-            }
-        }
-
-        // Atualiza contador de patches ativos
-        let activeCount = 0;
-        if (document.getElementById('autocast-status')?.textContent === 'ATIVO') activeCount++;
-        if (document.getElementById('supercast-status')?.textContent === 'ATIVO') activeCount++;
-        if (document.getElementById('autorepair-status')?.textContent === 'ATIVO') activeCount++;
-
-        const countElement = document.getElementById('active-patches-count');
-        if (countElement) countElement.textContent = activeCount;
-    },
-
-    // Salva configurações
-    saveSettings() {
-        try {
-            const settings = {
-                autocastSpeed: document.getElementById('autocast-speed')?.value,
-                autocastCustomDelay: document.getElementById('autocast-custom-delay')?.value,
-                supercastSpeed: document.getElementById('supercast-speed')?.value,
-                supercastCustomDelay: document.getElementById('supercast-custom-delay')?.value,
-                autorepairInterval: document.getElementById('autorepair-interval')?.value,
-                autorepairEnabled: document.getElementById('autorepair-toggle')?.classList.contains('active')
-            };
-
-            localStorage.setItem('gamehacxkeado-settings', JSON.stringify(settings));
-        } catch (error) {
-            console.warn('[GameHacxkeado] Erro ao salvar configurações:', error);
-        }
-    },
-
-    // Carrega configurações
-    loadSettings() {
-        try {
-            const saved = localStorage.getItem('gamehacxkeado-settings');
-            if (saved) {
-                const settings = JSON.parse(saved);
-                // Implementar carregamento das configurações salvas
-            }
-        } catch (error) {
-            console.warn('[GameHacxkeado] Erro ao carregar configurações:', error);
-        }
-    },
-
-    // Mostra notificação
-    showNotification(message, isError = false) {
-        console.log('[GameHacxkeado] ' + message);
-
-        // Cria notificação visual
-        let notification = document.getElementById('gh-notification');
-        if (!notification) {
-            notification = document.createElement('div');
-            notification.id = 'gh-notification';
-            notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: ${isError ? '#f44336' : '#4CAF50'};
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                z-index: 1000000;
-                font-family: Arial, sans-serif;
-                font-size: 14px;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-                transition: opacity 0.3s;
-            `;
-            document.body.appendChild(notification);
-        }
-
-        notification.textContent = message;
-        notification.style.display = 'block';
-        notification.style.opacity = '1';
-
-        setTimeout(() => {
-            notification.style.opacity = '0';
-            setTimeout(() => {
-                notification.style.display = 'none';
-            }, 300);
-        }, 3000);
-    },
-
-    // Reset tudo
-    resetAll() {
-        if (confirm('Tem certeza que deseja resetar todas as configurações?')) {
-            localStorage.removeItem('gamehacxkeado-settings');
-            location.reload();
-        }
-    },
-
-    // Ajuda
-    showHelp() {
-        alert(`
-🎮 GameHacxkeado - Sistema de Configurações
-
-ATALHOS:
-• Ctrl+Shift+C: Abre/fecha este menu
-
-FUNCIONALIDADES:
-• Auto Cast Speed: Modifica velocidade do auto cast
-• Super Cast Speed: Modifica velocidade do super cast
-• Auto Repair: Sistema automático de reparo
-
-DICAS:
-• Use velocidades moderadas para evitar detecção
-• Teste as configurações antes de usar extensivamente
-• Mantenha backups dos arquivos originais
-
-Versão: 1.1.0 (JS Dinâmico)
-        `);
-    },
-
-    // Remove o menu (para limpeza)
-    destroy() {
-        if (this.menuElement) {
-            this.menuElement.remove();
-            this.menuElement = null;
-        }
-        if (this.styleElement) {
-            this.styleElement.remove();
-            this.styleElement = null;
-        }
-    }
-};
-
-// Inicializa quando DOM estiver pronto
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => GameHacxkeado.init());
-} else {
-    GameHacxkeado.init();
-}
-
-// ========== FIM DO CONFIG MENU ==========
-

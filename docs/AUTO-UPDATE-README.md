@@ -16,14 +16,11 @@ Sistema automatizado para baixar e processar automaticamente a versão mais rece
 
 ### 🔄 Integração Completa
 - **Integra com auto-unminify.js** automaticamente
-- **Backup automático** do source.js atual
-- **Rollback automático** em caso de erro
 
 ### 🛡️ Sistema Seguro
-- **Backup antes de modificar** qualquer arquivo
 - **Validação de mudanças** antes de aplicar
-- **Recuperação automática** em caso de falha
 - **Reset automático** de patches aplicados quando o jogo atualiza
+- ⚠️ **Sistema de backup DESABILITADO**
 
 ## 🚀 Como Usar
 
@@ -87,10 +84,9 @@ node auto-update.js --help
 🔄 Mudanças detectadas no tamanho do arquivo
 ```
 
-### 4. 💾 Backup
+### 4. ⚠️ Backup
 ```
-💾 Criando backup do source.js atual...
-✅ Backup criado: old-source-2025-12-29T22-15-30-123Z.js
+ℹ️  Sistema de backup desabilitado - não será criado backup
 ```
 
 ### 5. 🔄 Unminify
@@ -111,7 +107,6 @@ node auto-update.js --help
 ```
 🎉 Update concluído com sucesso!
 📄 Novo arquivo: source.js
-💾 Backup anterior: old-source-2025-12-29T22-15-30-123Z.js
 
 📋 Próximos passos recomendados:
    1. Verificar se o source.js está correto
@@ -181,7 +176,6 @@ headers: {
 | Arquivo | Descrição |
 |---------|-----------|
 | `source.js` | Código desminificado atualizado |
-| `old-source-TIMESTAMP.js` | Backup da versão anterior |
 | `temp-index-*.js` | Arquivo temporário (removido automaticamente) |
 | `index-*.js` | Arquivo original baixado (mantido para referência) |
 
@@ -222,9 +216,9 @@ node auto-update.js  # Faz tudo automaticamente
 **⚠️ Importante**: Sempre reaplique os patches após um update!
 
 ### 🛡️ Backup Strategy
-- O sistema mantém **apenas 1 backup** por execução
-- Para múltiplos backups, renomeie manualmente os arquivos old-source-*
-- Backups automáticos do sistema de patches ficam em `patches/backups/`
+- ⚠️ **Sistema de backup DESABILITADO**
+- Use `auto-update.js` para obter código fresco do site
+- Sistema de patches também tem backup desabilitado
 
 ### ⚡ Performance
 - **Primeira execução**: Mais lenta (precisa baixar arquivo)

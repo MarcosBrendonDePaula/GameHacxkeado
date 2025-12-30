@@ -126,23 +126,10 @@ async function getJSFileName() {
     }
 }
 
-// Função para criar backup do source.js atual
+// Função para criar backup do source.js atual (DESABILITADA)
 function createBackup() {
-    const sourceFile = CONFIG.sourceFile;
-
-    if (!fs.existsSync(sourceFile)) {
-        console.log('ℹ️  Arquivo source.js não existe, pularemos o backup');
-        return null;
-    }
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupName = `old-source-${timestamp}.js`;
-
-    console.log('💾 Criando backup do source.js atual...');
-    fs.copyFileSync(sourceFile, backupName);
-    console.log(`✅ Backup criado: ${backupName}`);
-
-    return backupName;
+    console.log('ℹ️  Sistema de backup desabilitado - não será criado backup');
+    return null;
 }
 
 // Função para verificar se o Node.js auto-unminify está disponível
@@ -311,10 +298,6 @@ async function main() {
             console.log('🎉 Update concluído com sucesso!');
             console.log(`📄 Novo arquivo: ${CONFIG.sourceFile}`);
 
-            if (backupFile) {
-                console.log(`💾 Backup anterior: ${backupFile}`);
-            }
-
             // Sugerir reaplicar patches
             console.log('');
             console.log('📋 Próximos passos recomendados:');
@@ -326,12 +309,8 @@ async function main() {
             fs.unlinkSync(tempFile);
 
         } else {
-            console.error('❌ Falha no unminify. Restaurando backup...');
-
-            if (backupFile) {
-                fs.copyFileSync(backupFile, CONFIG.sourceFile);
-                console.log('✅ Backup restaurado');
-            }
+            console.error('❌ Falha no unminify.');
+            console.warn('⚠️  Sem backup disponível - sistema de backup desabilitado');
 
             process.exit(1);
         }
@@ -358,14 +337,13 @@ Uso:
 Funcionalidades:
     ✅ Detecta automaticamente arquivo JS atual do site
     ✅ Baixa apenas se houver mudanças
-    ✅ Backup automático do source.js atual
     ✅ Integração com sistema unminify existente
-    ✅ Rollback automático em caso de erro
     ✅ Reset automático de patches aplicados após update
+    ⚠️  Sistema de backup DESABILITADO
 
 Arquivos gerados:
     source.js                           # Código unminified atualizado
-    old-source-TIMESTAMP.js             # Backup da versão anterior
+    temp-index-*.js                     # Arquivo temporário (removido automaticamente)
 `);
     process.exit(0);
 }

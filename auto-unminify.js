@@ -86,22 +86,8 @@ class AutoUnminify {
     }
 
     backupSourceFile() {
-        if (!fs.existsSync(this.sourceFile)) {
-            this.log('Nenhum source.js existente encontrado.', true);
-            return null;
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupFile = path.join(this.projectDir, `old-source-${timestamp}.js`);
-
-        try {
-            fs.copyFileSync(this.sourceFile, backupFile);
-            this.log(`Backup criado: ${path.basename(backupFile)}`);
-            return backupFile;
-        } catch (error) {
-            this.error('Erro ao criar backup: ' + error.message);
-            return null;
-        }
+        this.log('Sistema de backup desabilitado - não será criado backup');
+        return null;
     }
 
     async unminifyFile(inputFile) {
@@ -162,7 +148,7 @@ class AutoUnminify {
         const targetFile = this.getNewestIndexFile(indexFiles);
         this.log(`Arquivo selecionado: ${targetFile}`);
 
-        // 3. Fazer backup do source.js atual
+        // 3. Pular backup (sistema desabilitado)
         const backupFile = this.backupSourceFile();
 
         // 4. Desminificar o arquivo
@@ -181,9 +167,6 @@ class AutoUnminify {
         this.log('PROCESSO CONCLUÍDO COM SUCESSO!');
         this.log('='.repeat(60));
         this.log(`✅ Arquivo processado: ${targetFile}`);
-        if (backupFile) {
-            this.log(`✅ Backup criado: ${path.basename(backupFile)}`);
-        }
         this.log(`✅ Novo source.js criado`);
         this.log(`✅ Tamanho: ${(unminifiedCode.length / 1024 / 1024).toFixed(2)} MB`);
     }
@@ -281,7 +264,7 @@ COMANDOS:
 FUNCIONALIDADES:
   ✅ Detecta automaticamente arquivos index-*.js
   ✅ Seleciona o arquivo mais recente
-  ✅ Faz backup do source.js atual (old-source-timestamp.js)
+  ⚠️  Sistema de backup DESABILITADO
   ✅ Desminifica usando Prettier
   ✅ Cria novo source.js legível
   ✅ Instala Prettier automaticamente se necessário
