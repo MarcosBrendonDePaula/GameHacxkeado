@@ -1,0 +1,48 @@
+{
+  "name": "game-hacxkeado-tools",
+  "version": "1.0.0",
+  "description": "Auto unminify and game modification tools",
+  "main": "auto-unminify.js",
+  "scripts": {
+    "unminify": "node auto-unminify.js",
+    "unminify:verbose": "node auto-unminify.js verbose",
+    "list-files": "node auto-unminify.js list",
+    "patch": "node patch-system.js",
+    "patch:list": "node patch-system.js list",
+    "patch:status": "node patch-system.js status",
+    "patch:backups": "node patch-system.js backups",
+    "patch:apply": "node patch-system.js apply",
+    "patch:apply-all": "node patch-system.js apply-all",
+    "patch:remove": "node patch-system.js remove",
+    "patch:remove-all": "node patch-system.js remove-all",
+    "apply-all": "node apply-all-patches.js",
+    "install-deps": "npm install",
+    "test": "node auto-unminify.js list"
+  },
+  "bin": {
+    "auto-unminify": "./auto-unminify.js"
+  },
+  "keywords": [
+    "javascript",
+    "unminify",
+    "prettier",
+    "game-tools",
+    "minification"
+  ],
+  "author": "Marcos",
+  "license": "MIT",
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MarcosBrendonDePaula/GameHacxkeado.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MarcosBrendonDePaula/GameHacxkeado/issues"
+  },
+  "homepage": "https://github.com/MarcosBrendonDePaula/GameHacxkeado#readme"
+}

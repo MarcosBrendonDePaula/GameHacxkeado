@@ -134,3 +134,25 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# GameHacxkeado specific
+# Temporary backup files
+temp_backups/
+old-source-*.js
+*.backup
+*.bak
+
+# Runtime generated files
+autocast_delays_results.json
+durability_points.json
+game_events_complete.json
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db

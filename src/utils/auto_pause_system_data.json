@@ -1,0 +1,159 @@
+{
+  "injection_points": {
+    "durability_check": {
+      "line": 228309,
+      "pattern": "calculateExpectedDurability\\(.*dr\\.maxDurability.*\\)\\s*<=\\s*0",
+      "match": "calculateExpectedDurability(b, y, x, A) {     if (b >= y) return y;     const O = typeof x == \"bigin",
+      "context": [
+        "    228306: }",
+        "    228307: const DURABILITY_REGEN_SECONDS_PER_CAST = 3,",
+        "    228308:     SLOW_REGEN_MULTIPLIER = 4;",
+        ">>> 228309: function calculateExpectedDurability(b, y, x, A) {",
+        "    228310:     if (b >= y) return y;",
+        "    228311:     const O = typeof x == \"bigint\" ? Number(x) : x;",
+        "    228312:     if (O === 0) return b;"
+      ],
+      "injection_strategy": "SUBSTITUIR - modificar condição para incluir sistema de pausa"
+    },
+    "stop_autocast": {
+      "line": 230484,
+      "pattern": "dt\\(!1\\).*ct\\s*&&.*mt\\(!1\\)",
+      "match": "dt(!1), ut(0));                     }),                     (window.__refreshPlayerState = async ()",
+      "context": [
+        "    230481:                         Pt();",
+        "    230482:                     }),",
+        "    230483:                     (window.__startSuperCast = () => {",
+        ">>> 230484:                         mt(!0), ft && (dt(!1), ut(0));",
+        "    230485:                     }),",
+        "    230486:                     (window.__refreshPlayerState = async () => {",
+        "    230487:                         debugLog(\"🔄 __refreshPlayerState called from modal\"), await Sr();"
+      ],
+      "injection_strategy": "APÓS - adicionar lógica de pausa com timer"
+    },
+    "start_autocast_1": {
+      "line": 230484,
+      "pattern": "mt\\(!0\\)",
+      "match": "mt(!0)",
+      "context": [
+        "    230481:                         Pt();",
+        "    230482:                     }),",
+        "    230483:                     (window.__startSuperCast = () => {",
+        ">>> 230484:                         mt(!0), ft && (dt(!1), ut(0));",
+        "    230485:                     }),",
+        "    230486:                     (window.__refreshPlayerState = async () => {",
+        "    230487:                         debugLog(\"🔄 __refreshPlayerState called from modal\"), await Sr();"
+      ],
+      "injection_strategy": "ANTES - verificar se não está em pausa forçada"
+    },
+    "start_autocast_2": {
+      "line": 230922,
+      "pattern": "mt\\(!0\\)",
+      "match": "mt(!0)",
+      "context": [
+        "    230919:                       window.__onHoleTransitionComplete && window.__onHoleTransitionComplete())",
+        "    230920:                     : setTimeout(() => {",
+        "    230921:                           xe.current && xe.current.queueAdvance(br, !0),",
+        ">>> 230922:                               Dr && gt.current && (mt(!0), (gt.current = !1), ne(!1), (tt.current = ",
+        "    230923:                       }, Fr),",
+        "    230924:                     y == null || y(xr);",
+        "    230925:             },"
+      ],
+      "injection_strategy": "ANTES - verificar se não está em pausa forçada"
+    },
+    "start_autocast_3": {
+      "line": 230948,
+      "pattern": "mt\\(!0\\)",
+      "match": "mt(!0)",
+      "context": [
+        "    230945:                     O();",
+        "    230946:                     return;",
+        "    230947:                 }",
+        ">>> 230948:                 $e(xr), (wt.current = !1), ft && (dt(!1), ut(0)), ne(!1), (tt.current = !1), (nt.cur",
+        "    230949:             }, [ct, ft, dr, O, Ut]);",
+        "    230950:         reactExports.useEffect(() => {",
+        "    230951:             if (!ft || !xe.current) {"
+      ],
+      "injection_strategy": "ANTES - verificar se não está em pausa forçada"
+    },
+    "start_autocast_4": {
+      "line": 231061,
+      "pattern": "mt\\(!0\\)",
+      "match": "mt(!0)",
+      "context": [
+        "    231058:                                   \"🔧 Bug #8 REFIX: Restoring supercast - setting restoringFromTabVis",
+        "    231059:                               ),",
+        "    231060:                               (pr.current = !0),",
+        ">>> 231061:                               mt(!0),",
+        "    231062:                               setTimeout(() => {",
+        "    231063:                                   pr.current &&",
+        "    231064:                                       (debugLog(\"⚠️ Bug #8: Clearing restoringFromTabVisibility flag"
+      ],
+      "injection_strategy": "ANTES - verificar se não está em pausa forçada"
+    },
+    "start_autocast_5": {
+      "line": 231129,
+      "pattern": "mt\\(!0\\)",
+      "match": "mt(!0)",
+      "context": [
+        "    231126:                                 ? (debugLog(",
+        "    231127:                                       `🌊 SUPERCAST [T+${performance.now().toFixed(0)}ms]: ✅ LATE RES",
+        "    231128:                                   ),",
+        ">>> 231129:                                   mt(!0),",
+        "    231130:                                   (gt.current = !1),",
+        "    231131:                                   ne(!1),",
+        "    231132:                                   (tt.current = !1),"
+      ],
+      "injection_strategy": "ANTES - verificar se não está em pausa forçada"
+    },
+    "start_autocast_6": {
+      "line": 231145,
+      "pattern": "mt\\(!0\\)",
+      "match": "mt(!0)",
+      "context": [
+        "    231142:                         ),",
+        "    231143:                             tt.current && gt.current",
+        "    231144:                                 ? (debugLog(`⚡ SUPERCAST [T+${Wr}ms]: ✅ EARLY RESUME TRIGGERED`),",
+        ">>> 231145:                                   mt(!0),",
+        "    231146:                                   (gt.current = !1),",
+        "    231147:                                   ne(!1),",
+        "    231148:                                   (tt.current = !1),"
+      ],
+      "injection_strategy": "ANTES - verificar se não está em pausa forçada"
+    },
+    "autocast_interval": {
+      "line": 26460,
+      "pattern": "setInterval\\(\\(\\)\\s*=>\\s*\\{.*toggleTileFished.*\\},\\s*\\d+\\)",
+      "match": "setInterval(() => {                 (async () => {                     try {",
+      "context": [
+        "    26457:     }",
+        "    26458:     _wsOnOpen() {",
+        "    26459:         (this._rpcWebSocketConnected = !0),",
+        ">>> 26460:             (this._rpcWebSocketHeartbeat = setInterval(() => {",
+        "    26461:                 (async () => {",
+        "    26462:                     try {",
+        "    26463:                         await this._rpcWebSocket.notify(\"ping\");"
+      ],
+      "injection_strategy": "WRAPPER - envolver setInterval com controle de pausa"
+    },
+    "durability_zero_check": {
+      "line": 230502,
+      "pattern": "dr\\.currentDurability.*<=\\s*0",
+      "match": "dr.currentDurability,                 dr == null ? void 0 : dr.castCount,                 Pt,",
+      "context": [
+        "    230499:             }, [",
+        "    230500:                 dr == null ? void 0 : dr.rodLevel,",
+        "    230501:                 dr == null ? void 0 : dr.supercastRemainingCasts,",
+        ">>> 230502:                 dr == null ? void 0 : dr.currentDurability,",
+        "    230503:                 dr == null ? void 0 : dr.castCount,",
+        "    230504:                 Pt,",
+        "    230505:             ]),"
+      ],
+      "injection_strategy": "APÓS - triggerar sistema de auto-pausa"
+    }
+  },
+  "recommendations": {
+    "primary_injection_line": 228309,
+    "method": "Injeção direta no source.js",
+    "timing": "Antes da verificação de durabilidade"
+  }
+}

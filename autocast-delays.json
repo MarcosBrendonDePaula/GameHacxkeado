@@ -1,0 +1,48 @@
+{
+  "autoCastNormal": [
+    {
+      "pattern": 1,
+      "line": 228333,
+      "delay": "1e6",
+      "delayMs": 1000000,
+      "context": "const MICRO_DECIMALS = 1e6,\n    BALANCE_ANIMATION_DURATION_MS = 50..."
+    },
+    {
+      "pattern": 1,
+      "line": 230955,
+      "delay": "500",
+      "delayMs": 500,
+      "context": "const xr = 500,\n                zr = 50..."
+    },
+    {
+      "pattern": 2,
+      "line": 230951,
+      "delay": "500",
+      "delayMs": 500,
+      "context": "if (!ft || !xe.current) {\n                ut(0);\n                return;\n            }\n            c..."
+    }
+  ],
+  "superCast": [
+    {
+      "pattern": 1,
+      "line": 231015,
+      "delay": "200",
+      "delayMs": 200,
+      "context": "audioManager.playTileTapSound(),\n                        xe.current.toggleTileFished(Wr.instanceInde..."
+    },
+    {
+      "pattern": 2,
+      "line": 231016,
+      "delay": "200",
+      "delayMs": 200,
+      "context": "toggleTileFished(Wr.instanceIndex);\n                }, 200);\n                return () =>..."
+    },
+    {
+      "pattern": 3,
+      "line": 231009,
+      "delay": "200",
+      "delayMs": 200,
+      "context": "SUPERCAST [T+${performance.now().toFixed(0)}ms]: No tiles left, waiting for transition`\n            ..."
+    }
+  ]
+}

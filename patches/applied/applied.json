@@ -1,0 +1,9 @@
+{
+  "patches": [
+    "auto-cast-speed",
+    "super-cast-speed",
+    "auto-repair",
+    "config-menu"
+  ],
+  "lastUpdate": "2025-12-24T15:53:28.522Z"
+}
