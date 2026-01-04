@@ -84,16 +84,8 @@ module.exports = {
             });
         });
 
-        // Insere o código de modificação de delay no início
-        const insertionPoint = modifiedCode.indexOf('(function()') !== -1
-            ? modifiedCode.indexOf('(function()')
-            : modifiedCode.indexOf('!function(') !== -1
-                ? modifiedCode.indexOf('!function(')
-                : 100;
-
-        modifiedCode = modifiedCode.slice(0, insertionPoint) +
-                      delayModificationCode + '\n' +
-                      modifiedCode.slice(insertionPoint);
+        // Insere o código de modificação de delay no final (mais seguro)
+        modifiedCode = modifiedCode + '\n' + delayModificationCode;
 
         if (modificationsCount === 0) {
             console.log('[auto-cast-speed] Nenhum delay encontrado - injetando sistema dinâmico');

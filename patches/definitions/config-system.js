@@ -117,17 +117,8 @@ module.exports = {
 // ===== FIM DO SISTEMA DE CONFIGURAÇÃO =====
 `;
 
-        // Encontra um local adequado para inserir no início do código
-        const insertionPoint = sourceCode.indexOf('(function()') !== -1
-            ? sourceCode.indexOf('(function()')
-            : sourceCode.indexOf('!function(') !== -1
-                ? sourceCode.indexOf('!function(')
-                : 100; // Fallback para posição 100
-
-        // Insere o sistema no início do código
-        const modifiedCode = sourceCode.slice(0, insertionPoint) +
-                            configSystemCode + '\n' +
-                            sourceCode.slice(insertionPoint);
+        // Insere o sistema no FINAL do código (mais seguro)
+        const modifiedCode = sourceCode + '\n' + configSystemCode;
 
         console.log('✅ Sistema de configuração aplicado com sucesso!');
         return modifiedCode;

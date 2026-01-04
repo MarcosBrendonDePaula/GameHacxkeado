@@ -1,144 +1,5 @@
 var zo = Object.defineProperty;
-var jo = (b, y, x) => (y in b ? zo(b, y, { enumerable: !0, configura
-// ===== SISTEMA CENTRAL DE CONFIGURAÇÃO =====
-
-// ===== AUTO CAST DELAY MODIFIER =====
-(function() {
-    'use strict';
-
-    // Aguardar sistema de configuração estar disponível
-    function waitForConfig(callback) {
-        if (typeof window.__cfg === 'function') {
-            callback();
-        } else {
-            setTimeout(() => waitForConfig(callback), 100);
-        }
-    }
-
-    // Função para pegar delay das configurações
-    function getAutocastDelay() {
-        // Configuração padrão: 500ms (velocidade normal)
-        return window.__cfg('autocast_delay', 500);
-    }
-
-    // Intercepta e modifica os delays no código
-    waitForConfig(() => {
-        console.log('[AutoCast] Sistema iniciado');
-
-        // Configurações padrão
-        window.__cfg('autocast_delay', 500);
-
-        console.log(`[AutoCast] Delay atual: ${getAutocastDelay()}ms`);
-        console.log('[AutoCast] Para alterar: window.__cfg.set("autocast_delay", NOVO_VALOR)');
-    });
-
-})();
-// ===== FIM AUTO CAST DELAY MODIFIER =====
-
-(function() {
-    'use strict';
-
-    // Storage central de configurações
-    const CONFIG_STORAGE_KEY = 'gamehack_configs';
-    const configs = {};
-
-    // Carrega configurações salvas do localStorage
-    function loadConfigs() {
-        try {
-            const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                Object.assign(configs, parsed);
-                console.log('[ConfigSystem] Configurações carregadas:', Object.keys(configs));
-            }
-        } catch (error) {
-            console.warn('[ConfigSystem] Erro ao carregar configurações:', error);
-        }
-    }
-
-    // Salva configurações no localStorage
-    function saveConfigs() {
-        try {
-            localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
-        } catch (error) {
-            console.warn('[ConfigSystem] Erro ao salvar configurações:', error);
-        }
-    }
-
-    // API principal: window.__cfg(key, defaultValue)
-    function configAPI(key, defaultValue) {
-        // Se não tem argumentos, retorna todas as configs
-        if (arguments.length === 0) {
-            return { ...configs };
-        }
-
-        // Se tem apenas key, retorna o valor
-        if (arguments.length === 1) {
-            return configs.hasOwnProperty(key) ? configs[key] : undefined;
-        }
-
-        // Se key não existe, cria com valor padrão
-        if (!configs.hasOwnProperty(key)) {
-            configs[key] = defaultValue;
-            saveConfigs();
-            console.log(`[ConfigSystem] Criada configuração '${key}' = ${defaultValue}`);
-        }
-
-        return configs[key];
-    }
-
-    // API para definir valor: window.__cfg.set(key, value)
-    configAPI.set = function(key, value) {
-        const oldValue = configs[key];
-        configs[key] = value;
-        saveConfigs();
-        console.log(`[ConfigSystem] Configuração '${key}' alterada: ${oldValue} → ${value}`);
-        return value;
-    };
-
-    // API para remover: window.__cfg.remove(key)
-    configAPI.remove = function(key) {
-        if (configs.hasOwnProperty(key)) {
-            const value = configs[key];
-            delete configs[key];
-            saveConfigs();
-            console.log(`[ConfigSystem] Configuração '${key}' removida (era: ${value})`);
-            return true;
-        }
-        return false;
-    };
-
-    // API para limpar tudo: window.__cfg.clear()
-    configAPI.clear = function() {
-        const count = Object.keys(configs).length;
-        Object.keys(configs).forEach(key => delete configs[key]);
-        saveConfigs();
-        console.log(`[ConfigSystem] Todas as configurações removidas (${count} itens)`);
-    };
-
-    // API para listar: window.__cfg.list()
-    configAPI.list = function() {
-        console.log('[ConfigSystem] Configurações ativas:');
-        for (const [key, value] of Object.entries(configs)) {
-            console.log(`  ${key}: ${JSON.stringify(value)}`);
-        }
-        return configs;
-    };
-
-    // Inicializar sistema
-    loadConfigs();
-
-    // Expor API globalmente
-    window.__cfg = configAPI;
-
-    console.log('[ConfigSystem] Sistema de configurações inicializado');
-    console.log('[ConfigSystem] Uso: window.__cfg("nome", valorPadrao)');
-    console.log('[ConfigSystem] APIs: __cfg.set(k,v), __cfg.remove(k), __cfg.clear(), __cfg.list()');
-
-})();
-// ===== FIM DO SISTEMA DE CONFIGURAÇÃO =====
-
-ble: !0, writable: !0, value: x }) : (b[y] = x));
+var jo = (b, y, x) => (y in b ? zo(b, y, { enumerable: !0, configurable: !0, writable: !0, value: x }) : (b[y] = x));
 var or = (b, y, x) => jo(b, typeof y != "symbol" ? y + "" : y, x);
 function _mergeNamespaces(b, y) {
     for (var x = 0; x < y.length; x++) {
@@ -14687,7 +14548,7 @@ ieee754.write = function (b, y, x, A, O, U) {
             ((St = St >>> 0), Yt(St, "offset"));
             const $t = this[St],
                 Bt = this[St + 7];
-            ($t === void 0 || Bt === void 0) && _r(St, this.length - 8);
+            ($t === void 0 || Bt === void 0) && xr(St, this.length - 8);
             const er = $t + this[++St] * 2 ** 8 + this[++St] * 2 ** 16 + this[++St] * 2 ** 24,
                 dr = this[++St] + this[++St] * 2 ** 8 + this[++St] * 2 ** 16 + Bt * 2 ** 24;
             return BigInt(er) + (BigInt(dr) << BigInt(32));
@@ -14696,7 +14557,7 @@ ieee754.write = function (b, y, x, A, O, U) {
             ((St = St >>> 0), Yt(St, "offset"));
             const $t = this[St],
                 Bt = this[St + 7];
-            ($t === void 0 || Bt === void 0) && _r(St, this.length - 8);
+            ($t === void 0 || Bt === void 0) && xr(St, this.length - 8);
             const er = $t * 2 ** 24 + this[++St] * 2 ** 16 + this[++St] * 2 ** 8 + this[++St],
                 dr = this[++St] * 2 ** 24 + this[++St] * 2 ** 16 + this[++St] * 2 ** 8 + Bt;
             return (BigInt(er) << BigInt(32)) + BigInt(dr);
@@ -14752,7 +14613,7 @@ ieee754.write = function (b, y, x, A, O, U) {
             ((St = St >>> 0), Yt(St, "offset"));
             const $t = this[St],
                 Bt = this[St + 7];
-            ($t === void 0 || Bt === void 0) && _r(St, this.length - 8);
+            ($t === void 0 || Bt === void 0) && xr(St, this.length - 8);
             const er = this[St + 4] + this[St + 5] * 2 ** 8 + this[St + 6] * 2 ** 16 + (Bt << 24);
             return (
                 (BigInt(er) << BigInt(32)) +
@@ -14763,7 +14624,7 @@ ieee754.write = function (b, y, x, A, O, U) {
             ((St = St >>> 0), Yt(St, "offset"));
             const $t = this[St],
                 Bt = this[St + 7];
-            ($t === void 0 || Bt === void 0) && _r(St, this.length - 8);
+            ($t === void 0 || Bt === void 0) && xr(St, this.length - 8);
             const er = ($t << 24) + this[++St] * 2 ** 16 + this[++St] * 2 ** 8 + this[++St];
             return (
                 (BigInt(er) << BigInt(32)) +
@@ -15136,7 +14997,7 @@ ieee754.write = function (b, y, x, A, O, U) {
         return `${Nt.slice(0, $t)}${St}`;
     }
     function kt(Nt, St, $t) {
-        (Yt(St, "offset"), (Nt[St] === void 0 || Nt[St + $t] === void 0) && _r(St, Nt.length - ($t + 1)));
+        (Yt(St, "offset"), (Nt[St] === void 0 || Nt[St + $t] === void 0) && xr(St, Nt.length - ($t + 1)));
     }
     function Wt(Nt, St, $t, Bt, er, dr) {
         if (Nt > $t || Nt < St) {
@@ -15154,7 +15015,7 @@ ieee754.write = function (b, y, x, A, O, U) {
     function Yt(Nt, St) {
         if (typeof Nt != "number") throw new At.ERR_INVALID_ARG_TYPE(St, "number", Nt);
     }
-    function _r(Nt, St, $t) {
+    function xr(Nt, St, $t) {
         throw Math.floor(Nt) !== Nt
             ? (Yt(Nt, $t), new At.ERR_OUT_OF_RANGE("offset", "an integer", Nt))
             : St < 0
@@ -15847,7 +15708,7 @@ bn$7.exports;
                 kt = Tt & 8191,
                 Wt = Tt >>> 13,
                 Yt = tt[4] | 0,
-                _r = Yt & 8191,
+                xr = Yt & 8191,
                 ir = Yt >>> 13,
                 nr = tt[5] | 0,
                 Mr = nr & 8191,
@@ -15948,8 +15809,8 @@ bn$7.exports;
             var fr = (((pe + rt) | 0) + ((lt & 8191) << 13)) | 0;
             ((pe = (((ht + (lt >>> 13)) | 0) + (fr >>> 26)) | 0),
                 (fr &= 67108863),
-                (rt = Math.imul(_r, dr)),
-                (lt = Math.imul(_r, ar)),
+                (rt = Math.imul(xr, dr)),
+                (lt = Math.imul(xr, ar)),
                 (lt = (lt + Math.imul(ir, dr)) | 0),
                 (ht = Math.imul(ir, ar)),
                 (rt = (rt + Math.imul(kt, Fr)) | 0),
@@ -15975,8 +15836,8 @@ bn$7.exports;
                 (lt = Math.imul(Mr, ar)),
                 (lt = (lt + Math.imul(Ot, dr)) | 0),
                 (ht = Math.imul(Ot, ar)),
-                (rt = (rt + Math.imul(_r, Fr)) | 0),
-                (lt = (lt + Math.imul(_r, Zt)) | 0),
+                (rt = (rt + Math.imul(xr, Fr)) | 0),
+                (lt = (lt + Math.imul(xr, Zt)) | 0),
                 (lt = (lt + Math.imul(ir, Fr)) | 0),
                 (ht = (ht + Math.imul(ir, Zt)) | 0),
                 (rt = (rt + Math.imul(kt, Er)) | 0),
@@ -16006,8 +15867,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, Zt)) | 0),
                 (lt = (lt + Math.imul(Ot, Fr)) | 0),
                 (ht = (ht + Math.imul(Ot, Zt)) | 0),
-                (rt = (rt + Math.imul(_r, Er)) | 0),
-                (lt = (lt + Math.imul(_r, pr)) | 0),
+                (rt = (rt + Math.imul(xr, Er)) | 0),
+                (lt = (lt + Math.imul(xr, pr)) | 0),
                 (lt = (lt + Math.imul(ir, Er)) | 0),
                 (ht = (ht + Math.imul(ir, pr)) | 0),
                 (rt = (rt + Math.imul(kt, qr)) | 0),
@@ -16041,8 +15902,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, pr)) | 0),
                 (lt = (lt + Math.imul(Ot, Er)) | 0),
                 (ht = (ht + Math.imul(Ot, pr)) | 0),
-                (rt = (rt + Math.imul(_r, qr)) | 0),
-                (lt = (lt + Math.imul(_r, Pr)) | 0),
+                (rt = (rt + Math.imul(xr, qr)) | 0),
+                (lt = (lt + Math.imul(xr, Pr)) | 0),
                 (lt = (lt + Math.imul(ir, qr)) | 0),
                 (ht = (ht + Math.imul(ir, Pr)) | 0),
                 (rt = (rt + Math.imul(kt, ln)) | 0),
@@ -16080,8 +15941,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, Pr)) | 0),
                 (lt = (lt + Math.imul(Ot, qr)) | 0),
                 (ht = (ht + Math.imul(Ot, Pr)) | 0),
-                (rt = (rt + Math.imul(_r, ln)) | 0),
-                (lt = (lt + Math.imul(_r, Ar)) | 0),
+                (rt = (rt + Math.imul(xr, ln)) | 0),
+                (lt = (lt + Math.imul(xr, Ar)) | 0),
                 (lt = (lt + Math.imul(ir, ln)) | 0),
                 (ht = (ht + Math.imul(ir, Ar)) | 0),
                 (rt = (rt + Math.imul(kt, un)) | 0),
@@ -16123,8 +15984,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, Ar)) | 0),
                 (lt = (lt + Math.imul(Ot, ln)) | 0),
                 (ht = (ht + Math.imul(Ot, Ar)) | 0),
-                (rt = (rt + Math.imul(_r, un)) | 0),
-                (lt = (lt + Math.imul(_r, kr)) | 0),
+                (rt = (rt + Math.imul(xr, un)) | 0),
+                (lt = (lt + Math.imul(xr, kr)) | 0),
                 (lt = (lt + Math.imul(ir, un)) | 0),
                 (ht = (ht + Math.imul(ir, kr)) | 0),
                 (rt = (rt + Math.imul(kt, Lt)) | 0),
@@ -16166,8 +16027,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, kr)) | 0),
                 (lt = (lt + Math.imul(Ot, un)) | 0),
                 (ht = (ht + Math.imul(Ot, kr)) | 0),
-                (rt = (rt + Math.imul(_r, Lt)) | 0),
-                (lt = (lt + Math.imul(_r, zt)) | 0),
+                (rt = (rt + Math.imul(xr, Lt)) | 0),
+                (lt = (lt + Math.imul(xr, zt)) | 0),
                 (lt = (lt + Math.imul(ir, Lt)) | 0),
                 (ht = (ht + Math.imul(ir, zt)) | 0),
                 (rt = (rt + Math.imul(kt, Dt)) | 0),
@@ -16205,8 +16066,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, zt)) | 0),
                 (lt = (lt + Math.imul(Ot, Lt)) | 0),
                 (ht = (ht + Math.imul(Ot, zt)) | 0),
-                (rt = (rt + Math.imul(_r, Dt)) | 0),
-                (lt = (lt + Math.imul(_r, Gt)) | 0),
+                (rt = (rt + Math.imul(xr, Dt)) | 0),
+                (lt = (lt + Math.imul(xr, Gt)) | 0),
                 (lt = (lt + Math.imul(ir, Dt)) | 0),
                 (ht = (ht + Math.imul(ir, Gt)) | 0),
                 (rt = (rt + Math.imul(kt, Cr)) | 0),
@@ -16240,8 +16101,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, Gt)) | 0),
                 (lt = (lt + Math.imul(Ot, Dt)) | 0),
                 (ht = (ht + Math.imul(Ot, Gt)) | 0),
-                (rt = (rt + Math.imul(_r, Cr)) | 0),
-                (lt = (lt + Math.imul(_r, vr)) | 0),
+                (rt = (rt + Math.imul(xr, Cr)) | 0),
+                (lt = (lt + Math.imul(xr, vr)) | 0),
                 (lt = (lt + Math.imul(ir, Cr)) | 0),
                 (ht = (ht + Math.imul(ir, vr)) | 0),
                 (rt = (rt + Math.imul(kt, nn)) | 0),
@@ -16271,8 +16132,8 @@ bn$7.exports;
                 (lt = (lt + Math.imul(Mr, vr)) | 0),
                 (lt = (lt + Math.imul(Ot, Cr)) | 0),
                 (ht = (ht + Math.imul(Ot, vr)) | 0),
-                (rt = (rt + Math.imul(_r, nn)) | 0),
-                (lt = (lt + Math.imul(_r, tn)) | 0),
+                (rt = (rt + Math.imul(xr, nn)) | 0),
+                (lt = (lt + Math.imul(xr, tn)) | 0),
                 (lt = (lt + Math.imul(ir, nn)) | 0),
                 (ht = (ht + Math.imul(ir, tn)) | 0));
             var rn = (((pe + rt) | 0) + ((lt & 8191) << 13)) | 0;
@@ -56361,10 +56222,10 @@ var tryTypedArrays = function (y) {
         return X && _e(nr, xe);
     }
     b.isSymbolObject = Yt;
-    function _r(nr) {
+    function xr(nr) {
         return _t(nr) || Tt(nr) || kt(nr) || Wt(nr) || Yt(nr);
     }
-    b.isBoxedPrimitive = _r;
+    b.isBoxedPrimitive = xr;
     function ir(nr) {
         return typeof Uint8Array < "u" && (rt(nr) || Et(nr));
     }
@@ -57535,8 +57396,8 @@ function require_stream_writable$3() {
                 var kt = bt.chunk,
                     Wt = bt.encoding,
                     Yt = bt.callback,
-                    _r = gt.objectMode ? 1 : kt.length;
-                if ((fe(Et, gt, !1, _r, kt, Wt, Yt), (bt = bt.next), gt.bufferedRequestCount--, gt.writing)) break;
+                    xr = gt.objectMode ? 1 : kt.length;
+                if ((fe(Et, gt, !1, xr, kt, Wt, Yt), (bt = bt.next), gt.bufferedRequestCount--, gt.writing)) break;
             }
             bt === null && (gt.lastBufferedRequest = null);
         }
@@ -58234,8 +58095,8 @@ function require_stream_readable$3() {
         var Yt = At._readableState;
         if (_t === null) ((Yt.reading = !1), $e(At, Yt));
         else {
-            var _r;
-            if ((Wt || (_r = ne(Yt, _t)), _r)) ft(At, _r);
+            var xr;
+            if ((Wt || (xr = ne(Yt, _t)), xr)) ft(At, xr);
             else if (Yt.objectMode || (_t && _t.length > 0))
                 if (
                     (typeof _t != "string" &&
@@ -58414,8 +58275,8 @@ function require_stream_readable$3() {
             ((kt.pipesCount += 1), J("pipe count=%d opts=%j", kt.pipesCount, _t));
             var Wt = (!_t || _t.end !== !1) && At !== process$1.stdout && At !== process$1.stderr,
                 Yt = Wt ? ir : ur;
-            (kt.endEmitted ? process$1.nextTick(Yt) : Tt.once("end", Yt), At.on("unpipe", _r));
-            function _r(sr, hr) {
+            (kt.endEmitted ? process$1.nextTick(Yt) : Tt.once("end", Yt), At.on("unpipe", xr));
+            function xr(sr, hr) {
                 (J("onunpipe"), sr === Tt && hr && hr.hasUnpiped === !1 && ((hr.hasUnpiped = !0), Ot()));
             }
             function ir() {
@@ -58430,7 +58291,7 @@ function require_stream_readable$3() {
                     At.removeListener("finish", Ut),
                     At.removeListener("drain", nr),
                     At.removeListener("error", Xt),
-                    At.removeListener("unpipe", _r),
+                    At.removeListener("unpipe", xr),
                     Tt.removeListener("end", ir),
                     Tt.removeListener("end", ur),
                     Tt.removeListener("data", Rt),
@@ -58493,10 +58354,10 @@ function require_stream_readable$3() {
             for (var Yt = 0; Yt < Wt; Yt++) kt[Yt].emit("unpipe", this, { hasUnpiped: !1 });
             return this;
         }
-        var _r = Pt(_t.pipes, At);
-        return _r === -1
+        var xr = Pt(_t.pipes, At);
+        return xr === -1
             ? this
-            : (_t.pipes.splice(_r, 1),
+            : (_t.pipes.splice(xr, 1),
               (_t.pipesCount -= 1),
               _t.pipesCount === 1 && (_t.pipes = _t.pipes[0]),
               At.emit("unpipe", this, Tt),
@@ -58573,18 +58434,18 @@ function require_stream_readable$3() {
             kt = !1;
         (At.on("end", function () {
             if ((J("wrapped end"), Tt.decoder && !Tt.ended)) {
-                var _r = Tt.decoder.end();
-                _r && _r.length && _t.push(_r);
+                var xr = Tt.decoder.end();
+                xr && xr.length && _t.push(xr);
             }
             _t.push(null);
         }),
-            At.on("data", function (_r) {
+            At.on("data", function (xr) {
                 if (
                     (J("wrapped data"),
-                    Tt.decoder && (_r = Tt.decoder.write(_r)),
-                    !(Tt.objectMode && _r == null) && !(!Tt.objectMode && (!_r || !_r.length)))
+                    Tt.decoder && (xr = Tt.decoder.write(xr)),
+                    !(Tt.objectMode && xr == null) && !(!Tt.objectMode && (!xr || !xr.length)))
                 ) {
-                    var ir = _t.push(_r);
+                    var ir = _t.push(xr);
                     ir || ((kt = !0), At.pause());
                 }
             }));
@@ -58598,8 +58459,8 @@ function require_stream_readable$3() {
                 })(Wt));
         for (var Yt = 0; Yt < dt.length; Yt++) At.on(dt[Yt], this.emit.bind(this, dt[Yt]));
         return (
-            (this._read = function (_r) {
-                (J("wrapped _read", _r), kt && ((kt = !1), At.resume()));
+            (this._read = function (xr) {
+                (J("wrapped _read", xr), kt && ((kt = !1), At.resume()));
             }),
             this
         );
@@ -59581,8 +59442,8 @@ function require_stream_writable$2() {
                 var kt = bt.chunk,
                     Wt = bt.encoding,
                     Yt = bt.callback,
-                    _r = gt.objectMode ? 1 : kt.length;
-                if ((fe(Et, gt, !1, _r, kt, Wt, Yt), (bt = bt.next), gt.bufferedRequestCount--, gt.writing)) break;
+                    xr = gt.objectMode ? 1 : kt.length;
+                if ((fe(Et, gt, !1, xr, kt, Wt, Yt), (bt = bt.next), gt.bufferedRequestCount--, gt.writing)) break;
             }
             bt === null && (gt.lastBufferedRequest = null);
         }
@@ -60097,8 +59958,8 @@ function require_stream_readable$2() {
         var Yt = At._readableState;
         if (_t === null) ((Yt.reading = !1), $e(At, Yt));
         else {
-            var _r;
-            if ((Wt || (_r = ne(Yt, _t)), _r)) ft(At, _r);
+            var xr;
+            if ((Wt || (xr = ne(Yt, _t)), xr)) ft(At, xr);
             else if (Yt.objectMode || (_t && _t.length > 0))
                 if (
                     (typeof _t != "string" &&
@@ -60277,8 +60138,8 @@ function require_stream_readable$2() {
             ((kt.pipesCount += 1), J("pipe count=%d opts=%j", kt.pipesCount, _t));
             var Wt = (!_t || _t.end !== !1) && At !== process$1.stdout && At !== process$1.stderr,
                 Yt = Wt ? ir : ur;
-            (kt.endEmitted ? process$1.nextTick(Yt) : Tt.once("end", Yt), At.on("unpipe", _r));
-            function _r(sr, hr) {
+            (kt.endEmitted ? process$1.nextTick(Yt) : Tt.once("end", Yt), At.on("unpipe", xr));
+            function xr(sr, hr) {
                 (J("onunpipe"), sr === Tt && hr && hr.hasUnpiped === !1 && ((hr.hasUnpiped = !0), Ot()));
             }
             function ir() {
@@ -60293,7 +60154,7 @@ function require_stream_readable$2() {
                     At.removeListener("finish", Ut),
                     At.removeListener("drain", nr),
                     At.removeListener("error", Xt),
-                    At.removeListener("unpipe", _r),
+                    At.removeListener("unpipe", xr),
                     Tt.removeListener("end", ir),
                     Tt.removeListener("end", ur),
                     Tt.removeListener("data", Rt),
@@ -60356,10 +60217,10 @@ function require_stream_readable$2() {
             for (var Yt = 0; Yt < Wt; Yt++) kt[Yt].emit("unpipe", this, { hasUnpiped: !1 });
             return this;
         }
-        var _r = Pt(_t.pipes, At);
-        return _r === -1
+        var xr = Pt(_t.pipes, At);
+        return xr === -1
             ? this
-            : (_t.pipes.splice(_r, 1),
+            : (_t.pipes.splice(xr, 1),
               (_t.pipesCount -= 1),
               _t.pipesCount === 1 && (_t.pipes = _t.pipes[0]),
               At.emit("unpipe", this, Tt),
@@ -60436,18 +60297,18 @@ function require_stream_readable$2() {
             kt = !1;
         (At.on("end", function () {
             if ((J("wrapped end"), Tt.decoder && !Tt.ended)) {
-                var _r = Tt.decoder.end();
-                _r && _r.length && _t.push(_r);
+                var xr = Tt.decoder.end();
+                xr && xr.length && _t.push(xr);
             }
             _t.push(null);
         }),
-            At.on("data", function (_r) {
+            At.on("data", function (xr) {
                 if (
                     (J("wrapped data"),
-                    Tt.decoder && (_r = Tt.decoder.write(_r)),
-                    !(Tt.objectMode && _r == null) && !(!Tt.objectMode && (!_r || !_r.length)))
+                    Tt.decoder && (xr = Tt.decoder.write(xr)),
+                    !(Tt.objectMode && xr == null) && !(!Tt.objectMode && (!xr || !xr.length)))
                 ) {
-                    var ir = _t.push(_r);
+                    var ir = _t.push(xr);
                     ir || ((kt = !0), At.pause());
                 }
             }));
@@ -60461,8 +60322,8 @@ function require_stream_readable$2() {
                 })(Wt));
         for (var Yt = 0; Yt < dt.length; Yt++) At.on(dt[Yt], this.emit.bind(this, dt[Yt]));
         return (
-            (this._read = function (_r) {
-                (J("wrapped _read", _r), kt && ((kt = !1), At.resume()));
+            (this._read = function (xr) {
+                (J("wrapped _read", xr), kt && ((kt = !1), At.resume()));
             }),
             this
         );
@@ -63000,7 +62861,7 @@ var inspect$3 = objectInspect,
             if (typeof Xt > "u") throw new TypeError('The "domain" argument must be specified');
             return new xt("http://" + Xt).hostname;
         },
-        _r = function (Xt) {
+        xr = function (Xt) {
             if (typeof Xt > "u") throw new TypeError('The "domain" argument must be specified');
             return new xt("http://" + Xt).hostname;
         },
@@ -63049,7 +62910,7 @@ var inspect$3 = objectInspect,
             URL: xt,
             URLSearchParams: Et,
             domainToASCII: Yt,
-            domainToUnicode: _r,
+            domainToUnicode: xr,
             pathToFileURL: ir,
             fileURLToPath: nr,
         };
@@ -63058,7 +62919,7 @@ var inspect$3 = objectInspect,
         (y.Url = vt),
         (y.default = Ot),
         (y.domainToASCII = Yt),
-        (y.domainToUnicode = _r),
+        (y.domainToUnicode = xr),
         (y.fileURLToPath = nr),
         (y.format = Mr),
         (y.parse = lt),
@@ -71665,8 +71526,8 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
         for (let ir = 0; ir < Wt.length - 1; ++ir) if (Wt[ir] > 255) return O;
         if (Wt[Wt.length - 1] >= Math.pow(256, 5 - Wt.length)) return O;
         let Yt = Wt.pop(),
-            _r = 0;
-        for (const ir of Wt) ((Yt += ir * Math.pow(256, 3 - _r)), ++_r);
+            xr = 0;
+        for (const ir of Wt) ((Yt += ir * Math.pow(256, 3 - xr)), ++xr);
         return Yt;
     }
     function $e(Tt) {
@@ -71680,47 +71541,47 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
         const kt = [0, 0, 0, 0, 0, 0, 0, 0];
         let Wt = 0,
             Yt = null,
-            _r = 0;
-        if (((Tt = y.ucs2.decode(Tt)), Tt[_r] === 58)) {
-            if (Tt[_r + 1] !== 58) return O;
-            ((_r += 2), ++Wt, (Yt = Wt));
+            xr = 0;
+        if (((Tt = y.ucs2.decode(Tt)), Tt[xr] === 58)) {
+            if (Tt[xr + 1] !== 58) return O;
+            ((xr += 2), ++Wt, (Yt = Wt));
         }
-        for (; _r < Tt.length; ) {
+        for (; xr < Tt.length; ) {
             if (Wt === 8) return O;
-            if (Tt[_r] === 58) {
+            if (Tt[xr] === 58) {
                 if (Yt !== null) return O;
-                (++_r, ++Wt, (Yt = Wt));
+                (++xr, ++Wt, (Yt = Wt));
                 continue;
             }
             let ir = 0,
                 nr = 0;
-            for (; nr < 4 && te(Tt[_r]); ) ((ir = ir * 16 + parseInt(z(Tt, _r), 16)), ++_r, ++nr);
-            if (Tt[_r] === 46) {
-                if (nr === 0 || ((_r -= nr), Wt > 6)) return O;
+            for (; nr < 4 && te(Tt[xr]); ) ((ir = ir * 16 + parseInt(z(Tt, xr), 16)), ++xr, ++nr);
+            if (Tt[xr] === 46) {
+                if (nr === 0 || ((xr -= nr), Wt > 6)) return O;
                 let Mr = 0;
-                for (; Tt[_r] !== void 0; ) {
+                for (; Tt[xr] !== void 0; ) {
                     let Ot = null;
                     if (Mr > 0)
-                        if (Tt[_r] === 46 && Mr < 4) ++_r;
+                        if (Tt[xr] === 46 && Mr < 4) ++xr;
                         else return O;
-                    if (!X(Tt[_r])) return O;
-                    for (; X(Tt[_r]); ) {
-                        const Rt = parseInt(z(Tt, _r));
+                    if (!X(Tt[xr])) return O;
+                    for (; X(Tt[xr]); ) {
+                        const Rt = parseInt(z(Tt, xr));
                         if (Ot === null) Ot = Rt;
                         else {
                             if (Ot === 0) return O;
                             Ot = Ot * 10 + Rt;
                         }
                         if (Ot > 255) return O;
-                        ++_r;
+                        ++xr;
                     }
                     ((kt[Wt] = kt[Wt] * 256 + Ot), ++Mr, (Mr === 2 || Mr === 4) && ++Wt);
                 }
                 if (Mr !== 4) return O;
                 break;
-            } else if (Tt[_r] === 58) {
-                if ((++_r, Tt[_r] === void 0)) return O;
-            } else if (Tt[_r] !== void 0) return O;
+            } else if (Tt[xr] === 58) {
+                if ((++xr, Tt[xr] === void 0)) return O;
+            } else if (Tt[xr] !== void 0) return O;
             ((kt[Wt] = ir), ++Wt);
         }
         if (Yt !== null) {
@@ -71735,11 +71596,11 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
     function nt(Tt) {
         let kt = "";
         const Yt = rt(Tt).idx;
-        let _r = !1;
+        let xr = !1;
         for (let ir = 0; ir <= 7; ++ir)
-            if (!(_r && Tt[ir] === 0)) {
-                if ((_r && (_r = !1), Yt === ir)) {
-                    ((kt += ir === 0 ? "::" : ":"), (_r = !0));
+            if (!(xr && Tt[ir] === 0)) {
+                if ((xr && (xr = !1), Yt === ir)) {
+                    ((kt += ir === 0 ? "::" : ":"), (xr = !0));
                     continue;
                 }
                 ((kt += Tt[ir].toString(16)), ir !== 7 && (kt += ":"));
@@ -71752,8 +71613,8 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
         const Wt = yt(Tt),
             Yt = x.toASCII(Wt, !1, x.PROCESSING_OPTIONS.NONTRANSITIONAL, !1);
         if (Yt === null || Ke(Yt)) return O;
-        const _r = ye(Yt);
-        return typeof _r == "number" || _r === O ? _r : Yt;
+        const xr = ye(Yt);
+        return typeof xr == "number" || xr === O ? xr : Yt;
     }
     function pe(Tt) {
         if (et(Tt)) return O;
@@ -71766,12 +71627,12 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
         let kt = null,
             Wt = 1,
             Yt = null,
-            _r = 0;
+            xr = 0;
         for (let ir = 0; ir < Tt.length; ++ir)
             Tt[ir] !== 0
-                ? (_r > Wt && ((kt = Yt), (Wt = _r)), (Yt = null), (_r = 0))
-                : (Yt === null && (Yt = ir), ++_r);
-        return (_r > Wt && ((kt = Yt), (Wt = _r)), { idx: kt, len: Wt });
+                ? (xr > Wt && ((kt = Yt), (Wt = xr)), (Yt = null), (xr = 0))
+                : (Yt === null && (Yt = ir), ++xr);
+        return (xr > Wt && ((kt = Yt), (Wt = xr)), { idx: kt, len: Wt });
     }
     function lt(Tt) {
         return typeof Tt == "number" ? $e(Tt) : Tt instanceof Array ? "[" + nt(Tt) + "]" : Tt;
@@ -71795,13 +71656,13 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
     function bt(Tt) {
         return /^[A-Za-z]:$/.test(Tt);
     }
-    function wt(Tt, kt, Wt, Yt, _r) {
+    function wt(Tt, kt, Wt, Yt, xr) {
         if (
             ((this.pointer = 0),
             (this.input = Tt),
             (this.base = kt || null),
             (this.encodingOverride = Wt || "utf-8"),
-            (this.stateOverride = _r),
+            (this.stateOverride = xr),
             (this.url = Yt),
             (this.failure = !1),
             (this.parseError = !1),
@@ -71825,7 +71686,7 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
         for (
             ir !== this.input && (this.parseError = !0),
                 this.input = ir,
-                this.state = _r || "scheme start",
+                this.state = xr || "scheme start",
                 this.buffer = "",
                 this.atFlag = !1,
                 this.arrFlag = !1,
@@ -71977,8 +71838,8 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
             if (kt === 64) {
                 ((this.parseError = !0), this.atFlag && (this.buffer = "%40" + this.buffer), (this.atFlag = !0));
                 const Yt = U(this.buffer);
-                for (let _r = 0; _r < Yt; ++_r) {
-                    const ir = this.buffer.codePointAt(_r);
+                for (let xr = 0; xr < Yt; ++xr) {
+                    const ir = this.buffer.codePointAt(xr);
                     if (ir === 58 && !this.passwordTokenSeenFlag) {
                         this.passwordTokenSeenFlag = !0;
                         continue;
@@ -72172,10 +72033,10 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
                 (!st(this.url) || this.url.scheme === "ws" || this.url.scheme === "wss") &&
                     (this.encodingOverride = "utf-8");
                 const Yt = new Buffer$1(this.buffer);
-                for (let _r = 0; _r < Yt.length; ++_r)
-                    Yt[_r] < 33 || Yt[_r] > 126 || Yt[_r] === 34 || Yt[_r] === 35 || Yt[_r] === 60 || Yt[_r] === 62
-                        ? (this.url.query += ft(Yt[_r]))
-                        : (this.url.query += String.fromCodePoint(Yt[_r]));
+                for (let xr = 0; xr < Yt.length; ++xr)
+                    Yt[xr] < 33 || Yt[xr] > 126 || Yt[xr] === 34 || Yt[xr] === 35 || Yt[xr] === 60 || Yt[xr] === 62
+                        ? (this.url.query += ft(Yt[xr]))
+                        : (this.url.query += String.fromCodePoint(Yt[xr]));
                 ((this.buffer = ""), kt === 35 && ((this.url.fragment = ""), (this.state = "fragment")));
             } else
                 (kt === 37 &&
@@ -73076,9 +72937,9 @@ function requireAssertion_error() {
             ((kt = bt[bt.length - 1]), (Wt = wt[wt.length - 1]));
         var Yt = Math.max(bt.length, wt.length);
         if (Yt === 0) {
-            var _r = gt.split(`
+            var xr = gt.split(`
 `);
-            if (_r.length > 30) for (_r[26] = "".concat(ct, "...").concat(ne); _r.length > 27; ) _r.pop();
+            if (xr.length > 30) for (xr[26] = "".concat(ct, "...").concat(ne); xr.length > 27; ) xr.pop();
             return ""
                 .concat(
                     fe.notIdentical,
@@ -73087,7 +72948,7 @@ function requireAssertion_error() {
 `
                 )
                 .concat(
-                    _r.join(`
+                    xr.join(`
 `),
                     `
 `
@@ -74004,7 +73865,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
         var sr = Wt(ur);
         return sr ?? (Ut.has(sr) && !Ct.has(sr));
     }
-    function _r(Ct, Ut, ur, sr, hr) {
+    function xr(Ct, Ut, ur, sr, hr) {
         var $r = Wt(ur);
         if ($r != null) return $r;
         var Nt = Ut.get($r);
@@ -74046,7 +73907,7 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
             else {
                 var er = Ut.get($t);
                 if ((er === void 0 && !Ut.has($t)) || !At(Bt, er, ur, sr)) {
-                    if (ur || !_r(Ct, Ut, $t, Bt, sr)) return !1;
+                    if (ur || !xr(Ct, Ut, $t, Bt, sr)) return !1;
                     (hr === null && (hr = new Set()), hr.add($t));
                 }
             }
@@ -98888,7 +98749,7 @@ function require_stream_readable$1() {
                 _t = At ? kt : Xt;
             (Pt.endEmitted ? b.nextTick(_t) : wt.once("end", _t), gt.on("unpipe", Tt));
             function Tt(Ct, Ut) {
-                (ae("onunpipe"), Ct === wt && Ut && Ut.hasUnpiped === !1 && ((Ut.hasUnpiped = !0), _r()));
+                (ae("onunpipe"), Ct === wt && Ut && Ut.hasUnpiped === !1 && ((Ut.hasUnpiped = !0), xr()));
             }
             function kt() {
                 (ae("onend"), gt.end());
@@ -98896,7 +98757,7 @@ function require_stream_readable$1() {
             var Wt = ye(wt);
             gt.on("drain", Wt);
             var Yt = !1;
-            function _r() {
+            function xr() {
                 (ae("cleanup"),
                     gt.removeListener("close", Ot),
                     gt.removeListener("finish", Rt),
@@ -99927,7 +99788,7 @@ function requireSha512() {
                     kt = J(ct, et),
                     Wt = ee(ft, fe),
                     Yt = ee(fe, ft),
-                    _r = A[Pt],
+                    xr = A[Pt],
                     ir = A[Pt + 1],
                     nr = z(ft, dt, yt),
                     Mr = z(fe, oe, ye),
@@ -99936,7 +99797,7 @@ function requireSha512() {
                 ((Ot = (Ot + Mr) | 0),
                     (Rt = (Rt + nr + _e(Ot, Mr)) | 0),
                     (Ot = (Ot + ir) | 0),
-                    (Rt = (Rt + _r + _e(Ot, ir)) | 0),
+                    (Rt = (Rt + xr + _e(Ot, ir)) | 0),
                     (Ot = (Ot + bt) | 0),
                     (Rt = (Rt + wt + _e(Ot, bt)) | 0));
                 var Xt = (kt + _t) | 0,
@@ -102384,9 +102245,9 @@ function requireBn$4() {
                             kt = ye[4] | 0,
                             Wt = kt & 8191,
                             Yt = kt >>> 13,
-                            _r = ye[5] | 0,
-                            ir = _r & 8191,
-                            nr = _r >>> 13,
+                            xr = ye[5] | 0,
+                            ir = xr & 8191,
+                            nr = xr >>> 13,
                             Mr = ye[6] | 0,
                             Ot = Mr & 8191,
                             Rt = Mr >>> 13,
@@ -104447,9 +104308,9 @@ function requireBn$3() {
                             kt = ye[4] | 0,
                             Wt = kt & 8191,
                             Yt = kt >>> 13,
-                            _r = ye[5] | 0,
-                            ir = _r & 8191,
-                            nr = _r >>> 13,
+                            xr = ye[5] | 0,
+                            ir = xr & 8191,
+                            nr = xr >>> 13,
                             Mr = ye[6] | 0,
                             Ot = Mr & 8191,
                             Rt = Mr >>> 13,
@@ -107204,7 +107065,7 @@ function require_stream_readable() {
                 _t = At ? kt : Xt;
             (Pt.endEmitted ? b.nextTick(_t) : wt.once("end", _t), gt.on("unpipe", Tt));
             function Tt(Ct, Ut) {
-                (ae("onunpipe"), Ct === wt && Ut && Ut.hasUnpiped === !1 && ((Ut.hasUnpiped = !0), _r()));
+                (ae("onunpipe"), Ct === wt && Ut && Ut.hasUnpiped === !1 && ((Ut.hasUnpiped = !0), xr()));
             }
             function kt() {
                 (ae("onend"), gt.end());
@@ -107212,7 +107073,7 @@ function require_stream_readable() {
             var Wt = ye(wt);
             gt.on("drain", Wt);
             var Yt = !1;
-            function _r() {
+            function xr() {
                 (ae("cleanup"),
                     gt.removeListener("close", Ot),
                     gt.removeListener("finish", Rt),
@@ -108118,9 +107979,9 @@ bn$4.exports;
                 kt = ye[4] | 0,
                 Wt = kt & 8191,
                 Yt = kt >>> 13,
-                _r = ye[5] | 0,
-                ir = _r & 8191,
-                nr = _r >>> 13,
+                xr = ye[5] | 0,
+                ir = xr & 8191,
+                nr = xr >>> 13,
                 Mr = ye[6] | 0,
                 Ot = Mr & 8191,
                 Rt = Mr >>> 13,
@@ -113586,9 +113447,9 @@ function requireBn$2() {
                             kt = ye[4] | 0,
                             Wt = kt & 8191,
                             Yt = kt >>> 13,
-                            _r = ye[5] | 0,
-                            ir = _r & 8191,
-                            nr = _r >>> 13,
+                            xr = ye[5] | 0,
+                            ir = xr & 8191,
+                            nr = xr >>> 13,
                             Mr = ye[6] | 0,
                             Ot = Mr & 8191,
                             Rt = Mr >>> 13,
@@ -117589,9 +117450,9 @@ function requireBn$1() {
                             kt = ye[4] | 0,
                             Wt = kt & 8191,
                             Yt = kt >>> 13,
-                            _r = ye[5] | 0,
-                            ir = _r & 8191,
-                            nr = _r >>> 13,
+                            xr = ye[5] | 0,
+                            ir = xr & 8191,
+                            nr = xr >>> 13,
                             Mr = ye[6] | 0,
                             Ot = Mr & 8191,
                             Rt = Mr >>> 13,
@@ -119752,9 +119613,9 @@ function requireBn() {
                             kt = ye[4] | 0,
                             Wt = kt & 8191,
                             Yt = kt >>> 13,
-                            _r = ye[5] | 0,
-                            ir = _r & 8191,
-                            nr = _r >>> 13,
+                            xr = ye[5] | 0,
+                            ir = xr & 8191,
+                            nr = xr >>> 13,
                             Mr = ye[6] | 0,
                             Ot = Mr & 8191,
                             Rt = Mr >>> 13,
@@ -121660,75 +121521,75 @@ https://github.com/browserify/crypto-browserify`);
                     dn = Dr,
                     vn = zr,
                     En = Gr,
-                    xr,
+                    _r,
                     xn = 0;
                 xn < 20;
                 xn += 2
             )
-                ((xr = (Vr + mn) | 0),
-                    (rn ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (rn + Vr) | 0),
-                    (Jr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Jr + rn) | 0),
-                    (mn ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (mn + Jr) | 0),
-                    (Vr ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (en + Hr) | 0),
-                    (jr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (jr + en) | 0),
-                    (dn ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (dn + jr) | 0),
-                    (Hr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (Hr + dn) | 0),
-                    (en ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (sn + Nr) | 0),
-                    (vn ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (vn + sn) | 0),
-                    (Kr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Kr + vn) | 0),
-                    (Nr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (Nr + Kr) | 0),
-                    (sn ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (En + an) | 0),
-                    (Wr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (Wr + En) | 0),
-                    (Ur ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Ur + Wr) | 0),
-                    (an ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (an + Ur) | 0),
-                    (En ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (Vr + Wr) | 0),
-                    (Hr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (Hr + Vr) | 0),
-                    (Kr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Kr + Hr) | 0),
-                    (Wr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (Wr + Kr) | 0),
-                    (Vr ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (en + rn) | 0),
-                    (Nr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (Nr + en) | 0),
-                    (Ur ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Ur + Nr) | 0),
-                    (rn ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (rn + Ur) | 0),
-                    (en ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (sn + jr) | 0),
-                    (an ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (an + sn) | 0),
-                    (Jr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Jr + an) | 0),
-                    (jr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (jr + Jr) | 0),
-                    (sn ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (En + vn) | 0),
-                    (mn ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (mn + En) | 0),
-                    (dn ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (dn + mn) | 0),
-                    (vn ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (vn + dn) | 0),
-                    (En ^= (xr << 18) | (xr >>> 14)));
+                ((_r = (Vr + mn) | 0),
+                    (rn ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (rn + Vr) | 0),
+                    (Jr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Jr + rn) | 0),
+                    (mn ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (mn + Jr) | 0),
+                    (Vr ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (en + Hr) | 0),
+                    (jr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (jr + en) | 0),
+                    (dn ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (dn + jr) | 0),
+                    (Hr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (Hr + dn) | 0),
+                    (en ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (sn + Nr) | 0),
+                    (vn ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (vn + sn) | 0),
+                    (Kr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Kr + vn) | 0),
+                    (Nr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (Nr + Kr) | 0),
+                    (sn ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (En + an) | 0),
+                    (Wr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (Wr + En) | 0),
+                    (Ur ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Ur + Wr) | 0),
+                    (an ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (an + Ur) | 0),
+                    (En ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (Vr + Wr) | 0),
+                    (Hr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (Hr + Vr) | 0),
+                    (Kr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Kr + Hr) | 0),
+                    (Wr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (Wr + Kr) | 0),
+                    (Vr ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (en + rn) | 0),
+                    (Nr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (Nr + en) | 0),
+                    (Ur ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Ur + Nr) | 0),
+                    (rn ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (rn + Ur) | 0),
+                    (en ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (sn + jr) | 0),
+                    (an ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (an + sn) | 0),
+                    (Jr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Jr + an) | 0),
+                    (jr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (jr + Jr) | 0),
+                    (sn ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (En + vn) | 0),
+                    (mn ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (mn + En) | 0),
+                    (dn ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (dn + mn) | 0),
+                    (vn ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (vn + dn) | 0),
+                    (En ^= (_r << 18) | (_r >>> 14)));
             ((Vr = (Vr + Gt) | 0),
                 (Hr = (Hr + gr) | 0),
                 (Kr = (Kr + Cr) | 0),
@@ -121844,75 +121705,75 @@ https://github.com/browserify/crypto-browserify`);
                     dn = Dr,
                     vn = zr,
                     En = Gr,
-                    xr,
+                    _r,
                     xn = 0;
                 xn < 20;
                 xn += 2
             )
-                ((xr = (Vr + mn) | 0),
-                    (rn ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (rn + Vr) | 0),
-                    (Jr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Jr + rn) | 0),
-                    (mn ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (mn + Jr) | 0),
-                    (Vr ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (en + Hr) | 0),
-                    (jr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (jr + en) | 0),
-                    (dn ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (dn + jr) | 0),
-                    (Hr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (Hr + dn) | 0),
-                    (en ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (sn + Nr) | 0),
-                    (vn ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (vn + sn) | 0),
-                    (Kr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Kr + vn) | 0),
-                    (Nr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (Nr + Kr) | 0),
-                    (sn ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (En + an) | 0),
-                    (Wr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (Wr + En) | 0),
-                    (Ur ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Ur + Wr) | 0),
-                    (an ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (an + Ur) | 0),
-                    (En ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (Vr + Wr) | 0),
-                    (Hr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (Hr + Vr) | 0),
-                    (Kr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Kr + Hr) | 0),
-                    (Wr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (Wr + Kr) | 0),
-                    (Vr ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (en + rn) | 0),
-                    (Nr ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (Nr + en) | 0),
-                    (Ur ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Ur + Nr) | 0),
-                    (rn ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (rn + Ur) | 0),
-                    (en ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (sn + jr) | 0),
-                    (an ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (an + sn) | 0),
-                    (Jr ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (Jr + an) | 0),
-                    (jr ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (jr + Jr) | 0),
-                    (sn ^= (xr << 18) | (xr >>> 14)),
-                    (xr = (En + vn) | 0),
-                    (mn ^= (xr << 7) | (xr >>> 25)),
-                    (xr = (mn + En) | 0),
-                    (dn ^= (xr << 9) | (xr >>> 23)),
-                    (xr = (dn + mn) | 0),
-                    (vn ^= (xr << 13) | (xr >>> 19)),
-                    (xr = (vn + dn) | 0),
-                    (En ^= (xr << 18) | (xr >>> 14)));
+                ((_r = (Vr + mn) | 0),
+                    (rn ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (rn + Vr) | 0),
+                    (Jr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Jr + rn) | 0),
+                    (mn ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (mn + Jr) | 0),
+                    (Vr ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (en + Hr) | 0),
+                    (jr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (jr + en) | 0),
+                    (dn ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (dn + jr) | 0),
+                    (Hr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (Hr + dn) | 0),
+                    (en ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (sn + Nr) | 0),
+                    (vn ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (vn + sn) | 0),
+                    (Kr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Kr + vn) | 0),
+                    (Nr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (Nr + Kr) | 0),
+                    (sn ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (En + an) | 0),
+                    (Wr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (Wr + En) | 0),
+                    (Ur ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Ur + Wr) | 0),
+                    (an ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (an + Ur) | 0),
+                    (En ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (Vr + Wr) | 0),
+                    (Hr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (Hr + Vr) | 0),
+                    (Kr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Kr + Hr) | 0),
+                    (Wr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (Wr + Kr) | 0),
+                    (Vr ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (en + rn) | 0),
+                    (Nr ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (Nr + en) | 0),
+                    (Ur ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Ur + Nr) | 0),
+                    (rn ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (rn + Ur) | 0),
+                    (en ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (sn + jr) | 0),
+                    (an ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (an + sn) | 0),
+                    (Jr ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (Jr + an) | 0),
+                    (jr ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (jr + Jr) | 0),
+                    (sn ^= (_r << 18) | (_r >>> 14)),
+                    (_r = (En + vn) | 0),
+                    (mn ^= (_r << 7) | (_r >>> 25)),
+                    (_r = (mn + En) | 0),
+                    (dn ^= (_r << 9) | (_r >>> 23)),
+                    (_r = (dn + mn) | 0),
+                    (vn ^= (_r << 13) | (_r >>> 19)),
+                    (_r = (vn + dn) | 0),
+                    (En ^= (_r << 18) | (_r >>> 14)));
             ((Lt[0] = (Vr >>> 0) & 255),
                 (Lt[1] = (Vr >>> 8) & 255),
                 (Lt[2] = (Vr >>> 16) & 255),
@@ -122067,7 +121928,7 @@ https://github.com/browserify/crypto-browserify`);
                     dn = this.r[0],
                     vn = this.r[1],
                     En = this.r[2],
-                    xr = this.r[3],
+                    _r = this.r[3],
                     xn = this.r[4],
                     An = this.r[5],
                     yn = this.r[6],
@@ -122105,7 +121966,7 @@ https://github.com/browserify/crypto-browserify`);
                     (wr &= 8191),
                     (wr += Jr * (5 * An)),
                     (wr += jr * (5 * xn)),
-                    (wr += sn * (5 * xr)),
+                    (wr += sn * (5 * _r)),
                     (wr += an * (5 * En)),
                     (wr += mn * (5 * vn)),
                     (tr += wr >>> 13),
@@ -122121,7 +121982,7 @@ https://github.com/browserify/crypto-browserify`);
                     (fr += Jr * (5 * yn)),
                     (fr += jr * (5 * An)),
                     (fr += sn * (5 * xn)),
-                    (fr += an * (5 * xr)),
+                    (fr += an * (5 * _r)),
                     (fr += mn * (5 * En)),
                     (tr += fr >>> 13),
                     (fr &= 8191),
@@ -122137,11 +121998,11 @@ https://github.com/browserify/crypto-browserify`);
                     (Sr += jr * (5 * yn)),
                     (Sr += sn * (5 * An)),
                     (Sr += an * (5 * xn)),
-                    (Sr += mn * (5 * xr)),
+                    (Sr += mn * (5 * _r)),
                     (tr += Sr >>> 13),
                     (Sr &= 8191),
                     (yr = tr),
-                    (yr += Wr * xr),
+                    (yr += Wr * _r),
                     (yr += rn * En),
                     (yr += en * vn),
                     (yr += Nr * dn),
@@ -122157,7 +122018,7 @@ https://github.com/browserify/crypto-browserify`);
                     (yr &= 8191),
                     (Dr = tr),
                     (Dr += Wr * xn),
-                    (Dr += rn * xr),
+                    (Dr += rn * _r),
                     (Dr += en * En),
                     (Dr += Nr * vn),
                     (Dr += Ur * dn),
@@ -122173,7 +122034,7 @@ https://github.com/browserify/crypto-browserify`);
                     (zr = tr),
                     (zr += Wr * An),
                     (zr += rn * xn),
-                    (zr += en * xr),
+                    (zr += en * _r),
                     (zr += Nr * En),
                     (zr += Ur * vn),
                     (tr = zr >>> 13),
@@ -122189,7 +122050,7 @@ https://github.com/browserify/crypto-browserify`);
                     (Gr += Wr * yn),
                     (Gr += rn * An),
                     (Gr += en * xn),
-                    (Gr += Nr * xr),
+                    (Gr += Nr * _r),
                     (Gr += Ur * En),
                     (tr = Gr >>> 13),
                     (Gr &= 8191),
@@ -122205,7 +122066,7 @@ https://github.com/browserify/crypto-browserify`);
                     (Vr += rn * yn),
                     (Vr += en * An),
                     (Vr += Nr * xn),
-                    (Vr += Ur * xr),
+                    (Vr += Ur * _r),
                     (tr = Vr >>> 13),
                     (Vr &= 8191),
                     (Vr += Jr * En),
@@ -122223,7 +122084,7 @@ https://github.com/browserify/crypto-browserify`);
                     (Hr += Ur * xn),
                     (tr = Hr >>> 13),
                     (Hr &= 8191),
-                    (Hr += Jr * xr),
+                    (Hr += Jr * _r),
                     (Hr += jr * En),
                     (Hr += sn * vn),
                     (Hr += an * dn),
@@ -122239,7 +122100,7 @@ https://github.com/browserify/crypto-browserify`);
                     (tr = Kr >>> 13),
                     (Kr &= 8191),
                     (Kr += Jr * xn),
-                    (Kr += jr * xr),
+                    (Kr += jr * _r),
                     (Kr += sn * En),
                     (Kr += an * vn),
                     (Kr += mn * dn),
@@ -122457,7 +122318,7 @@ https://github.com/browserify/crypto-browserify`);
                 dn = 0,
                 vn = 0,
                 En = 0,
-                xr = Ht[0],
+                _r = Ht[0],
                 xn = Ht[1],
                 An = Ht[2],
                 yn = Ht[3],
@@ -122474,7 +122335,7 @@ https://github.com/browserify/crypto-browserify`);
                 Ln = Ht[14],
                 Hn = Ht[15];
             ((Dt = zt[0]),
-                (gr += Dt * xr),
+                (gr += Dt * _r),
                 (Cr += Dt * xn),
                 (vr += Dt * An),
                 (Ir += Dt * yn),
@@ -122491,7 +122352,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Gr += Dt * Ln),
                 (Vr += Dt * Hn),
                 (Dt = zt[1]),
-                (Cr += Dt * xr),
+                (Cr += Dt * _r),
                 (vr += Dt * xn),
                 (Ir += Dt * An),
                 (nn += Dt * yn),
@@ -122508,7 +122369,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Vr += Dt * Ln),
                 (Hr += Dt * Hn),
                 (Dt = zt[2]),
-                (vr += Dt * xr),
+                (vr += Dt * _r),
                 (Ir += Dt * xn),
                 (nn += Dt * An),
                 (tn += Dt * yn),
@@ -122525,7 +122386,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Hr += Dt * Ln),
                 (Kr += Dt * Hn),
                 (Dt = zt[3]),
-                (Ir += Dt * xr),
+                (Ir += Dt * _r),
                 (nn += Dt * xn),
                 (tn += Dt * An),
                 (pn += Dt * yn),
@@ -122542,7 +122403,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Kr += Dt * Ln),
                 (Wr += Dt * Hn),
                 (Dt = zt[4]),
-                (nn += Dt * xr),
+                (nn += Dt * _r),
                 (tn += Dt * xn),
                 (pn += Dt * An),
                 (tr += Dt * yn),
@@ -122559,7 +122420,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Wr += Dt * Ln),
                 (rn += Dt * Hn),
                 (Dt = zt[5]),
-                (tn += Dt * xr),
+                (tn += Dt * _r),
                 (pn += Dt * xn),
                 (tr += Dt * An),
                 (wr += Dt * yn),
@@ -122576,7 +122437,7 @@ https://github.com/browserify/crypto-browserify`);
                 (rn += Dt * Ln),
                 (en += Dt * Hn),
                 (Dt = zt[6]),
-                (pn += Dt * xr),
+                (pn += Dt * _r),
                 (tr += Dt * xn),
                 (wr += Dt * An),
                 (fr += Dt * yn),
@@ -122593,7 +122454,7 @@ https://github.com/browserify/crypto-browserify`);
                 (en += Dt * Ln),
                 (Nr += Dt * Hn),
                 (Dt = zt[7]),
-                (tr += Dt * xr),
+                (tr += Dt * _r),
                 (wr += Dt * xn),
                 (fr += Dt * An),
                 (Sr += Dt * yn),
@@ -122610,7 +122471,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Nr += Dt * Ln),
                 (Ur += Dt * Hn),
                 (Dt = zt[8]),
-                (wr += Dt * xr),
+                (wr += Dt * _r),
                 (fr += Dt * xn),
                 (Sr += Dt * An),
                 (yr += Dt * yn),
@@ -122627,7 +122488,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Ur += Dt * Ln),
                 (Jr += Dt * Hn),
                 (Dt = zt[9]),
-                (fr += Dt * xr),
+                (fr += Dt * _r),
                 (Sr += Dt * xn),
                 (yr += Dt * An),
                 (Dr += Dt * yn),
@@ -122644,7 +122505,7 @@ https://github.com/browserify/crypto-browserify`);
                 (Jr += Dt * Ln),
                 (jr += Dt * Hn),
                 (Dt = zt[10]),
-                (Sr += Dt * xr),
+                (Sr += Dt * _r),
                 (yr += Dt * xn),
                 (Dr += Dt * An),
                 (zr += Dt * yn),
@@ -122661,7 +122522,7 @@ https://github.com/browserify/crypto-browserify`);
                 (jr += Dt * Ln),
                 (sn += Dt * Hn),
                 (Dt = zt[11]),
-                (yr += Dt * xr),
+                (yr += Dt * _r),
                 (Dr += Dt * xn),
                 (zr += Dt * An),
                 (Gr += Dt * yn),
@@ -122678,7 +122539,7 @@ https://github.com/browserify/crypto-browserify`);
                 (sn += Dt * Ln),
                 (an += Dt * Hn),
                 (Dt = zt[12]),
-                (Dr += Dt * xr),
+                (Dr += Dt * _r),
                 (zr += Dt * xn),
                 (Gr += Dt * An),
                 (Vr += Dt * yn),
@@ -122695,7 +122556,7 @@ https://github.com/browserify/crypto-browserify`);
                 (an += Dt * Ln),
                 (mn += Dt * Hn),
                 (Dt = zt[13]),
-                (zr += Dt * xr),
+                (zr += Dt * _r),
                 (Gr += Dt * xn),
                 (Vr += Dt * An),
                 (Hr += Dt * yn),
@@ -122712,7 +122573,7 @@ https://github.com/browserify/crypto-browserify`);
                 (mn += Dt * Ln),
                 (dn += Dt * Hn),
                 (Dt = zt[14]),
-                (Gr += Dt * xr),
+                (Gr += Dt * _r),
                 (Vr += Dt * xn),
                 (Hr += Dt * An),
                 (Kr += Dt * yn),
@@ -122729,7 +122590,7 @@ https://github.com/browserify/crypto-browserify`);
                 (dn += Dt * Ln),
                 (vn += Dt * Hn),
                 (Dt = zt[15]),
-                (Vr += Dt * xr),
+                (Vr += Dt * _r),
                 (Hr += Dt * xn),
                 (Kr += Dt * An),
                 (Wr += Dt * yn),
@@ -122958,7 +122819,7 @@ https://github.com/browserify/crypto-browserify`);
             var Cr = new Uint8Array(32);
             return (_t(Cr, Gt, gr), kt(Lt, zt, Ht, Dt, Cr));
         }
-        var _r = [
+        var xr = [
             1116352408, 3609767458, 1899447441, 602891725, 3049323471, 3964484399, 3921009573, 2173295548, 961987163,
             4081628472, 1508970993, 3053834265, 2453635748, 2937671579, 2870763221, 3664609560, 3624381080, 2734883394,
             310598401, 1164996542, 607225278, 1323610764, 1426881987, 3590304994, 1925078388, 4068182383, 2162078206,
@@ -123012,7 +122873,7 @@ https://github.com/browserify/crypto-browserify`);
                     dn = Lt[1],
                     vn = Lt[2],
                     En = Lt[3],
-                    xr = Lt[4],
+                    _r = Lt[4],
                     xn = Lt[5],
                     An = Lt[6],
                     yn = Lt[7],
@@ -123037,7 +122898,7 @@ https://github.com/browserify/crypto-browserify`);
                         (vr = dn),
                         (Ir = vn),
                         (nn = En),
-                        (tn = xr),
+                        (tn = _r),
                         (pn = xn),
                         (tr = An),
                         (wr = yn),
@@ -123055,20 +122916,20 @@ https://github.com/browserify/crypto-browserify`);
                         (jr = Ur >>> 16),
                         (sn = Nr & 65535),
                         (an = Nr >>> 16),
-                        (Nr = ((xr >>> 14) | (Mn << 18)) ^ ((xr >>> 18) | (Mn << 14)) ^ ((Mn >>> 9) | (xr << 23))),
-                        (Ur = ((Mn >>> 14) | (xr << 18)) ^ ((Mn >>> 18) | (xr << 14)) ^ ((xr >>> 9) | (Mn << 23))),
+                        (Nr = ((_r >>> 14) | (Mn << 18)) ^ ((_r >>> 18) | (Mn << 14)) ^ ((Mn >>> 9) | (_r << 23))),
+                        (Ur = ((Mn >>> 14) | (_r << 18)) ^ ((Mn >>> 18) | (_r << 14)) ^ ((_r >>> 9) | (Mn << 23))),
                         (Jr += Ur & 65535),
                         (jr += Ur >>> 16),
                         (sn += Nr & 65535),
                         (an += Nr >>> 16),
-                        (Nr = (xr & xn) ^ (~xr & An)),
+                        (Nr = (_r & xn) ^ (~_r & An)),
                         (Ur = (Mn & Nn) ^ (~Mn & Bn)),
                         (Jr += Ur & 65535),
                         (jr += Ur >>> 16),
                         (sn += Nr & 65535),
                         (an += Nr >>> 16),
-                        (Nr = _r[rn * 2]),
-                        (Ur = _r[rn * 2 + 1]),
+                        (Nr = xr[rn * 2]),
+                        (Ur = xr[rn * 2 + 1]),
                         (Jr += Ur & 65535),
                         (jr += Ur >>> 16),
                         (sn += Nr & 65535),
@@ -123127,7 +122988,7 @@ https://github.com/browserify/crypto-browserify`);
                         (dn = Cr),
                         (vn = vr),
                         (En = Ir),
-                        (xr = nn),
+                        (_r = nn),
                         (xn = tn),
                         (An = pn),
                         (yn = tr),
@@ -123246,7 +123107,7 @@ https://github.com/browserify/crypto-browserify`);
                     (an += sn >>> 16),
                     (Lt[3] = En = (sn & 65535) | (an << 16)),
                     (zt[3] = kn = (Jr & 65535) | (jr << 16)),
-                    (Nr = xr),
+                    (Nr = _r),
                     (Ur = Mn),
                     (Jr = Ur & 65535),
                     (jr = Ur >>> 16),
@@ -123261,7 +123122,7 @@ https://github.com/browserify/crypto-browserify`);
                     (jr += Jr >>> 16),
                     (sn += jr >>> 16),
                     (an += sn >>> 16),
-                    (Lt[4] = xr = (sn & 65535) | (an << 16)),
+                    (Lt[4] = _r = (sn & 65535) | (an << 16)),
                     (zt[4] = Mn = (Jr & 65535) | (jr << 16)),
                     (Nr = xn),
                     (Ur = Nn),
@@ -124145,7 +124006,7 @@ var sha512$1 = { exports: {} };
                     kt,
                     Wt,
                     Yt,
-                    _r,
+                    xr,
                     ir,
                     nr,
                     Mr,
@@ -124273,9 +124134,9 @@ var sha512$1 = { exports: {} };
                         (Et = ((rr >>> 14) | (Er << 18)) ^ ((rr >>> 18) | (Er << 14)) ^ ((Er >>> 9) | (rr << 23))),
                         (gt = ((Er >>> 14) | (rr << 18)) ^ ((Er >>> 18) | (rr << 14)) ^ ((rr >>> 9) | (Er << 23))),
                         (Yt = $t & er),
-                        (_r = Bt & dr),
+                        (xr = Bt & dr),
                         (Mr = Yt ^ ($t & hr) ^ kt),
-                        (Ot = _r ^ (Bt & $r) ^ Wt),
+                        (Ot = xr ^ (Bt & $r) ^ Wt),
                         (ur = (rr & pr) ^ (~rr & ar)),
                         (sr = (Er & Rr) ^ (~Er & br)),
                         (Rt = lt[ht + 4]),
@@ -124313,7 +124174,7 @@ var sha512$1 = { exports: {} };
                         (ir = Nt & $t),
                         (nr = St & Bt),
                         (Mr = ir ^ (Nt & er) ^ Yt),
-                        (Ot = nr ^ (St & dr) ^ _r),
+                        (Ot = nr ^ (St & dr) ^ xr),
                         (ur = (Fr & rr) ^ (~Fr & pr)),
                         (sr = (Zt & Er) ^ (~Zt & Rr)),
                         (Rt = lt[ht + 6]),
@@ -126623,7 +126484,7 @@ const scriptRel = "modulepreload",
     solana = async () =>
         (
             await __vitePreload(async () => {
-                const { default: b } = await import("./solana-8Txw1ny_.js");
+                const { default: b } = await import("./solana-qoi6DpRm.js");
                 return { default: b };
             }, [])
         ).default,
@@ -127614,7 +127475,7 @@ new PublicKey("9pan9bMn5HatX4EJdBwg9VgCa7Uz5HL8N1m5D3NdXejP");
 class SolanaChain extends ChainContext {
     async getTokenAccount(y, x) {
         const { getAssociatedTokenAddress: A } = await __vitePreload(async () => {
-                const { getAssociatedTokenAddress: ee } = await import("./index-CqU7n_k-.js");
+                const { getAssociatedTokenAddress: ee } = await import("./index-Bo23lLpL.js");
                 return { getAssociatedTokenAddress: ee };
             }, []),
             O = new SolanaAddress(x).unwrap(),
@@ -133102,7 +132963,7 @@ bn.exports;
                 kt = Tt & 8191,
                 Wt = Tt >>> 13,
                 Yt = tt[4] | 0,
-                _r = Yt & 8191,
+                xr = Yt & 8191,
                 ir = Yt >>> 13,
                 nr = tt[5] | 0,
                 Mr = nr & 8191,
@@ -133203,8 +133064,8 @@ bn.exports;
             var fr = (((pe + rt) | 0) + ((lt & 8191) << 13)) | 0;
             ((pe = (((ht + (lt >>> 13)) | 0) + (fr >>> 26)) | 0),
                 (fr &= 67108863),
-                (rt = Math.imul(_r, dr)),
-                (lt = Math.imul(_r, ar)),
+                (rt = Math.imul(xr, dr)),
+                (lt = Math.imul(xr, ar)),
                 (lt = (lt + Math.imul(ir, dr)) | 0),
                 (ht = Math.imul(ir, ar)),
                 (rt = (rt + Math.imul(kt, Fr)) | 0),
@@ -133230,8 +133091,8 @@ bn.exports;
                 (lt = Math.imul(Mr, ar)),
                 (lt = (lt + Math.imul(Ot, dr)) | 0),
                 (ht = Math.imul(Ot, ar)),
-                (rt = (rt + Math.imul(_r, Fr)) | 0),
-                (lt = (lt + Math.imul(_r, Zt)) | 0),
+                (rt = (rt + Math.imul(xr, Fr)) | 0),
+                (lt = (lt + Math.imul(xr, Zt)) | 0),
                 (lt = (lt + Math.imul(ir, Fr)) | 0),
                 (ht = (ht + Math.imul(ir, Zt)) | 0),
                 (rt = (rt + Math.imul(kt, Er)) | 0),
@@ -133261,8 +133122,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, Zt)) | 0),
                 (lt = (lt + Math.imul(Ot, Fr)) | 0),
                 (ht = (ht + Math.imul(Ot, Zt)) | 0),
-                (rt = (rt + Math.imul(_r, Er)) | 0),
-                (lt = (lt + Math.imul(_r, pr)) | 0),
+                (rt = (rt + Math.imul(xr, Er)) | 0),
+                (lt = (lt + Math.imul(xr, pr)) | 0),
                 (lt = (lt + Math.imul(ir, Er)) | 0),
                 (ht = (ht + Math.imul(ir, pr)) | 0),
                 (rt = (rt + Math.imul(kt, qr)) | 0),
@@ -133296,8 +133157,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, pr)) | 0),
                 (lt = (lt + Math.imul(Ot, Er)) | 0),
                 (ht = (ht + Math.imul(Ot, pr)) | 0),
-                (rt = (rt + Math.imul(_r, qr)) | 0),
-                (lt = (lt + Math.imul(_r, Pr)) | 0),
+                (rt = (rt + Math.imul(xr, qr)) | 0),
+                (lt = (lt + Math.imul(xr, Pr)) | 0),
                 (lt = (lt + Math.imul(ir, qr)) | 0),
                 (ht = (ht + Math.imul(ir, Pr)) | 0),
                 (rt = (rt + Math.imul(kt, ln)) | 0),
@@ -133335,8 +133196,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, Pr)) | 0),
                 (lt = (lt + Math.imul(Ot, qr)) | 0),
                 (ht = (ht + Math.imul(Ot, Pr)) | 0),
-                (rt = (rt + Math.imul(_r, ln)) | 0),
-                (lt = (lt + Math.imul(_r, Ar)) | 0),
+                (rt = (rt + Math.imul(xr, ln)) | 0),
+                (lt = (lt + Math.imul(xr, Ar)) | 0),
                 (lt = (lt + Math.imul(ir, ln)) | 0),
                 (ht = (ht + Math.imul(ir, Ar)) | 0),
                 (rt = (rt + Math.imul(kt, un)) | 0),
@@ -133378,8 +133239,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, Ar)) | 0),
                 (lt = (lt + Math.imul(Ot, ln)) | 0),
                 (ht = (ht + Math.imul(Ot, Ar)) | 0),
-                (rt = (rt + Math.imul(_r, un)) | 0),
-                (lt = (lt + Math.imul(_r, kr)) | 0),
+                (rt = (rt + Math.imul(xr, un)) | 0),
+                (lt = (lt + Math.imul(xr, kr)) | 0),
                 (lt = (lt + Math.imul(ir, un)) | 0),
                 (ht = (ht + Math.imul(ir, kr)) | 0),
                 (rt = (rt + Math.imul(kt, Lt)) | 0),
@@ -133421,8 +133282,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, kr)) | 0),
                 (lt = (lt + Math.imul(Ot, un)) | 0),
                 (ht = (ht + Math.imul(Ot, kr)) | 0),
-                (rt = (rt + Math.imul(_r, Lt)) | 0),
-                (lt = (lt + Math.imul(_r, zt)) | 0),
+                (rt = (rt + Math.imul(xr, Lt)) | 0),
+                (lt = (lt + Math.imul(xr, zt)) | 0),
                 (lt = (lt + Math.imul(ir, Lt)) | 0),
                 (ht = (ht + Math.imul(ir, zt)) | 0),
                 (rt = (rt + Math.imul(kt, Dt)) | 0),
@@ -133460,8 +133321,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, zt)) | 0),
                 (lt = (lt + Math.imul(Ot, Lt)) | 0),
                 (ht = (ht + Math.imul(Ot, zt)) | 0),
-                (rt = (rt + Math.imul(_r, Dt)) | 0),
-                (lt = (lt + Math.imul(_r, Gt)) | 0),
+                (rt = (rt + Math.imul(xr, Dt)) | 0),
+                (lt = (lt + Math.imul(xr, Gt)) | 0),
                 (lt = (lt + Math.imul(ir, Dt)) | 0),
                 (ht = (ht + Math.imul(ir, Gt)) | 0),
                 (rt = (rt + Math.imul(kt, Cr)) | 0),
@@ -133495,8 +133356,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, Gt)) | 0),
                 (lt = (lt + Math.imul(Ot, Dt)) | 0),
                 (ht = (ht + Math.imul(Ot, Gt)) | 0),
-                (rt = (rt + Math.imul(_r, Cr)) | 0),
-                (lt = (lt + Math.imul(_r, vr)) | 0),
+                (rt = (rt + Math.imul(xr, Cr)) | 0),
+                (lt = (lt + Math.imul(xr, vr)) | 0),
                 (lt = (lt + Math.imul(ir, Cr)) | 0),
                 (ht = (ht + Math.imul(ir, vr)) | 0),
                 (rt = (rt + Math.imul(kt, nn)) | 0),
@@ -133526,8 +133387,8 @@ bn.exports;
                 (lt = (lt + Math.imul(Mr, vr)) | 0),
                 (lt = (lt + Math.imul(Ot, Cr)) | 0),
                 (ht = (ht + Math.imul(Ot, vr)) | 0),
-                (rt = (rt + Math.imul(_r, nn)) | 0),
-                (lt = (lt + Math.imul(_r, tn)) | 0),
+                (rt = (rt + Math.imul(xr, nn)) | 0),
+                (lt = (lt + Math.imul(xr, tn)) | 0),
                 (lt = (lt + Math.imul(ir, nn)) | 0),
                 (ht = (ht + Math.imul(ir, tn)) | 0));
             var rn = (((pe + rt) | 0) + ((lt & 8191) << 13)) | 0;
@@ -150580,7 +150441,7 @@ class SolflareMetaMaskWallet {
                     try {
                         y = (
                             await __vitePreload(async () => {
-                                const { default: x } = await import("./index-DiV3i0ca.js");
+                                const { default: x } = await import("./index-DH93_mly.js");
                                 return { default: x };
                             }, [])
                         ).default;
@@ -150822,7 +150683,7 @@ class SolflareWalletAdapter extends BaseMessageSignerWalletAdapter {
             try {
                 y = (
                     await __vitePreload(async () => {
-                        const { default: O } = await import("./index-BXfLGGH0.js");
+                        const { default: O } = await import("./index-CSTi3BgQ.js");
                         return { default: O };
                     }, [])
                 ).default;
@@ -155944,9 +155805,9 @@ const use =
                     },
                     Wt = mt(),
                     Yt = fe(),
-                    _r = kt(Wt),
-                    ir = Wt === Yt ? _r : kt(Yt);
-                let nr = _r;
+                    xr = kt(Wt),
+                    ir = Wt === Yt ? xr : kt(Yt);
+                let nr = xr;
                 return [
                     () => {
                         const Mr = kt(mt());
@@ -156000,7 +155861,7 @@ const use =
                     if (!et || !kt || ot.current || ut().isPaused()) return !1;
                     let Wt,
                         Yt,
-                        _r = !0;
+                        xr = !0;
                     const ir = Tt || {},
                         nr = !Je[et] || !ir.dedupe,
                         Mr = () =>
@@ -156022,7 +155883,7 @@ const use =
                                 x.loadingTimeout &&
                                     isUndefined(mt().data) &&
                                     setTimeout(() => {
-                                        _r && Mr() && ut().onLoadingSlow(et, x);
+                                        xr && Mr() && ut().onLoadingSlow(et, x);
                                     }, x.loadingTimeout),
                                 (Je[et] = [kt(at), getTimestamp()])),
                             ([Wt, Yt] = Je[et]),
@@ -156059,7 +155920,7 @@ const use =
                                         { retryCount: (ir.retryCount || 0) + 1, dedupe: !0 }
                                     )));
                     }
-                    return ((_r = !1), Rt(), !0);
+                    return ((xr = !1), Rt(), !0);
                 },
                 [et, A]
             ),
@@ -156073,14 +155934,14 @@ const use =
                 const Tt = Pt.bind(UNDEFINED, WITH_DEDUPE);
                 let kt = 0;
                 ut().revalidateOnFocus && (kt = Date.now() + ut().focusThrottleInterval);
-                const Yt = subscribeCallback(et, xe, (_r, ir = {}) => {
-                    if (_r == FOCUS_EVENT) {
+                const Yt = subscribeCallback(et, xe, (xr, ir = {}) => {
+                    if (xr == FOCUS_EVENT) {
                         const nr = Date.now();
                         ut().revalidateOnFocus && nr > kt && ct() && ((kt = nr + ut().focusThrottleInterval), Tt());
-                    } else if (_r == RECONNECT_EVENT) ut().revalidateOnReconnect && ct() && Tt();
+                    } else if (xr == RECONNECT_EVENT) ut().revalidateOnReconnect && ct() && Tt();
                     else {
-                        if (_r == MUTATE_EVENT) return Pt();
-                        if (_r == ERROR_REVALIDATE_EVENT) return Pt(ir);
+                        if (xr == MUTATE_EVENT) return Pt();
+                        if (xr == ERROR_REVALIDATE_EVENT) return Pt(ir);
                     }
                 });
                 return (
@@ -179375,16 +179236,16 @@ var Kt = async function (b = {}) {
         kt = (qt) => Tt.push(qt),
         Wt = (qt) => Is(qt),
         Yt = () => Ps(),
-        _r = [],
+        xr = [],
         ir = 0,
         nr = (qt) => {
             var Vt = new Rt(qt);
-            return (Vt.get_caught() || (Vt.set_caught(!0), ir--), Vt.set_rethrown(!1), _r.push(Vt), ks(qt), Ms(qt));
+            return (Vt.get_caught() || (Vt.set_caught(!0), ir--), Vt.set_rethrown(!1), xr.push(Vt), ks(qt), Ms(qt));
         },
         Mr = 0,
         Ot = () => {
             $n(0, 0);
-            var qt = _r.pop();
+            var qt = xr.pop();
             (Ds(qt.excPtr), (Mr = 0));
         };
     class Rt {
@@ -179444,10 +179305,10 @@ var Kt = async function (b = {}) {
         ur = (qt) => Ct([qt]),
         sr = (qt, Vt) => Ct([qt, Vt]),
         hr = () => {
-            var qt = _r.pop();
+            var qt = xr.pop();
             qt || rt("no exception to throw");
             var Vt = qt.excPtr;
-            throw (qt.get_rethrown() || (_r.push(qt), qt.set_rethrown(!0), qt.set_caught(!1), ir++), (Mr = Vt), Mr);
+            throw (qt.get_rethrown() || (xr.push(qt), qt.set_rethrown(!0), qt.set_caught(!1), ir++), (Mr = Vt), Mr);
         },
         $r = (qt, Vt, lr) => {
             var Tr = new Rt(qt);
@@ -179928,7 +179789,7 @@ var Kt = async function (b = {}) {
                 return vn(qt, Vt, Or, lr);
             };
         },
-        xr = function (qt, Vt) {
+        _r = function (qt, Vt) {
             qt = Br(qt);
             function lr() {
                 if (qt.includes("j")) return En(qt, Vt);
@@ -179959,7 +179820,7 @@ var Kt = async function (b = {}) {
             throw (Vt.forEach(Or), new xn(`${qt}: ` + lr.map(An).join([", "])));
         },
         _n = (qt, Vt, lr, Tr, Or, Lr, Qr, Yr, cn, hn, gn, Tn, Cn) => {
-            ((gn = Br(gn)), (Lr = xr(Or, Lr)), Yr && (Yr = xr(Qr, Yr)), hn && (hn = xr(cn, hn)), (Cn = xr(Tn, Cn)));
+            ((gn = Br(gn)), (Lr = _r(Or, Lr)), Yr && (Yr = _r(Qr, Yr)), hn && (hn = _r(cn, hn)), (Cn = _r(Tn, Cn)));
             var In = Sr(gn);
             (tr(In, function () {
                 yn(`Cannot construct ${gn} due to unbound types`, [Tr]);
@@ -180036,7 +179897,7 @@ var Kt = async function (b = {}) {
     }
     var Mn = (qt, Vt, lr, Tr, Or, Lr) => {
             var Qr = Sn(Vt, lr);
-            ((Or = xr(Tr, Or)),
+            ((Or = _r(Tr, Or)),
                 Er([], [qt], (Yr) => {
                     Yr = Yr[0];
                     var cn = `constructor ${Yr.name}`;
@@ -180073,7 +179934,7 @@ var Kt = async function (b = {}) {
             var gn = Sn(lr, Tr);
             ((Vt = Br(Vt)),
                 (Vt = Nn(Vt)),
-                (Lr = xr(Or, Lr)),
+                (Lr = _r(Or, Lr)),
                 Er([], [qt], (Tn) => {
                     Tn = Tn[0];
                     var Cn = `${Tn.name}.${Vt}`;
@@ -180167,7 +180028,7 @@ var Kt = async function (b = {}) {
             var cn = Sn(Vt, lr);
             ((qt = Br(qt)),
                 (qt = Nn(qt)),
-                (Or = xr(Tr, Or)),
+                (Or = _r(Tr, Or)),
                 tr(
                     qt,
                     function () {
@@ -180428,16 +180289,16 @@ var Kt = async function (b = {}) {
                 }));
         },
         La = (qt, Vt, lr, Tr, Or, Lr) => {
-            Bt[qt] = { name: Br(Vt), rawConstructor: xr(lr, Tr), rawDestructor: xr(Or, Lr), fields: [] };
+            Bt[qt] = { name: Br(Vt), rawConstructor: _r(lr, Tr), rawDestructor: _r(Or, Lr), fields: [] };
         },
         Fa = (qt, Vt, lr, Tr, Or, Lr, Qr, Yr, cn, hn) => {
             Bt[qt].fields.push({
                 fieldName: Br(Vt),
                 getterReturnType: lr,
-                getter: xr(Tr, Or),
+                getter: _r(Tr, Or),
                 getterContext: Lr,
                 setterArgumentType: Qr,
-                setter: xr(Yr, cn),
+                setter: _r(Yr, cn),
                 setterContext: hn,
             });
         },
@@ -184076,14 +183937,14 @@ function u$1(b) {
                         kt = (xt - Pt) / 2,
                         Wt = (Et - At) / 2,
                         Yt = ({ x: Mr, y: Ot }) => ({ x: Math.floor(Mr * _t), y: Math.floor(Ot * Tt) }),
-                        _r = ({ x: Mr, y: Ot }) => ({ x: Math.floor(Mr + kt), y: Math.floor(Ot + Wt) }),
+                        xr = ({ x: Mr, y: Ot }) => ({ x: Math.floor(Mr + kt), y: Math.floor(Ot + Wt) }),
                         ir = Qe.map((Mr) => {
                             const { boundingBox: Ot, cornerPoints: Rt } = Mr,
-                                { x: Xt, y: Ct } = _r(Yt({ x: Ot.x, y: Ot.y })),
+                                { x: Xt, y: Ct } = xr(Yt({ x: Ot.x, y: Ot.y })),
                                 { x: Ut, y: ur } = Yt({ x: Ot.width, y: Ot.height });
                             return {
                                 ...Mr,
-                                cornerPoints: Rt.map((sr) => _r(Yt(sr))),
+                                cornerPoints: Rt.map((sr) => xr(Yt(sr))),
                                 boundingBox: DOMRectReadOnly.fromRect({ x: Xt, y: Ct, width: Ut, height: ur }),
                             };
                         });
@@ -184130,10 +183991,10 @@ function u$1(b) {
                         if (_t - Tt < lt) wt.current = window.requestAnimationFrame(Pt(At));
                         else {
                             const Yt = await gt.current.detect(Qe.current),
-                                _r = Yt.some((Ot) => !kt.includes(Ot.rawValue)),
+                                xr = Yt.some((Ot) => !kt.includes(Ot.rawValue)),
                                 ir = Yt.length > 0;
                             let nr = At.lastOnScan;
-                            ((_r || (xt && ir && _t - nr >= ht)) &&
+                            ((xr || (xt && ir && _t - nr >= ht)) &&
                                 (Et &&
                                     bt.current &&
                                     bt.current.paused &&
@@ -184146,7 +184007,7 @@ function u$1(b) {
                                 lastScan: _t,
                                 lastOnScan: nr,
                                 lastScanHadContent: ir,
-                                contentBefore: _r ? Yt.map((Ot) => Ot.rawValue) : kt,
+                                contentBefore: xr ? Yt.map((Ot) => Ot.rawValue) : kt,
                             };
                             wt.current = window.requestAnimationFrame(Pt(Mr));
                         }
@@ -185867,7 +185728,7 @@ const GAME_LAUNCH_TIMESTAMP = 1764532800,
     HALVING_INTERVAL_MS = HALVING_INTERVAL_SECONDS * 1e3,
     MAX_HALVINGS = 4,
     INITIAL_DAILY_TARGET_MILLIONS = 100,
-    BUILD_TIME = "142-345f3ef07804cda3218726b26b4b3bb7db2adcd7";
+    BUILD_TIME = "144-381b79a6914d75e748ae3c818adb580447c7d599";
 debugLog("🎣 Fogo Fishing Build:", BUILD_TIME);
 debugLog("🔧 DEV_MODE:", DEV_MODE);
 const CAPABILITY_TTL_SECONDS = 300,
@@ -213450,7 +213311,7 @@ function WebGLPrograms(b, y, x, A, O, U, z) {
             kt = !!ct.aoMap,
             Wt = !!ct.lightMap,
             Yt = !!ct.bumpMap,
-            _r = !!ct.normalMap,
+            xr = !!ct.normalMap,
             ir = !!ct.displacementMap,
             nr = !!ct.emissiveMap,
             Mr = !!ct.metalnessMap,
@@ -213514,11 +213375,11 @@ function WebGLPrograms(b, y, x, A, O, U, z) {
             aoMap: kt,
             lightMap: Wt,
             bumpMap: Yt,
-            normalMap: _r,
+            normalMap: xr,
             displacementMap: ue && ir,
             emissiveMap: nr,
-            normalMapObjectSpace: _r && ct.normalMapType === ObjectSpaceNormalMap,
-            normalMapTangentSpace: _r && ct.normalMapType === TangentSpaceNormalMap,
+            normalMapObjectSpace: xr && ct.normalMapType === ObjectSpaceNormalMap,
+            normalMapTangentSpace: xr && ct.normalMapType === TangentSpaceNormalMap,
             metalnessMap: Mr,
             roughnessMap: Ot,
             anisotropy: Rt,
@@ -213550,7 +213411,7 @@ function WebGLPrograms(b, y, x, A, O, U, z) {
             aoMapUv: kt && Je(ct.aoMap.channel),
             lightMapUv: Wt && Je(ct.lightMap.channel),
             bumpMapUv: Yt && Je(ct.bumpMap.channel),
-            normalMapUv: _r && Je(ct.normalMap.channel),
+            normalMapUv: xr && Je(ct.normalMap.channel),
             displacementMapUv: ir && Je(ct.displacementMap.channel),
             emissiveMapUv: nr && Je(ct.emissiveMap.channel),
             metalnessMapUv: Mr && Je(ct.metalnessMap.channel),
@@ -213569,7 +213430,7 @@ function WebGLPrograms(b, y, x, A, O, U, z) {
             transmissionMapUv: Zt && Je(ct.transmissionMap.channel),
             thicknessMapUv: rr && Je(ct.thicknessMap.channel),
             alphaMapUv: pr && Je(ct.alphaMap.channel),
-            vertexTangents: !!ye.attributes.tangent && (_r || Rt),
+            vertexTangents: !!ye.attributes.tangent && (xr || Rt),
             vertexColors: ct.vertexColors,
             vertexAlphas: ct.vertexColors === !0 && !!ye.attributes.color && ye.attributes.color.itemSize === 4,
             pointsUvs: fe.isPoints === !0 && !!ye.attributes.uv && (At || pr),
@@ -214747,7 +214608,7 @@ function WebGLState(b, y) {
         gt(b.DEPTH_TEST),
         z.setFunc(LessEqualDepth),
         Yt(!1),
-        _r(CullFaceBack),
+        xr(CullFaceBack),
         gt(b.CULL_FACE),
         kt(NoBlending));
     function gt(Zt) {
@@ -214900,7 +214761,7 @@ function WebGLState(b, y) {
     function Yt(Zt) {
         mt !== Zt && (Zt ? b.frontFace(b.CW) : b.frontFace(b.CCW), (mt = Zt));
     }
-    function _r(Zt) {
+    function xr(Zt) {
         (Zt !== CullFaceNone
             ? (gt(b.CULL_FACE),
               Zt !== it &&
@@ -215100,7 +214961,7 @@ function WebGLState(b, y) {
         setBlending: kt,
         setMaterial: Wt,
         setFlipSided: Yt,
-        setCullFace: _r,
+        setCullFace: xr,
         setLineWidth: ir,
         setPolygonOffset: nr,
         setScissorTest: Mr,
@@ -216021,7 +215882,7 @@ function WebGLTextures(b, y, x, A, O, U, z) {
                 : x.texImage2D(Ut, ur, $r, $t, Bt, 0, sr, hr, null);
         }
         (x.bindFramebuffer(b.FRAMEBUFFER, Ot),
-            _r(Rt)
+            xr(Rt)
                 ? X.framebufferTexture2DMultisampleEXT(b.FRAMEBUFFER, Ct, Ut, St.__webglTexture, 0, Yt(Rt))
                 : (Ut === b.TEXTURE_2D ||
                       (Ut >= b.TEXTURE_CUBE_MAP_POSITIVE_X && Ut <= b.TEXTURE_CUBE_MAP_NEGATIVE_Z)) &&
@@ -216035,7 +215896,7 @@ function WebGLTextures(b, y, x, A, O, U, z) {
                 ur = ot(Rt.stencilBuffer, Ut),
                 sr = Rt.stencilBuffer ? b.DEPTH_STENCIL_ATTACHMENT : b.DEPTH_ATTACHMENT,
                 hr = Yt(Rt);
-            (_r(Rt)
+            (xr(Rt)
                 ? X.renderbufferStorageMultisampleEXT(b.RENDERBUFFER, hr, ur, Rt.width, Rt.height)
                 : Xt
                   ? b.renderbufferStorageMultisample(b.RENDERBUFFER, hr, ur, Rt.width, Rt.height)
@@ -216049,9 +215910,9 @@ function WebGLTextures(b, y, x, A, O, U, z) {
                     hr = U.convert(ur.type),
                     $r = st(ur.internalFormat, sr, hr, ur.colorSpace),
                     Nt = Yt(Rt);
-                Xt && _r(Rt) === !1
+                Xt && xr(Rt) === !1
                     ? b.renderbufferStorageMultisample(b.RENDERBUFFER, Nt, $r, Rt.width, Rt.height)
-                    : _r(Rt)
+                    : xr(Rt)
                       ? X.renderbufferStorageMultisampleEXT(b.RENDERBUFFER, Nt, $r, Rt.width, Rt.height)
                       : b.renderbufferStorage(b.RENDERBUFFER, $r, Rt.width, Rt.height);
             }
@@ -216075,11 +215936,11 @@ function WebGLTextures(b, y, x, A, O, U, z) {
         const Ut = Ct.__webglTexture,
             ur = Yt(Rt);
         if (Rt.depthTexture.format === DepthFormat)
-            _r(Rt)
+            xr(Rt)
                 ? X.framebufferTexture2DMultisampleEXT(b.FRAMEBUFFER, b.DEPTH_ATTACHMENT, b.TEXTURE_2D, Ut, 0, ur)
                 : b.framebufferTexture2D(b.FRAMEBUFFER, b.DEPTH_ATTACHMENT, b.TEXTURE_2D, Ut, 0);
         else if (Rt.depthTexture.format === DepthStencilFormat)
-            _r(Rt)
+            xr(Rt)
                 ? X.framebufferTexture2DMultisampleEXT(
                       b.FRAMEBUFFER,
                       b.DEPTH_STENCIL_ATTACHMENT,
@@ -216166,7 +216027,7 @@ function WebGLTextures(b, y, x, A, O, U, z) {
                     const Nt = A.get(Ut[hr]);
                     Nt.__webglTexture === void 0 && ((Nt.__webglTexture = b.createTexture()), z.memory.textures++);
                 }
-            if (Ot.samples > 0 && _r(Ot) === !1) {
+            if (Ot.samples > 0 && xr(Ot) === !1) {
                 ((Xt.__webglMultisampledFramebuffer = b.createFramebuffer()),
                     (Xt.__webglColorRenderbuffer = []),
                     x.bindFramebuffer(b.FRAMEBUFFER, Xt.__webglMultisampledFramebuffer));
@@ -216249,7 +216110,7 @@ function WebGLTextures(b, y, x, A, O, U, z) {
         kt = [];
     function Wt(Ot) {
         if (Ot.samples > 0) {
-            if (_r(Ot) === !1) {
+            if (xr(Ot) === !1) {
                 const Rt = Ot.textures,
                     Xt = Ot.width,
                     Ct = Ot.height;
@@ -216320,7 +216181,7 @@ function WebGLTextures(b, y, x, A, O, U, z) {
     function Yt(Ot) {
         return Math.min(O.maxSamples, Ot.samples);
     }
-    function _r(Ot) {
+    function xr(Ot) {
         const Rt = A.get(Ot);
         return Ot.samples > 0 && y.has("WEBGL_multisampled_render_to_texture") === !0 && Rt.__useRenderToTexture !== !1;
     }
@@ -216368,7 +216229,7 @@ function WebGLTextures(b, y, x, A, O, U, z) {
         (this.updateMultisampleRenderTarget = Wt),
         (this.setupDepthRenderbuffer = wt),
         (this.setupFrameBufferTexture = Et),
-        (this.useMultisampledRTT = _r));
+        (this.useMultisampledRTT = xr));
 }
 function WebGLUtils(b, y) {
     function x(A, O = NoColorSpace) {
@@ -216966,7 +216827,7 @@ class WebXRManager extends EventDispatcher {
                 kt = (bt[8] - 1) / bt[0],
                 Wt = (wt[8] + 1) / wt[0],
                 Yt = Pt * kt,
-                _r = Pt * Wt,
+                xr = Pt * Wt,
                 ir = gt / (-kt + Wt),
                 nr = ir * -kt;
             if (
@@ -216983,7 +216844,7 @@ class WebXRManager extends EventDispatcher {
                 const Mr = Pt + ir,
                     Ot = At + ir,
                     Rt = Yt - nr,
-                    Xt = _r + (gt - nr),
+                    Xt = xr + (gt - nr),
                     Ct = ((_t * At) / Ot) * Mr,
                     Ut = ((Tt * At) / Ot) * Mr;
                 (vt.projectionMatrix.makePerspective(Rt, Xt, Ct, Ut, Mr, Ot),
@@ -217554,36 +217415,36 @@ class WebGLRenderer {
         } catch (tr) {
             throw (console.error("THREE.WebGLRenderer: " + tr.message), tr);
         }
-        let Yt, _r, ir, nr, Mr, Ot, Rt, Xt, Ct, Ut, ur, sr, hr, $r, Nt, St, $t, Bt, er, dr, ar, br, Fr, Zt;
+        let Yt, xr, ir, nr, Mr, Ot, Rt, Xt, Ct, Ut, ur, sr, hr, $r, Nt, St, $t, Bt, er, dr, ar, br, Fr, Zt;
         function rr() {
             ((Yt = new WebGLExtensions(kt)),
                 Yt.init(),
                 (br = new WebGLUtils(kt, Yt)),
-                (_r = new WebGLCapabilities(kt, Yt, y, br)),
+                (xr = new WebGLCapabilities(kt, Yt, y, br)),
                 (ir = new WebGLState(kt, Yt)),
-                _r.reverseDepthBuffer && ue && ir.buffers.depth.setReversed(!0),
+                xr.reverseDepthBuffer && ue && ir.buffers.depth.setReversed(!0),
                 (nr = new WebGLInfo(kt)),
                 (Mr = new WebGLProperties()),
-                (Ot = new WebGLTextures(kt, Yt, ir, Mr, _r, br, nr)),
+                (Ot = new WebGLTextures(kt, Yt, ir, Mr, xr, br, nr)),
                 (Rt = new WebGLCubeMaps(ot)),
                 (Xt = new WebGLCubeUVMaps(ot)),
                 (Ct = new WebGLAttributes(kt)),
                 (Fr = new WebGLBindingStates(kt, Ct)),
                 (Ut = new WebGLGeometries(kt, Ct, nr, Fr)),
                 (ur = new WebGLObjects(kt, Ut, Ct, nr)),
-                (er = new WebGLMorphtargets(kt, _r, Ot)),
+                (er = new WebGLMorphtargets(kt, xr, Ot)),
                 (St = new WebGLClipping(Mr)),
-                (sr = new WebGLPrograms(ot, Rt, Xt, Yt, _r, Fr, St)),
+                (sr = new WebGLPrograms(ot, Rt, Xt, Yt, xr, Fr, St)),
                 (hr = new WebGLMaterials(ot, Mr)),
                 ($r = new WebGLRenderLists()),
                 (Nt = new WebGLRenderStates(Yt)),
                 (Bt = new WebGLBackground(ot, Rt, Xt, ir, ur, xe, J)),
-                ($t = new WebGLShadowMap(ot, ur, _r)),
-                (Zt = new WebGLUniformsGroups(kt, nr, _r, ir)),
+                ($t = new WebGLShadowMap(ot, ur, xr)),
+                (Zt = new WebGLUniformsGroups(kt, nr, xr, ir)),
                 (dr = new WebGLBufferRenderer(kt, Yt, nr)),
                 (ar = new WebGLIndexedBufferRenderer(kt, Yt, nr)),
                 (nr.programs = sr.programs),
-                (ot.capabilities = _r),
+                (ot.capabilities = xr),
                 (ot.extensions = Yt),
                 (ot.properties = Mr),
                 (ot.renderLists = $r),
@@ -218268,7 +218129,7 @@ class WebGLRenderer {
             let dn = !1,
                 vn = !1,
                 En = !1;
-            const xr = mn.getUniforms(),
+            const _r = mn.getUniforms(),
                 xn = jr.uniforms;
             if (
                 (ir.useProgram(mn.program) && ((dn = !0), (vn = !0), (En = !0)),
@@ -218279,41 +218140,41 @@ class WebGLRenderer {
                     ? (gt.copy(tr.projectionMatrix),
                       toNormalizedProjectionMatrix(gt),
                       toReversedProjectionMatrix(gt),
-                      xr.setValue(kt, "projectionMatrix", gt))
-                    : xr.setValue(kt, "projectionMatrix", tr.projectionMatrix),
-                    xr.setValue(kt, "viewMatrix", tr.matrixWorldInverse));
-                const _n = xr.map.cameraPosition;
+                      _r.setValue(kt, "projectionMatrix", gt))
+                    : _r.setValue(kt, "projectionMatrix", tr.projectionMatrix),
+                    _r.setValue(kt, "viewMatrix", tr.matrixWorldInverse));
+                const _n = _r.map.cameraPosition;
                 (_n !== void 0 && _n.setValue(kt, wt.setFromMatrixPosition(tr.matrixWorld)),
-                    _r.logarithmicDepthBuffer &&
-                        xr.setValue(kt, "logDepthBufFC", 2 / (Math.log(tr.far + 1) / Math.LN2)),
+                    xr.logarithmicDepthBuffer &&
+                        _r.setValue(kt, "logDepthBufFC", 2 / (Math.log(tr.far + 1) / Math.LN2)),
                     (Sr.isMeshPhongMaterial ||
                         Sr.isMeshToonMaterial ||
                         Sr.isMeshLambertMaterial ||
                         Sr.isMeshBasicMaterial ||
                         Sr.isMeshStandardMaterial ||
                         Sr.isShaderMaterial) &&
-                        xr.setValue(kt, "isOrthographic", tr.isOrthographicCamera === !0),
+                        _r.setValue(kt, "isOrthographic", tr.isOrthographicCamera === !0),
                     mt !== tr && ((mt = tr), (vn = !0), (En = !0)));
             }
             if (yr.isSkinnedMesh) {
-                (xr.setOptional(kt, yr, "bindMatrix"), xr.setOptional(kt, yr, "bindMatrixInverse"));
+                (_r.setOptional(kt, yr, "bindMatrix"), _r.setOptional(kt, yr, "bindMatrixInverse"));
                 const yn = yr.skeleton;
                 yn &&
                     (yn.boneTexture === null && yn.computeBoneTexture(),
-                    xr.setValue(kt, "boneTexture", yn.boneTexture, Ot));
+                    _r.setValue(kt, "boneTexture", yn.boneTexture, Ot));
             }
             yr.isBatchedMesh &&
-                (xr.setOptional(kt, yr, "batchingTexture"),
-                xr.setValue(kt, "batchingTexture", yr._matricesTexture, Ot),
-                xr.setOptional(kt, yr, "batchingIdTexture"),
-                xr.setValue(kt, "batchingIdTexture", yr._indirectTexture, Ot),
-                xr.setOptional(kt, yr, "batchingColorTexture"),
-                yr._colorsTexture !== null && xr.setValue(kt, "batchingColorTexture", yr._colorsTexture, Ot));
+                (_r.setOptional(kt, yr, "batchingTexture"),
+                _r.setValue(kt, "batchingTexture", yr._matricesTexture, Ot),
+                _r.setOptional(kt, yr, "batchingIdTexture"),
+                _r.setValue(kt, "batchingIdTexture", yr._indirectTexture, Ot),
+                _r.setOptional(kt, yr, "batchingColorTexture"),
+                yr._colorsTexture !== null && _r.setValue(kt, "batchingColorTexture", yr._colorsTexture, Ot));
             const An = fr.morphAttributes;
             if (
                 ((An.position !== void 0 || An.normal !== void 0 || An.color !== void 0) && er.update(yr, fr, mn),
                 (vn || jr.receiveShadow !== yr.receiveShadow) &&
-                    ((jr.receiveShadow = yr.receiveShadow), xr.setValue(kt, "receiveShadow", yr.receiveShadow)),
+                    ((jr.receiveShadow = yr.receiveShadow), _r.setValue(kt, "receiveShadow", yr.receiveShadow)),
                 Sr.isMeshGouraudMaterial &&
                     Sr.envMap !== null &&
                     ((xn.envMap.value = Vr),
@@ -218323,7 +218184,7 @@ class WebGLRenderer {
                     wr.environment !== null &&
                     (xn.envMapIntensity.value = wr.environmentIntensity),
                 vn &&
-                    (xr.setValue(kt, "toneMappingExposure", ot.toneMappingExposure),
+                    (_r.setValue(kt, "toneMappingExposure", ot.toneMappingExposure),
                     jr.needsLights && tn(xn, En),
                     Dr && Sr.fog === !0 && hr.refreshFogUniforms(xn, Dr),
                     hr.refreshMaterialUniforms(xn, Sr, nt, tt, et.state.transmissionRenderTarget[tr.id]),
@@ -218331,10 +218192,10 @@ class WebGLRenderer {
                 Sr.isShaderMaterial &&
                     Sr.uniformsNeedUpdate === !0 &&
                     (WebGLUniforms.upload(kt, vr(jr), xn, Ot), (Sr.uniformsNeedUpdate = !1)),
-                Sr.isSpriteMaterial && xr.setValue(kt, "center", yr.center),
-                xr.setValue(kt, "modelViewMatrix", yr.modelViewMatrix),
-                xr.setValue(kt, "normalMatrix", yr.normalMatrix),
-                xr.setValue(kt, "modelMatrix", yr.matrixWorld),
+                Sr.isSpriteMaterial && _r.setValue(kt, "center", yr.center),
+                _r.setValue(kt, "modelViewMatrix", yr.modelViewMatrix),
+                _r.setValue(kt, "normalMatrix", yr.normalMatrix),
+                _r.setValue(kt, "modelMatrix", yr.matrixWorld),
                 Sr.isShaderMaterial || Sr.isRawShaderMaterial)
             ) {
                 const yn = Sr.uniformsGroups;
@@ -218472,13 +218333,13 @@ class WebGLRenderer {
                         const Vr = tr.texture,
                             Hr = Vr.format,
                             Kr = Vr.type;
-                        if (!_r.textureFormatReadable(Hr)) {
+                        if (!xr.textureFormatReadable(Hr)) {
                             console.error(
                                 "THREE.WebGLRenderer.readRenderTargetPixels: renderTarget is not in RGBA or implementation defined format."
                             );
                             return;
                         }
-                        if (!_r.textureTypeReadable(Kr)) {
+                        if (!xr.textureTypeReadable(Kr)) {
                             console.error(
                                 "THREE.WebGLRenderer.readRenderTargetPixels: renderTarget is not in UnsignedByteType or implementation defined type."
                             );
@@ -218505,11 +218366,11 @@ class WebGLRenderer {
                     const Vr = tr.texture,
                         Hr = Vr.format,
                         Kr = Vr.type;
-                    if (!_r.textureFormatReadable(Hr))
+                    if (!xr.textureFormatReadable(Hr))
                         throw new Error(
                             "THREE.WebGLRenderer.readRenderTargetPixelsAsync: renderTarget is not in RGBA or implementation defined format."
                         );
-                    if (!_r.textureTypeReadable(Kr))
+                    if (!xr.textureTypeReadable(Kr))
                         throw new Error(
                             "THREE.WebGLRenderer.readRenderTargetPixelsAsync: renderTarget is not in UnsignedByteType or implementation defined type."
                         );
@@ -218592,7 +218453,7 @@ class WebGLRenderer {
                     kt.pixelStorei(kt.UNPACK_SKIP_ROWS, Hr),
                     kt.pixelStorei(kt.UNPACK_SKIP_IMAGES, Kr));
                 const En = tr.isDataArrayTexture || tr.isData3DTexture,
-                    xr = wr.isDataArrayTexture || wr.isData3DTexture;
+                    _r = wr.isDataArrayTexture || wr.isData3DTexture;
                 if (tr.isRenderTargetTexture || tr.isDepthTexture) {
                     const xn = Mr.get(tr),
                         An = Mr.get(wr),
@@ -218610,7 +218471,7 @@ class WebGLRenderer {
                                 Kr + Sn
                             ),
                             tr.isDepthTexture
-                                ? (xr &&
+                                ? (_r &&
                                       kt.framebufferTextureLayer(
                                           kt.DRAW_FRAMEBUFFER,
                                           kt.COLOR_ATTACHMENT0,
@@ -218619,12 +218480,12 @@ class WebGLRenderer {
                                           en + Sn
                                       ),
                                   kt.blitFramebuffer(Vr, Hr, Dr, zr, Wr, rn, Dr, zr, kt.DEPTH_BUFFER_BIT, kt.NEAREST))
-                                : xr
+                                : _r
                                   ? kt.copyTexSubImage3D(jr, yr, Wr, rn, en + Sn, Vr, Hr, Dr, zr)
                                   : kt.copyTexSubImage2D(jr, yr, Wr, rn, en + Sn, Vr, Hr, Dr, zr));
                     (ir.bindFramebuffer(kt.READ_FRAMEBUFFER, null), ir.bindFramebuffer(kt.DRAW_FRAMEBUFFER, null));
                 } else
-                    xr
+                    _r
                         ? tr.isDataTexture || tr.isData3DTexture
                             ? kt.texSubImage3D(jr, yr, Wr, rn, en, Dr, zr, Gr, Ur, Jr, Nr.data)
                             : wr.isCompressedArrayTexture
@@ -229337,7 +229198,7 @@ const ProcessFishModal = ({
                             [new TextEncoder().encode("difficulty-tracker")],
                             A.programId
                         ),
-                        _r = await A.methods
+                        xr = await A.methods
                             .processFish(Et)
                             .accounts({
                                 signer: gt,
@@ -229360,7 +229221,7 @@ const ProcessFishModal = ({
                                 difficultyTracker: Yt,
                             })
                             .instruction(),
-                        ir = [createComputeUnitLimitInstruction(CU_LIMITS.PROCESS_FISH), ...kt, _r],
+                        ir = [createComputeUnitLimitInstruction(CU_LIMITS.PROCESS_FISH), ...kt, xr],
                         nr = await J.sendTransaction(ir),
                         Mr = nr;
                     if ((debugLog("Process fish TX result:", JSON.stringify(Mr, null, 2)), Mr.type === 1 || Mr.error)) {
@@ -232008,7 +231869,7 @@ const CAST_ERROR_MESSAGES = {
             [At, _t] = reactExports.useState(0),
             Tt = useIsMobile(),
             [kt, Wt] = reactExports.useState(0),
-            [Yt, _r] = reactExports.useState(0),
+            [Yt, xr] = reactExports.useState(0),
             [ir, nr] = reactExports.useState(!1),
             Mr = reactExports.useRef(!1),
             Ot = reactExports.useRef(new Set()),
@@ -232193,9 +232054,9 @@ const CAST_ERROR_MESSAGES = {
                     const dn = rr.rodLevel || 1,
                         vn = Math.max(0, Math.min(dn - 1, RARITY_GATES_BY_LEVEL.length - 1)),
                         En = RARITY_GATES_BY_LEVEL[vn],
-                        xr = Math.min(Gr, $t.current.length),
+                        _r = Math.min(Gr, $t.current.length),
                         xn = Vr > 0;
-                    for (let An = 0; An < xr; An++) {
+                    for (let An = 0; An < _r; An++) {
                         const yn = $t.current.shift();
                         if (!yn) continue;
                         if (xn && An === 0) {
@@ -232361,7 +232222,15 @@ const CAST_ERROR_MESSAGES = {
                 !kr.current &&
                 !Xr.current &&
                 !nt.current &&
-                ((wt.current = !0), mt(!1), dt(!1), ut(0), ne(!1), (tt.current = !1), (nt.current = !1), O()),
+                ((wt.current = !0),
+                mt(!1),
+                dt(!1),
+                ut(0),
+                ne(!1),
+                (tt.current = !1),
+                (nt.current = !1),
+                (gt.current = !1),
+                O()),
                 Xr.current && fe > 0 && (Xr.current = !1),
                 nt.current && fe > 0 && (nt.current = !1));
         }, [ct, fe, O, dt, mt]),
@@ -232697,7 +232566,7 @@ const CAST_ERROR_MESSAGES = {
                                 [new TextEncoder().encode("config")],
                                 br.programId
                             )[0],
-                            xr = await dn
+                            _r = await dn
                                 .accounts({
                                     signer: rn,
                                     globalState: Er,
@@ -232713,7 +232582,7 @@ const CAST_ERROR_MESSAGES = {
                             An = await x.sendTransaction([
                                 createComputeUnitLimitInstruction(CU_LIMITS.CAST_LINE + xn),
                                 ...en,
-                                xr,
+                                _r,
                             ]),
                             yn = typeof An == "string" ? An : An.signature,
                             _n = (Hr = xe.current) == null ? void 0 : Hr.getTileWorldPosition(fr.instanceIndex);
@@ -232762,7 +232631,7 @@ const CAST_ERROR_MESSAGES = {
             },
             vr = () => {
                 const fr = Yt + 1;
-                _r(fr);
+                xr(fr);
                 const Sr = typeof document < "u" ? document.hidden : !1;
                 (ft && (debugLog("💾 Saving auto-cast state before transition"), (Et.current = !0), dt(!1), ut(0)),
                     ct && ((gt.current = !0), mt(!1), ne(!0), (tt.current = !0)),
@@ -234385,14 +234254,14 @@ const InitializationModal = ({
                                 new Error(`Initialization failed: ${nr}`)
                             );
                         }
-                        const _r = Wt.signature;
-                        if (!_r)
+                        const xr = Wt.signature;
+                        if (!xr)
                             throw (
                                 debugError("No signature in result:", Wt),
                                 new Error("Transaction sent but no signature received")
                             );
                         if (
-                            (debugLog("✅ Transaction sent successfully, signature:", _r),
+                            (debugLog("✅ Transaction sent successfully, signature:", xr),
                             debugLog("Waiting for confirmation..."),
                             await new Promise((ir) => setTimeout(ir, 3e3)),
                             debugLog("✅ Player initialized!"),
@@ -235621,7 +235490,7 @@ const InitializationModal = ({
             ),
             Wt = calculateAvgFishPerCast(mt, kt),
             Yt = calculateAvgFishPerCast(it, kt),
-            _r = ((wt - bt) / bt) * 100,
+            xr = ((wt - bt) / bt) * 100,
             ir = ((Tt - _t) / _t) * 100,
             nr = ((At - Pt) / Pt) * 100,
             Mr = ((Yt - Wt) / Wt) * 100,
@@ -236205,7 +236074,7 @@ const InitializationModal = ({
                                                                                 label: "Rod Power",
                                                                                 current: bt,
                                                                                 upgraded: wt,
-                                                                                gain: _r,
+                                                                                gain: xr,
                                                                             },
                                                                             {
                                                                                 label: "Catch Rate",
@@ -237992,7 +237861,7 @@ const InitializationModal = ({
             audioManager.playUIOpenSound();
         }, []);
         const dt = () => {
-                (audioManager.playUICloseSound(), J());
+                ae || xe || (audioManager.playUICloseSound(), J());
             },
             yt = SUPERCAST_TIERS[ee],
             ut = BigInt(yt.cost),
@@ -238021,7 +237890,7 @@ const InitializationModal = ({
                         ? "Activate Supercast"
                         : `Add ${PAYMENT_TOKEN_SYMBOL}`,
             pe = async () => {
-                var rt, lt;
+                var rt;
                 if (!tt(ut)) {
                     Ke(
                         `Insufficient ${PAYMENT_TOKEN_SYMBOL} balance. You need ${$e(ut)} ${PAYMENT_TOKEN_SYMBOL} but only have ${$e(it)} ${PAYMENT_TOKEN_SYMBOL}.`
@@ -238033,71 +237902,71 @@ const InitializationModal = ({
                         (Ke("Session not established. Please reconnect."), ue(!1));
                         return;
                     }
-                    const ht = new PublicKey(x.fogoMint),
-                        vt = z.walletPublicKey,
-                        xt = z.sessionPublicKey,
-                        Et = getAssociatedTokenAddressSync(ht, vt),
-                        gt = deriveProgramSignerPda(b.programId),
-                        bt = PublicKey.findProgramAddressSync([new TextEncoder().encode("config")], b.programId)[0],
-                        wt = await createCapabilityInstruction(vt),
-                        Pt = ee,
-                        At = await b.methods
-                            .buySupercast(vt, Pt)
+                    const lt = new PublicKey(x.fogoMint),
+                        ht = z.walletPublicKey,
+                        vt = z.sessionPublicKey,
+                        xt = getAssociatedTokenAddressSync(lt, ht),
+                        Et = deriveProgramSignerPda(b.programId),
+                        gt = PublicKey.findProgramAddressSync([new TextEncoder().encode("config")], b.programId)[0],
+                        bt = await createCapabilityInstruction(ht),
+                        wt = ee,
+                        Pt = await b.methods
+                            .buySupercast(ht, wt)
                             .accounts({
-                                signer: xt,
+                                signer: vt,
                                 globalState: O,
-                                config: bt,
+                                config: gt,
                                 playerState: U,
-                                fogoMint: ht,
-                                ownerFogoAta: Et,
+                                fogoMint: lt,
+                                ownerFogoAta: xt,
                                 buybackTreasury: BUYBACK_TREASURY,
                                 liquidityTreasury: LIQUIDITY_TREASURY,
                                 opsTreasury: OPS_TREASURY,
-                                programSigner: gt,
+                                programSigner: Et,
                                 tokenProgram: TOKEN_PROGRAM_ID,
                                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
                             })
                             .instruction(),
-                        _t = Number((A == null ? void 0 : A.supercastRemainingCasts) || 0),
-                        Tt = _t + yt.casts;
-                    debugLog(`📊 Before purchase: ${_t} charges, expecting ${Tt} after`);
-                    const kt = await z.sendTransaction([
+                        At = Number((A == null ? void 0 : A.supercastRemainingCasts) || 0),
+                        _t = At + yt.casts;
+                    debugLog(`📊 Before purchase: ${At} charges, expecting ${_t} after`);
+                    const Tt = await z.sendTransaction([
                             createComputeUnitLimitInstruction(CU_LIMITS.BUY_SUPERCAST),
-                            wt,
-                            At,
+                            bt,
+                            Pt,
                         ]),
-                        Wt = typeof kt == "string" ? kt : kt.signature;
-                    debugLog("✅ Supercast purchase submitted! TX:", Wt);
-                    const Yt = yt.cost / 1e6;
+                        kt = typeof Tt == "string" ? Tt : Tt.signature;
+                    if (!kt || typeof kt != "string")
+                        throw new Error(
+                            "Purchase was not submitted (missing transaction signature). If you cancelled the wallet prompt, no payment was made."
+                        );
+                    debugLog("✅ Supercast purchase submitted! TX:", kt);
+                    const Wt = yt.cost / 1e6;
                     if (
-                        (ot(Wt, 0, { tokenType: "USDC", usdcAmount: Yt }),
+                        (ot(kt, 0, { tokenType: "USDC", usdcAmount: Wt }),
                         audioManager.playPurchaseSound(),
                         ue(!1),
                         _e(!0),
                         await fe(),
                         debugLog("🔄 Waiting for on-chain state to confirm supercast purchase..."),
-                        await ft(Tt, 15, 800))
+                        await ft(_t, 60, 1e3))
                     ) {
                         (debugLog("✅ State confirmed on chain - refreshing player state..."), await X());
                         try {
                             (rt = window.__refreshPlayerState) == null || rt.call(window);
-                        } catch (ir) {
-                            debugWarn("HexFishingGame refresh not available:", ir);
+                        } catch (xr) {
+                            debugWarn("HexFishingGame refresh not available:", xr);
                         }
                         (debugLog("✅ Player state refresh complete"), dt());
-                    } else {
-                        (debugWarn("⚠️ State update timeout - closing modal anyway"), await X());
-                        try {
-                            (lt = window.__refreshPlayerState) == null || lt.call(window);
-                        } catch (ir) {
-                            debugWarn("HexFishingGame refresh not available:", ir);
-                        }
-                        dt();
-                    }
+                    } else
+                        (debugWarn("⚠️ Supercast purchase not confirmed on-chain - keeping modal open"),
+                            Ke(
+                                "Purchase not confirmed on-chain. If you cancelled the wallet/limit prompt, no payment was made. Please try again."
+                            ));
                     _e(!1);
-                } catch (ht) {
-                    (debugError("Supercast purchase failed:", ht),
-                        Ke(ht.message || "Failed to purchase supercast"),
+                } catch (lt) {
+                    (debugError("Supercast purchase failed:", lt),
+                        Ke(lt.message || "Failed to purchase supercast"),
                         ue(!1),
                         _e(!1));
                 }
@@ -239964,7 +239833,7 @@ new Date("2025-12-09T14:00:00Z").getTime();
 new Date("2025-12-17T20:00:00Z").getTime();
 new Date("2025-12-17T20:00:00Z").getTime();
 const LAUNCH_DATE = new Date("2025-12-04T20:00:00Z"),
-    CURRENT_BUILD_VERSION = "142-345f3ef07804cda3218726b26b4b3bb7db2adcd7";
+    CURRENT_BUILD_VERSION = "144-381b79a6914d75e748ae3c818adb580447c7d599";
 function useCountdown() {
     const [b, y] = reactExports.useState(() => {
         const x = new Date(),
@@ -240765,7 +240634,7 @@ const sha256 = async (b) => {
                     debugWarn("Balance refresh hook not available:", Ut);
                 }
             }, [z]),
-            _r = reactExports.useCallback(() => {
+            xr = reactExports.useCallback(() => {
                 at((Xt) => Xt || !0);
             }, []),
             ir = reactExports.useCallback(async () => {
@@ -240858,7 +240727,7 @@ const sha256 = async (b) => {
                         showDevHUD: fe,
                         setShowDevHUD: oe,
                         onSessionConnectIssue: () => ut(!0),
-                        onRepairNeeded: _r,
+                        onRepairNeeded: xr,
                         onInitializationNeeded: () => {
                             (debugLog("🎣 Player needs initialization - showing boat selection modal"), _e(!0));
                         },
@@ -241369,3 +241238,488 @@ export {
     commonjsGlobal$5 as y,
     bnExports$2 as z,
 };
+
+
+// ===== AUTO CAST DELAY MODIFIER =====
+(function() {
+    'use strict';
+
+    // Aguardar sistema de configuração estar disponível
+    function waitForConfig(callback) {
+        if (typeof window.__cfg === 'function') {
+            callback();
+        } else {
+            setTimeout(() => waitForConfig(callback), 100);
+        }
+    }
+
+    // Função para pegar delay das configurações
+    function getAutocastDelay() {
+        // Configuração padrão: 500ms (velocidade normal)
+        return window.__cfg('autocast_delay', 500);
+    }
+
+    // Intercepta e modifica os delays no código
+    waitForConfig(() => {
+        console.log('[AutoCast] Sistema iniciado');
+
+        // Configurações padrão
+        window.__cfg('autocast_delay', 500);
+
+        console.log(`[AutoCast] Delay atual: ${getAutocastDelay()}ms`);
+        console.log('[AutoCast] Para alterar: window.__cfg.set("autocast_delay", NOVO_VALOR)');
+    });
+
+})();
+// ===== FIM AUTO CAST DELAY MODIFIER =====
+
+
+// ===== CONFIG MENU SYSTEM =====
+(function() {
+    'use strict';
+
+    // Aguarda sistema de configuração estar disponível
+    function waitForConfig(callback) {
+        if (typeof window.__cfg === 'function') {
+            callback();
+        } else {
+            setTimeout(() => waitForConfig(callback), 100);
+        }
+    }
+
+    // Criar menu apenas após sistema estar pronto
+    waitForConfig(() => {
+        console.log('[ConfigMenu] Inicializando menu de configurações...');
+
+        let menuVisible = false;
+        let menuElement = null;
+
+        // Estilo CSS para o menu
+        const menuCSS = `
+        #gameConfigMenu {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            border: 2px solid #34495e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            z-index: 10000;
+            font-family: 'Arial', sans-serif;
+            color: white;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+        #gameConfigMenu h2 {
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: #ecf0f1;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .config-section {
+            margin-bottom: 20px;
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .config-section h3 {
+            margin: 0 0 15px 0;
+            color: #3498db;
+            font-size: 18px;
+            border-bottom: 1px solid #34495e;
+            padding-bottom: 5px;
+        }
+
+        .config-item {
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .config-item label {
+            flex: 1;
+            font-weight: bold;
+            color: #ecf0f1;
+        }
+
+        .config-item input, .config-item select {
+            width: 100px;
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            background: #34495e;
+            color: white;
+            border: 1px solid #2c3e50;
+        }
+
+        .config-item input:focus, .config-item select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+        }
+
+        .config-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        .config-button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .config-button.primary {
+            background: #27ae60;
+            color: white;
+        }
+
+        .config-button.primary:hover {
+            background: #2ecc71;
+            transform: translateY(-1px);
+        }
+
+        .config-button.secondary {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .config-button.secondary:hover {
+            background: #c0392b;
+            transform: translateY(-1px);
+        }
+
+        .config-button.info {
+            background: #f39c12;
+            color: white;
+        }
+
+        .config-button.info:hover {
+            background: #e67e22;
+            transform: translateY(-1px);
+        }
+
+        .config-presets {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .preset-button {
+            padding: 4px 8px;
+            background: #7f8c8d;
+            border: none;
+            border-radius: 3px;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .preset-button:hover {
+            background: #95a5a6;
+        }
+
+        .config-info {
+            background: rgba(52, 152, 219, 0.2);
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-align: center;
+        }
+        `;
+
+        // Adicionar CSS ao documento
+        function addMenuCSS() {
+            if (!document.getElementById('gameConfigMenuCSS')) {
+                const style = document.createElement('style');
+                style.id = 'gameConfigMenuCSS';
+                style.textContent = menuCSS;
+                document.head.appendChild(style);
+            }
+        }
+
+        // Criar elemento do menu
+        function createMenu() {
+            addMenuCSS();
+
+            const menu = document.createElement('div');
+            menu.id = 'gameConfigMenu';
+            menu.innerHTML = `
+                <h2>⚙️ Configurações do Jogo</h2>
+
+                <div class="config-info">
+                    Pressione <strong>Ctrl+Shift+C</strong> para abrir/fechar este menu
+                </div>
+
+                <div class="config-section">
+                    <h3>🏹 Auto Cast</h3>
+                    <div class="config-item">
+                        <label>Velocidade (ms):</label>
+                        <input type="number" id="autocastDelay" min="50" max="5000" step="50" value="500">
+                    </div>
+                    <div class="config-presets">
+                        <button class="preset-button" data-preset="50">Instant</button>
+                        <button class="preset-button" data-preset="200">Ultra</button>
+                        <button class="preset-button" data-preset="500">Normal</button>
+                        <button class="preset-button" data-preset="1000">Lento</button>
+                        <button class="preset-button" data-preset="2000">Muito Lento</button>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <h3>📊 Estatísticas</h3>
+                    <div class="config-item">
+                        <label>Configurações ativas:</label>
+                        <span id="configCount">-</span>
+                    </div>
+                    <div class="config-item">
+                        <label>Delay atual:</label>
+                        <span id="currentDelay">-</span>
+                    </div>
+                </div>
+
+                <div class="config-buttons">
+                    <button class="config-button secondary" id="closeMenu">Fechar</button>
+                    <button class="config-button info" id="resetConfigs">Reset</button>
+                    <button class="config-button primary" id="saveConfigs">Salvar</button>
+                </div>
+            `;
+
+            document.body.appendChild(menu);
+            return menu;
+        }
+
+        // Carregar valores atuais
+        function loadCurrentValues() {
+            if (!menuElement) return;
+
+            // Auto Cast Delay
+            const currentDelay = window.__cfg('autocast_delay', 500);
+            const delayInput = menuElement.querySelector('#autocastDelay');
+            if (delayInput) delayInput.value = currentDelay;
+
+            // Estatísticas
+            const configCountSpan = menuElement.querySelector('#configCount');
+            const currentDelaySpan = menuElement.querySelector('#currentDelay');
+
+            if (configCountSpan) {
+                const configs = window.__cfg();
+                configCountSpan.textContent = Object.keys(configs).length;
+            }
+
+            if (currentDelaySpan) {
+                currentDelaySpan.textContent = currentDelay + 'ms';
+            }
+        }
+
+        // Salvar configurações
+        function saveConfigs() {
+            if (!menuElement) return;
+
+            // Auto Cast Delay
+            const delayInput = menuElement.querySelector('#autocastDelay');
+            if (delayInput) {
+                const newDelay = parseInt(delayInput.value);
+                window.__cfg.set('autocast_delay', newDelay);
+                console.log(`[ConfigMenu] Auto Cast Delay alterado para: ${newDelay}ms`);
+            }
+
+            // Atualizar estatísticas
+            loadCurrentValues();
+
+            alert('✅ Configurações salvas com sucesso!');
+        }
+
+        // Reset configurações
+        function resetConfigs() {
+            if (confirm('🔄 Tem certeza que deseja resetar todas as configurações?')) {
+                window.__cfg.set('autocast_delay', 500);
+                loadCurrentValues();
+                console.log('[ConfigMenu] Configurações resetadas para padrões');
+                alert('🔄 Configurações resetadas!');
+            }
+        }
+
+        // Mostrar menu
+        function showMenu() {
+            if (!menuElement) {
+                menuElement = createMenu();
+
+                // Event listeners
+                menuElement.querySelector('#closeMenu').addEventListener('click', hideMenu);
+                menuElement.querySelector('#saveConfigs').addEventListener('click', saveConfigs);
+                menuElement.querySelector('#resetConfigs').addEventListener('click', resetConfigs);
+
+                // Preset buttons
+                menuElement.querySelectorAll('.preset-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const delay = e.target.dataset.preset;
+                        menuElement.querySelector('#autocastDelay').value = delay;
+                    });
+                });
+
+                // Fechar com ESC
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && menuVisible) {
+                        hideMenu();
+                    }
+                });
+            }
+
+            loadCurrentValues();
+            menuElement.style.display = 'block';
+            menuVisible = true;
+            console.log('[ConfigMenu] Menu aberto');
+        }
+
+        // Esconder menu
+        function hideMenu() {
+            if (menuElement) {
+                menuElement.style.display = 'none';
+                menuVisible = false;
+                console.log('[ConfigMenu] Menu fechado');
+            }
+        }
+
+        // Toggle menu
+        function toggleMenu() {
+            if (menuVisible) {
+                hideMenu();
+            } else {
+                showMenu();
+            }
+        }
+
+        // Hotkey listener (Ctrl+Shift+C)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.code === 'KeyF') {
+                e.preventDefault();
+                toggleMenu();
+            }
+        });
+
+        console.log('[ConfigMenu] Sistema inicializado');
+        console.log('[ConfigMenu] Pressione Ctrl+Shift+C para abrir o menu');
+    });
+
+})();
+// ===== FIM CONFIG MENU SYSTEM =====
+
+
+// ===== SISTEMA CENTRAL DE CONFIGURAÇÃO =====
+(function() {
+    'use strict';
+
+    // Storage central de configurações
+    const CONFIG_STORAGE_KEY = 'gamehack_configs';
+    const configs = {};
+
+    // Carrega configurações salvas do localStorage
+    function loadConfigs() {
+        try {
+            const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                Object.assign(configs, parsed);
+                console.log('[ConfigSystem] Configurações carregadas:', Object.keys(configs));
+            }
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao carregar configurações:', error);
+        }
+    }
+
+    // Salva configurações no localStorage
+    function saveConfigs() {
+        try {
+            localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao salvar configurações:', error);
+        }
+    }
+
+    // API principal: window.__cfg(key, defaultValue)
+    function configAPI(key, defaultValue) {
+        // Se não tem argumentos, retorna todas as configs
+        if (arguments.length === 0) {
+            return { ...configs };
+        }
+
+        // Se tem apenas key, retorna o valor
+        if (arguments.length === 1) {
+            return configs.hasOwnProperty(key) ? configs[key] : undefined;
+        }
+
+        // Se key não existe, cria com valor padrão
+        if (!configs.hasOwnProperty(key)) {
+            configs[key] = defaultValue;
+            saveConfigs();
+            console.log(`[ConfigSystem] Criada configuração '${key}' = ${defaultValue}`);
+        }
+
+        return configs[key];
+    }
+
+    // API para definir valor: window.__cfg.set(key, value)
+    configAPI.set = function(key, value) {
+        const oldValue = configs[key];
+        configs[key] = value;
+        saveConfigs();
+        console.log(`[ConfigSystem] Configuração '${key}' alterada: ${oldValue} → ${value}`);
+        return value;
+    };
+
+    // API para remover: window.__cfg.remove(key)
+    configAPI.remove = function(key) {
+        if (configs.hasOwnProperty(key)) {
+            const value = configs[key];
+            delete configs[key];
+            saveConfigs();
+            console.log(`[ConfigSystem] Configuração '${key}' removida (era: ${value})`);
+            return true;
+        }
+        return false;
+    };
+
+    // API para limpar tudo: window.__cfg.clear()
+    configAPI.clear = function() {
+        const count = Object.keys(configs).length;
+        Object.keys(configs).forEach(key => delete configs[key]);
+        saveConfigs();
+        console.log(`[ConfigSystem] Todas as configurações removidas (${count} itens)`);
+    };
+
+    // API para listar: window.__cfg.list()
+    configAPI.list = function() {
+        console.log('[ConfigSystem] Configurações ativas:');
+        for (const [key, value] of Object.entries(configs)) {
+            console.log(`  ${key}: ${JSON.stringify(value)}`);
+        }
+        return configs;
+    };
+
+    // Inicializar sistema
+    loadConfigs();
+
+    // Expor API globalmente
+    window.__cfg = configAPI;
+
+    console.log('[ConfigSystem] Sistema de configurações inicializado');
+    console.log('[ConfigSystem] Uso: window.__cfg("nome", valorPadrao)');
+    console.log('[ConfigSystem] APIs: __cfg.set(k,v), __cfg.remove(k), __cfg.clear(), __cfg.list()');
+
+})();
+// ===== FIM DO SISTEMA DE CONFIGURAÇÃO =====

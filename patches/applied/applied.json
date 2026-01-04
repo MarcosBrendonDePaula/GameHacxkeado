@@ -1,7 +1,8 @@
 {
   "patches": [
-    "config-system",
-    "auto-cast-speed"
+    "auto-cast-speed",
+    "config-menu",
+    "config-system"
   ],
-  "lastUpdate": "2025-12-30T02:33:55.045Z"
+  "lastUpdate": "2026-01-04T17:13:44.819Z"
 }

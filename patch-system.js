@@ -16,6 +16,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+// JavaScript Validator para validação pós-patch
+const JavaScriptValidator = require('./js-validator.js');
+
 class PatchManager {
     constructor() {
         this.projectDir = process.cwd();
@@ -160,6 +163,67 @@ class PatchManager {
 
             // Salva o arquivo modificado
             fs.writeFileSync(this.sourceFile, modifiedContent, 'utf8');
+
+            // Validação JavaScript pós-patch (verificar se patch introduziu novos problemas)
+            this.log('Validando sintaxe JavaScript após aplicação do patch...', true);
+            const validator = new JavaScriptValidator();
+
+            // Validar código original primeiro
+            const originalValid = validator.validateSyntax(sourceContent, this.sourceFile);
+
+            // Limpar erros/warnings do teste original
+            const originalErrors = [...validator.errors];
+            const originalWarnings = [...validator.warnings];
+
+            // Validar código modificado
+            const modifiedValid = validator.validateSyntax(modifiedContent, this.sourceFile);
+
+            // Comparar erros: se código original já tinha erro e modificado tem o mesmo erro, ok
+            if (!modifiedValid && !originalValid) {
+                // Ambos têm erros - verificar se são os mesmos
+                const newErrors = validator.errors.filter(error =>
+                    !originalErrors.some(origError =>
+                        origError.message === error.message &&
+                        origError.location.line === error.location.line
+                    )
+                );
+
+                if (newErrors.length === 0) {
+                    this.log('⚠️  Código continua com problemas pré-existentes, mas patch não introduziu novos erros', true);
+                } else {
+                    this.log('❌ Patch introduziu novos erros JavaScript!');
+                    console.log(`Novos erros (${newErrors.length}):`);
+                    newErrors.forEach((error, index) => {
+                        console.log(`${index + 1}. [${error.type}] ${error.message} (Linha: ${error.location.line})`);
+                    });
+                    throw new Error('Patch introduziu novos problemas JavaScript');
+                }
+            } else if (!modifiedValid && originalValid) {
+                // Código original era válido, mas patch quebrou
+                this.log('❌ Patch quebrou código JavaScript que estava válido!');
+                validator.showReport();
+                validator.suggestFixes();
+                throw new Error('Patch quebrou JavaScript válido');
+            } else if (modifiedValid) {
+                this.log('✅ Validação JavaScript passou - código válido após patch', true);
+            }
+
+            // Mostrar novos warnings se houver
+            const newWarnings = validator.warnings.filter(warning =>
+                !originalWarnings.some(origWarning =>
+                    origWarning.message === warning.message &&
+                    origWarning.location.line === warning.location.line
+                )
+            );
+
+            if (newWarnings.length > 0) {
+                this.log(`⚠️  ${newWarnings.length} novo(s) aviso(s) introduzido(s) pelo patch`);
+                if (this.isVerbose) {
+                    newWarnings.forEach((warning, index) => {
+                        console.log(`${index + 1}. [${warning.type}] ${warning.message}`);
+                    });
+                }
+            }
 
             // Marca como aplicado
             this.appliedPatches.add(patchName);
@@ -422,6 +486,27 @@ class PatchManager {
             try {
                 const modifiedContent = await patch.remove(content);
                 fs.writeFileSync(this.sourceFile, modifiedContent, 'utf8');
+
+                // Validação JavaScript pós-remoção
+                this.log('Validando sintaxe JavaScript após remoção do patch...', true);
+                const validator = new JavaScriptValidator();
+                const isValidJS = validator.validateSyntax(modifiedContent, this.sourceFile);
+
+                if (!isValidJS) {
+                    this.log('❌ Código JavaScript inválido após remoção do patch!');
+                    validator.showReport();
+                    validator.suggestFixes();
+                    throw new Error('Remoção de patch resultou em JavaScript inválido');
+                }
+
+                if (validator.warnings.length > 0) {
+                    this.log(`⚠️  ${validator.warnings.length} aviso(s) encontrado(s) após remoção`);
+                    if (this.isVerbose) {
+                        validator.showReport();
+                    }
+                } else {
+                    this.log('✅ Validação JavaScript passou após remoção', true);
+                }
 
                 this.appliedPatches.delete(patchName);
                 this.saveAppliedPatches();

@@ -20,6 +20,7 @@ async function applyAllPatches() {
 
     // Define patches essenciais em ordem de prioridade
     const essentialPatches = [
+        'config-system',
         'auto-cast-speed',
         'super-cast-speed',
         'auto-repair',
