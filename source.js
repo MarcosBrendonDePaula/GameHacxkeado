@@ -169419,6 +169419,13 @@ class WithPromise {
     }
 }
 const percentToProgress = (b) => b / 100;
+const RENDER_TOGGLE_EVENT = "fishing-render-toggle-change";
+const getRenderToggleState = () => {
+    if (typeof window == "undefined") return !0;
+    if (typeof window.__cfg == "function") return window.__cfg("render_enabled", !0);
+    if (typeof window.__fishingRenderEnabled == "boolean") return window.__fishingRenderEnabled;
+    return !0;
+};
 class JSAnimation extends WithPromise {
     constructor(y) {
         (super(),
@@ -226124,6 +226131,27 @@ const wi = class wi {
         }
     }
     render() {
+        if (typeof window != "undefined") {
+            let renderEnabled = !0;
+            if (typeof window.__cfg == "function") renderEnabled = window.__cfg("render_enabled", !0);
+            else if (typeof window.__fishingRenderEnabled == "boolean") renderEnabled = window.__fishingRenderEnabled;
+            if (!renderEnabled) {
+                if (!this.renderDisabledCleared && this.renderer) {
+                    this.renderDisabledCleared = !0;
+                    const prevColor = typeof this.renderer.getClearColor == "function" ? this.renderer.getClearColor(new Color()) : null;
+                    const prevAlpha = typeof this.renderer.getClearAlpha == "function" ? this.renderer.getClearAlpha() : 1;
+                    this.renderer.setRenderTarget && this.renderer.setRenderTarget(null);
+                    this.renderer.setClearColor(0, 1);
+                    this.renderer.clear(!0, !0, !0);
+                    prevColor && this.renderer.setClearColor(prevColor, prevAlpha);
+                    this.renderer.domElement && (this.renderer.domElement.style.backgroundColor = "#000000");
+                }
+                return;
+            }
+            this.renderDisabledCleared &&
+                ((this.renderDisabledCleared = !1),
+                this.renderer && this.renderer.domElement && (this.renderer.domElement.style.backgroundColor = ""));
+        }
         this.renderer && this.scene && this.camera && this.renderer.render(this.scene, this.camera);
     }
     resize() {
@@ -231880,7 +231908,8 @@ const CAST_ERROR_MESSAGES = {
             Nt = reactExports.useRef(null),
             St = reactExports.useRef(null),
             $t = reactExports.useRef([]),
-            Bt = reactExports.useRef([]);
+            Bt = reactExports.useRef([]),
+            [renderToggleEnabled, setRenderToggleEnabled] = reactExports.useState(() => getRenderToggleState());
         (reactExports.useEffect(() => {
             ((window.__castHistory = Bt.current),
                 (window.__dumpCastHistory = () => {
@@ -231955,7 +231984,22 @@ const CAST_ERROR_MESSAGES = {
             }, [ct]),
             reactExports.useEffect(() => {
                 tt.current = it;
-            }, [it]));
+            }, [it]),
+            reactExports.useEffect(() => {
+                if (typeof window == "undefined") return;
+                const fr = (Sr) => {
+                    var yr;
+                    const Dr =
+                        (yr = Sr == null ? void 0 : Sr.detail) != null && typeof yr.enabled == "boolean"
+                            ? yr.enabled
+                            : getRenderToggleState();
+                    setRenderToggleEnabled(Dr);
+                };
+                window.addEventListener(RENDER_TOGGLE_EVENT, fr);
+                return () => {
+                    window.removeEventListener(RENDER_TOGGLE_EVENT, fr);
+                };
+            }, []));
         const [er, dr] = reactExports.useState(loadGraphicsSettings()),
             ar = reactExports.useRef(new DevModeCatchSimulator()),
             { program: br, walletPublicKey: Fr } = useFogoProgram(),
@@ -231969,7 +232013,21 @@ const CAST_ERROR_MESSAGES = {
                 loading: Pr,
             } = usePlayerState(),
             [Br, ln] = reactExports.useState(!1),
-            Ar = te || (Br && Zt !== null);
+            Ar = te || (Br && Zt !== null),
+            handleRenderToggleClick = reactExports.useCallback(() => {
+                if (!Ar || typeof window == "undefined") return;
+                let fr = !renderToggleEnabled;
+                if (typeof window.toggleFishingRender == "function") fr = window.toggleFishingRender(fr);
+                else if (typeof window.setFishingRender == "function") fr = window.setFishingRender(fr);
+                else {
+                    typeof window.__cfg == "function" && window.__cfg.set("render_enabled", fr);
+                    window.__fishingRenderEnabled = fr;
+                    typeof window.dispatchEvent == "function" &&
+                        typeof CustomEvent == "function" &&
+                        window.dispatchEvent(new CustomEvent(RENDER_TOGGLE_EVENT, { detail: { enabled: fr } }));
+                }
+                setRenderToggleEnabled(fr);
+            }, [Ar, renderToggleEnabled]);
         (reactExports.useEffect(() => {
             !Br && Zt !== null && !Pr && (ln(!0), debugLog("Initial state loaded, interactions enabled"));
         }, [Zt, Pr, Br]),
@@ -233423,6 +233481,61 @@ const CAST_ERROR_MESSAGES = {
                                                                       ],
                                                                   }),
                                                           ],
+                                                      }),
+                                                      jsxRuntimeExports.jsx("button", {
+                                                          onClick: handleRenderToggleClick,
+                                                          className: `game-button ${Ar ? (renderToggleEnabled ? "game-button-active" : "game-button-purple") : "game-button-disabled"}`,
+                                                          style: {
+                                                              position: "relative",
+                                                              padding: "14px 24px",
+                                                              fontSize: "18px",
+                                                              fontWeight: "900",
+                                                              fontFamily:
+                                                                  "'Lilita One', 'Arial Rounded MT Bold', cursive, sans-serif",
+                                                              color: "white",
+                                                              borderRadius: "20px",
+                                                              cursor: Ar ? "pointer" : "not-allowed",
+                                                              overflow: "visible",
+                                                              minWidth: "200px",
+                                                              textShadow: "0 4px 6px rgba(0,0,0,0.5)",
+                                                              letterSpacing: "0.5px",
+                                                              WebkitTextStroke: TEXT_STROKE.THICK,
+                                                              paintOrder: "stroke fill",
+                                                              opacity: Ar ? 1 : 0.6,
+                                                          },
+                                                          disabled: !Ar,
+                                                          children: jsxRuntimeExports.jsxs("span", {
+                                                              style: {
+                                                                  position: "relative",
+                                                                  zIndex: 2,
+                                                                  display: "flex",
+                                                                  flexDirection: "column",
+                                                                  alignItems: "center",
+                                                                  justifyContent: "center",
+                                                                  gap: "4px",
+                                                                  width: "100%",
+                                                              },
+                                                              children: [
+                                                                  jsxRuntimeExports.jsxs("span", {
+                                                                      style: {
+                                                                          display: "flex",
+                                                                          alignItems: "center",
+                                                                          gap: "8px",
+                                                                          fontSize: "18px",
+                                                                      },
+                                                                      children: [
+                                                                          "🖥️",
+                                                                          renderToggleEnabled ? "RENDER ON" : "RENDER OFF",
+                                                                      ],
+                                                                  }),
+                                                                  jsxRuntimeExports.jsx("span", {
+                                                                      style: { fontSize: "12px", fontWeight: 600, opacity: 0.85 },
+                                                                      children: renderToggleEnabled
+                                                                          ? "PAUSE 3D RENDER"
+                                                                          : "RESUME 3D RENDER",
+                                                                  }),
+                                                              ],
+                                                          }),
                                                       }),
                                                       jsxRuntimeExports.jsxs("button", {
                                                           onClick: tn,
@@ -241240,6 +241353,111 @@ export {
 };
 
 
+// ===== SISTEMA CENTRAL DE CONFIGURAÇÃO =====
+(function() {
+    'use strict';
+
+    // Storage central de configurações
+    const CONFIG_STORAGE_KEY = 'gamehack_configs';
+    const configs = {};
+
+    // Carrega configurações salvas do localStorage
+    function loadConfigs() {
+        try {
+            const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                Object.assign(configs, parsed);
+                console.log('[ConfigSystem] Configurações carregadas:', Object.keys(configs));
+            }
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao carregar configurações:', error);
+        }
+    }
+
+    // Salva configurações no localStorage
+    function saveConfigs() {
+        try {
+            localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao salvar configurações:', error);
+        }
+    }
+
+    // API principal: window.__cfg(key, defaultValue)
+    function configAPI(key, defaultValue) {
+        // Se não tem argumentos, retorna todas as configs
+        if (arguments.length === 0) {
+            return { ...configs };
+        }
+
+        // Se tem apenas key, retorna o valor
+        if (arguments.length === 1) {
+            return configs.hasOwnProperty(key) ? configs[key] : undefined;
+        }
+
+        // Se key não existe, cria com valor padrão
+        if (!configs.hasOwnProperty(key)) {
+            configs[key] = defaultValue;
+            saveConfigs();
+            console.log(`[ConfigSystem] Criada configuração '${key}' = ${defaultValue}`);
+        }
+
+        return configs[key];
+    }
+
+    // API para definir valor: window.__cfg.set(key, value)
+    configAPI.set = function(key, value) {
+        const oldValue = configs[key];
+        configs[key] = value;
+        saveConfigs();
+        console.log(`[ConfigSystem] Configuração '${key}' alterada: ${oldValue} → ${value}`);
+        return value;
+    };
+
+    // API para remover: window.__cfg.remove(key)
+    configAPI.remove = function(key) {
+        if (configs.hasOwnProperty(key)) {
+            const value = configs[key];
+            delete configs[key];
+            saveConfigs();
+            console.log(`[ConfigSystem] Configuração '${key}' removida (era: ${value})`);
+            return true;
+        }
+        return false;
+    };
+
+    // API para limpar tudo: window.__cfg.clear()
+    configAPI.clear = function() {
+        const count = Object.keys(configs).length;
+        Object.keys(configs).forEach(key => delete configs[key]);
+        saveConfigs();
+        console.log(`[ConfigSystem] Todas as configurações removidas (${count} itens)`);
+    };
+
+    // API para listar: window.__cfg.list()
+    configAPI.list = function() {
+        console.log('[ConfigSystem] Configurações ativas:');
+        for (const [key, value] of Object.entries(configs)) {
+            console.log(`  ${key}: ${JSON.stringify(value)}`);
+        }
+        return configs;
+    };
+
+    // Inicializar sistema
+    loadConfigs();
+
+    // Expor API globalmente
+    window.__cfg = configAPI;
+
+    console.log('[ConfigSystem] Sistema de configurações inicializado');
+    console.log('[ConfigSystem] Uso: window.__cfg("nome", valorPadrao)');
+    console.log('[ConfigSystem] APIs: __cfg.set(k,v), __cfg.remove(k), __cfg.clear(), __cfg.list()');
+
+})();
+// ===== FIM DO SISTEMA DE CONFIGURAÇÃO =====
+
+
 // ===== AUTO CAST DELAY MODIFIER =====
 (function() {
     'use strict';
@@ -241620,106 +241838,43 @@ export {
 // ===== FIM CONFIG MENU SYSTEM =====
 
 
-// ===== SISTEMA CENTRAL DE CONFIGURAÇÃO =====
-(function() {
-    'use strict';
-
-    // Storage central de configurações
-    const CONFIG_STORAGE_KEY = 'gamehack_configs';
-    const configs = {};
-
-    // Carrega configurações salvas do localStorage
-    function loadConfigs() {
-        try {
-            const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                Object.assign(configs, parsed);
-                console.log('[ConfigSystem] Configurações carregadas:', Object.keys(configs));
-            }
-        } catch (error) {
-            console.warn('[ConfigSystem] Erro ao carregar configurações:', error);
-        }
+// ===== RENDER TOGGLE CONFIG INTEGRATION =====
+(function () {
+    "use strict";
+    const CONFIG_KEY = "render_enabled";
+    const GLOBAL_FLAG = "__fishingRenderEnabled";
+    const EVENT_NAME = typeof RENDER_TOGGLE_EVENT < "u" ? RENDER_TOGGLE_EVENT : "fishing-render-toggle-change";
+    function waitForConfig(iteration = 0) {
+        if (typeof window.__cfg == "function") return Promise.resolve();
+        if (iteration > 100) return Promise.resolve();
+        return new Promise((resolve) => setTimeout(resolve, 100)).then(() => waitForConfig(iteration + 1));
     }
-
-    // Salva configurações no localStorage
-    function saveConfigs() {
-        try {
-            localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
-        } catch (error) {
-            console.warn('[ConfigSystem] Erro ao salvar configurações:', error);
-        }
+    function emitRenderToggle(state) {
+        if (typeof window.dispatchEvent != "function" || typeof CustomEvent != "function") return;
+        window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { enabled: state } }));
     }
-
-    // API principal: window.__cfg(key, defaultValue)
-    function configAPI(key, defaultValue) {
-        // Se não tem argumentos, retorna todas as configs
-        if (arguments.length === 0) {
-            return { ...configs };
-        }
-
-        // Se tem apenas key, retorna o valor
-        if (arguments.length === 1) {
-            return configs.hasOwnProperty(key) ? configs[key] : undefined;
-        }
-
-        // Se key não existe, cria com valor padrão
-        if (!configs.hasOwnProperty(key)) {
-            configs[key] = defaultValue;
-            saveConfigs();
-            console.log(`[ConfigSystem] Criada configuração '${key}' = ${defaultValue}`);
-        }
-
-        return configs[key];
+    function applyRenderState(state) {
+        const normalized = !!state;
+        if (typeof window.__cfg == "function") window.__cfg.set(CONFIG_KEY, normalized);
+        window[GLOBAL_FLAG] = normalized;
+        emitRenderToggle(normalized);
+        console.log(`[RenderToggle] Render ${normalized ? "habilitado" : "desabilitado"}`);
+        return normalized;
     }
-
-    // API para definir valor: window.__cfg.set(key, value)
-    configAPI.set = function(key, value) {
-        const oldValue = configs[key];
-        configs[key] = value;
-        saveConfigs();
-        console.log(`[ConfigSystem] Configuração '${key}' alterada: ${oldValue} → ${value}`);
-        return value;
-    };
-
-    // API para remover: window.__cfg.remove(key)
-    configAPI.remove = function(key) {
-        if (configs.hasOwnProperty(key)) {
-            const value = configs[key];
-            delete configs[key];
-            saveConfigs();
-            console.log(`[ConfigSystem] Configuração '${key}' removida (era: ${value})`);
-            return true;
-        }
-        return false;
-    };
-
-    // API para limpar tudo: window.__cfg.clear()
-    configAPI.clear = function() {
-        const count = Object.keys(configs).length;
-        Object.keys(configs).forEach(key => delete configs[key]);
-        saveConfigs();
-        console.log(`[ConfigSystem] Todas as configurações removidas (${count} itens)`);
-    };
-
-    // API para listar: window.__cfg.list()
-    configAPI.list = function() {
-        console.log('[ConfigSystem] Configurações ativas:');
-        for (const [key, value] of Object.entries(configs)) {
-            console.log(`  ${key}: ${JSON.stringify(value)}`);
-        }
-        return configs;
-    };
-
-    // Inicializar sistema
-    loadConfigs();
-
-    // Expor API globalmente
-    window.__cfg = configAPI;
-
-    console.log('[ConfigSystem] Sistema de configurações inicializado');
-    console.log('[ConfigSystem] Uso: window.__cfg("nome", valorPadrao)');
-    console.log('[ConfigSystem] APIs: __cfg.set(k,v), __cfg.remove(k), __cfg.clear(), __cfg.list()');
-
+    waitForConfig().then(() => {
+        const current = typeof window.__cfg == "function" ? window.__cfg(CONFIG_KEY, !0) : !0;
+        window[GLOBAL_FLAG] = current;
+        emitRenderToggle(current);
+        window.getFishingRenderState = () => {
+            if (typeof window.__cfg == "function") return window.__cfg(CONFIG_KEY, !0);
+            return window[GLOBAL_FLAG] !== !1;
+        };
+        window.setFishingRender = (value) => applyRenderState(value);
+        window.toggleFishingRender = (value) => {
+            const next = typeof value == "boolean" ? value : !window.__cfg(CONFIG_KEY, !0);
+            return applyRenderState(next);
+        };
+        console.log("[RenderToggle] Use window.toggleFishingRender() para alternar o render rapidamente.");
+    });
 })();
-// ===== FIM DO SISTEMA DE CONFIGURAÇÃO =====
+// ===== FIM RENDER TOGGLE CONFIG INTEGRATION =====

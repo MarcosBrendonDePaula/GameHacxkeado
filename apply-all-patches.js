@@ -4,10 +4,12 @@
  * Apply All Patches - Script conveniente para aplicar todos os patches de uma vez
  *
  * Este script aplica automaticamente todos os patches essenciais do GameHacxkeado:
+ * - config-system: Sistema central de configurações
  * - auto-cast-speed: Modifica velocidade do auto cast
  * - super-cast-speed: Modifica velocidade do super cast
  * - auto-repair: Sistema de auto repair
  * - config-menu: Menu visual de configurações
+ * - render-toggle: Controle de renderização via config system
  */
 
 const PatchManager = require('./patch-system.js');
@@ -24,7 +26,8 @@ async function applyAllPatches() {
         'auto-cast-speed',
         'super-cast-speed',
         'auto-repair',
-        'config-menu'
+        'config-menu',
+        'render-toggle'
     ];
 
     try {
