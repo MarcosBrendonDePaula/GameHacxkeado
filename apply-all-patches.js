@@ -10,6 +10,7 @@
  * - auto-repair: Sistema de auto repair
  * - config-menu: Menu visual de configurações
  * - render-toggle: Controle de renderização via config system
+ * - boat-manual-control: Controle manual do barco com WASD
  */
 
 const PatchManager = require('./patch-system.js');
@@ -27,7 +28,9 @@ async function applyAllPatches() {
         'super-cast-speed',
         'auto-repair',
         'config-menu',
-        'render-toggle'
+        'render-toggle',
+        'boat-manual-control',
+        'game-bridge'
     ];
 
     try {

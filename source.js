@@ -169420,11 +169420,18 @@ class WithPromise {
 }
 const percentToProgress = (b) => b / 100;
 const RENDER_TOGGLE_EVENT = "fishing-render-toggle-change";
+const MANUAL_BOAT_EVENT = "manual-boat-control-change";
 const getRenderToggleState = () => {
     if (typeof window == "undefined") return !0;
     if (typeof window.__cfg == "function") return window.__cfg("render_enabled", !0);
     if (typeof window.__fishingRenderEnabled == "boolean") return window.__fishingRenderEnabled;
     return !0;
+};
+const getManualBoatControlState = () => {
+    if (typeof window == "undefined") return !1;
+    if (typeof window.__cfg == "function") return window.__cfg("manual_boat_control", !1);
+    if (typeof window.__manualBoatControlEnabled == "boolean") return window.__manualBoatControlEnabled;
+    return !1;
 };
 class JSAnimation extends WithPromise {
     constructor(y) {
@@ -225332,6 +225339,19 @@ const wi = class wi {
         or(this, "boatPulseDownAmount", 0.15);
         or(this, "boatPulseSplashTriggered", !1);
         or(this, "lastCatchRarity", 1);
+        or(this, "manualBoatControlDesired", !1);
+        or(this, "manualBoatControlActive", !1);
+        or(this, "manualBoatState", { posX: 0, posZ: 0, velX: 0, velZ: 0 });
+        or(this, "manualBoatKeys", { forward: !1, backward: !1, left: !1, right: !1 });
+        or(this, "manualBoatSpeed", 5);
+        or(this, "manualBoatAcceleration", 14);
+        or(this, "manualBoatFriction", 6);
+        or(this, "manualBoatLastTileId", null);
+        or(this, "manualBoatLastCatchAt", 0);
+        or(this, "manualBoatCatchCooldown", 800);
+        or(this, "handleManualBoatKeyDownBound");
+        or(this, "handleManualBoatKeyUpBound");
+        or(this, "manualBoatControlEventBound");
         or(this, "fishingLine", null);
         or(this, "splashParticles", null);
         or(this, "unityEnvironment", null);
@@ -225387,6 +225407,18 @@ const wi = class wi {
             materialRoughness: y.materialRoughness ?? 0.6,
             materialMetalness: y.materialMetalness ?? 0.2,
         }),
+            (this.manualBoatState.posX = this.config.boatOffsetX ?? 0),
+            (this.manualBoatState.posZ = this.config.boatOffsetZ ?? 0),
+            (this.manualBoatControlDesired = typeof window != "undefined" ? getManualBoatControlState() : !1),
+            typeof window != "undefined" &&
+                ((this.manualBoatControlEventBound = (y) => {
+                    var x;
+                    this.manualBoatControlDesired =
+                        (x = y == null ? void 0 : y.detail) != null && typeof x.enabled == "boolean"
+                            ? x.enabled
+                            : getManualBoatControlState();
+                }),
+                window.addEventListener(MANUAL_BOAT_EVENT, this.manualBoatControlEventBound)),
             (this.HALF_COLUMNS = Math.floor(this.config.gridColumns / 2)),
             (this.baseWaterColor = new Color(this.config.baseTileColor)),
             (this.fishedWaterColor = new Color(this.config.fishedTileColor)),
@@ -225863,8 +225895,17 @@ const wi = class wi {
             const J = MathUtils.degToRad(this.config.cameraTiltDeg);
             X = this.config.cameraHeight * Math.tan(Math.abs(J));
         }
-        (this.camera.position.set(x + this.currentCameraOffsetX, A, O),
-            this.camera.lookAt(U + this.currentCameraOffsetX, z, X));
+                let camPosX = x + this.currentCameraOffsetX,
+            camPosZ = O,
+            lookPosX = U + this.currentCameraOffsetX,
+            lookPosZ = X;
+        if (this.manualBoatControlActive) {
+            const worldGroupZ = this.worldGroup ? this.worldGroup.position.z : 0,
+                boatX = this.manualBoatState.posX,
+                boatZ = this.manualBoatState.posZ + worldGroupZ;
+            (camPosX = boatX), (camPosZ = boatZ + O), (lookPosX = boatX), (lookPosZ = boatZ);
+        }
+        (this.camera.position.set(camPosX, A, camPosZ), this.camera.lookAt(lookPosX, z, lookPosZ));
     }
     async createHexTiles() {
         var J;
@@ -226200,6 +226241,11 @@ const wi = class wi {
     }
     dispose() {
         var y, x;
+        this.disableManualBoatControl();
+        typeof window != "undefined" &&
+            this.manualBoatControlEventBound &&
+            (window.removeEventListener(MANUAL_BOAT_EVENT, this.manualBoatControlEventBound),
+            (this.manualBoatControlEventBound = null));
         (this.hexMesh &&
             (this.hexMesh.geometry.dispose(),
             this.hexMesh.material instanceof Material && this.hexMesh.material.dispose()),
@@ -226635,11 +226681,135 @@ gl_FragColor = finalColor;`
         }
         return U;
     }
+    shouldUseManualBoatControl() {
+        return !!this.manualBoatControlDesired;
+    }
+    enableManualBoatControl() {
+        if (this.manualBoatControlActive) return;
+        (this.manualBoatControlActive = !0),
+            (this.manualBoatKeys = { forward: !1, backward: !1, left: !1, right: !1 }),
+            (this.manualBoatState.velX = 0),
+            (this.manualBoatState.velZ = 0);
+        const y = (this.boat && this.boat.object3d ? this.boat.object3d.position : null) ?? {
+            x: this.config.boatOffsetX ?? 0,
+            z: this.config.boatOffsetZ ?? 0,
+        };
+        (this.manualBoatState.posX = y.x), (this.manualBoatState.posZ = y.z);
+        if (typeof window != "undefined") {
+            this.handleManualBoatKeyDownBound =
+                this.handleManualBoatKeyDownBound ?? this.handleManualBoatKeyDown.bind(this);
+            this.handleManualBoatKeyUpBound =
+                this.handleManualBoatKeyUpBound ?? this.handleManualBoatKeyUp.bind(this);
+            window.addEventListener("keydown", this.handleManualBoatKeyDownBound),
+                window.addEventListener("keyup", this.handleManualBoatKeyUpBound);
+        }
+        debugLog("�Ys� Manual boat control ENABLED");
+    }
+    disableManualBoatControl() {
+        if (!this.manualBoatControlActive) return;
+        (this.manualBoatControlActive = !1),
+            (this.manualBoatKeys = { forward: !1, backward: !1, left: !1, right: !1 }),
+            (this.manualBoatState.velX = 0),
+            (this.manualBoatState.velZ = 0),
+            (this.manualBoatLastTileId = null);
+        if (typeof window != "undefined") {
+            this.handleManualBoatKeyDownBound &&
+                window.removeEventListener("keydown", this.handleManualBoatKeyDownBound);
+            this.handleManualBoatKeyUpBound &&
+                window.removeEventListener("keyup", this.handleManualBoatKeyUpBound);
+        }
+        debugLog("�Ys� Manual boat control DISABLED");
+    }
+    mapManualBoatKey(y) {
+        const x = y.key;
+        if (!x) return null;
+        switch (x) {
+            case "w":
+            case "W":
+            case "ArrowUp":
+                return "forward";
+            case "s":
+            case "S":
+            case "ArrowDown":
+                return "backward";
+            case "a":
+            case "A":
+            case "ArrowLeft":
+                return "left";
+            case "d":
+            case "D":
+            case "ArrowRight":
+                return "right";
+            default:
+                return null;
+        }
+    }
+    handleManualBoatKeyDown(y) {
+        if (!this.manualBoatControlActive) return;
+        const x = this.mapManualBoatKey(y);
+        x &&
+            ((this.manualBoatKeys[x] = !0),
+            (y.key.startsWith("Arrow") || y.key === " ") && y.preventDefault && y.preventDefault());
+    }
+    handleManualBoatKeyUp(y) {
+        const x = this.mapManualBoatKey(y);
+        x && (this.manualBoatKeys[x] = !1);
+    }
+    clampManualBoatPosition(y) {
+        const x = this.getColumnWidth() * this.config.gridColumns * 0.45,
+            A = this.getRowStep(),
+            O = Math.max(-2, -this.config.backPaddingRows * A),
+            U = this.config.forwardViewRows * A;
+        (y.posX = Math.max(-x, Math.min(x, y.posX))), (y.posZ = Math.max(O, Math.min(U, y.posZ)));
+    }
+    updateManualBoatControl(y) {
+        if (typeof window != "undefined" && typeof window.__cfg == "function") {
+            const O = window.__cfg("manual_boat_control", this.manualBoatControlDesired ?? !1);
+            O !== this.manualBoatControlDesired && (this.manualBoatControlDesired = O);
+        }
+        const x = this.shouldUseManualBoatControl();
+        x && !this.manualBoatControlActive ? this.enableManualBoatControl() : !x && this.manualBoatControlActive && this.disableManualBoatControl();
+        if (!this.manualBoatControlActive) return;
+        const A = this.manualBoatKeys,
+            O = this.manualBoatState,
+            U = (A.left ? 1 : 0) - (A.right ? 1 : 0),
+            z = (A.forward ? 1 : 0) - (A.backward ? 1 : 0),
+            X = Math.max(0, 1 - this.manualBoatFriction * y);
+        (O.velX *= X), (O.velZ *= X);
+        if (U !== 0 || z !== 0) {
+            const J = Math.hypot(U, z) || 1,
+                ee = this.manualBoatAcceleration * y;
+            (O.velX += (U / J) * ee), (O.velZ += (z / J) * ee);
+        }
+        const J = Math.hypot(O.velX, O.velZ),
+            ee = this.manualBoatSpeed;
+        J > ee && ((O.velX = (O.velX / J) * ee), (O.velZ = (O.velZ / J) * ee)),
+            (O.posX += O.velX * y),
+            (O.posZ += O.velZ * y),
+            this.clampManualBoatPosition(O),
+            this.maybeTriggerManualBoatCatch();
+    }
+    maybeTriggerManualBoatCatch() {
+        if (!this.manualBoatControlActive || !this.tileData.length) return;
+        const y = this.worldGroup ? this.manualBoatState.posZ - this.worldGroup.position.z : this.manualBoatState.posZ,
+            x = this.getBoatSupportTile(this.manualBoatState.posX, y);
+        if (!x || !x.isFishable || x.isFished || x.isPending) return;
+        const A = performance.now();
+        if (x.instanceIndex === this.manualBoatLastTileId && A - this.manualBoatLastCatchAt < this.manualBoatCatchCooldown) return;
+        (this.manualBoatLastTileId = x.instanceIndex), (this.manualBoatLastCatchAt = A), this.rotateBoatToTile(x);
+        try {
+            typeof window != "undefined" && typeof window.__onManualTileClick == "function" && window.__onManualTileClick();
+        } catch (O) {
+            debugWarn("�s���? Manual boat hook error:", O);
+        }
+        this.toggleTileFished(x.instanceIndex);
+    }
     updateBoatTransform() {
         var ue;
         if (!((ue = this.boat) != null && ue.object3d) || !this.worldGroup) return;
-        const y = this.config.boatOffsetX ?? 0,
-            x = this.config.boatOffsetZ ?? 0,
+        const manualActive = this.manualBoatControlActive,
+            y = manualActive ? this.manualBoatState.posX : this.config.boatOffsetX ?? 0,
+            x = manualActive ? this.manualBoatState.posZ : this.config.boatOffsetZ ?? 0,
             A = (this.config.hexThickness ?? 0.35) * 0.5 + 0.15,
             O = this.config.boatBaseYOffset ?? A,
             U = y,
@@ -227559,6 +227729,7 @@ gl_FragColor = finalColor;`
         const x = this.targetRows - this.totalRows,
             A = 1e-4,
             O = this.getRowStep();
+        this.updateManualBoatControl(y);
         if (this.controls && this.controls.enabled) this.controls.update();
         else {
             const U = performance.now(),
@@ -237059,7 +237230,29 @@ const InitializationModal = ({
                     }
             },
             it = (ft.currentDurability / ft.maxDurability) * 100;
-        return jsxRuntimeExports.jsxs("div", {
+
+        // ===== REPAIR MODAL CONTROLLER =====
+        reactExports.useEffect(() => {
+            if (typeof window == "undefined") return;
+            const controller = {
+                version: "repair-modal/v1",
+                repairNow: () => mt(),
+                close: () => J(),
+                setError: (message) => ue(message),
+                state: () => ({
+                    canRepair: ct,
+                    isProcessing: ee,
+                    error: ae,
+                    playerState: ft,
+                }),
+            };
+            window.__repairModal = controller;
+            return () => {
+                if (window.__repairModal === controller) delete window.__repairModal;
+            };
+        }, [ct, ee, ae, ft, mt, J, ue]);
+        // ===== END REPAIR MODAL CONTROLLER =====
+return jsxRuntimeExports.jsxs("div", {
             style: {
                 position: "fixed",
                 top: 0,
@@ -240825,8 +241018,253 @@ const sha256 = async (b) => {
             }, [O, Qe, x]),
             React$3.useEffect(() => {
                 !ht && Et && !xe && !it && !U && !O && !Qe && rt ? _e(!0) : xe && O && !DEV_MODE && _e(!1);
-            }, [Et, ht, Tt, xe, it, U, O, Qe, rt, x]),
-            reactExports.useEffect(() => {}, []),
+            }, [Et, ht, Tt, xe, it, U, O, Qe, rt, x]),            // ===== GAME EXTERNAL BRIDGE =====
+            reactExports.useEffect(() => {
+                if (typeof window == "undefined") return;
+                const sessionInfo = b;
+                const sessionEstablished = isEstablished(sessionInfo);
+                const walletAddress = x ? x.toString() : null;
+                const detectedWallet = ae ? ae.toString() : null;
+                const toPubkeyString = (value) => {
+                    if (!value) return null;
+                    if (typeof value == "string") return value;
+                    if (typeof value.toBase58 == "function") return value.toBase58();
+                    if (typeof value.toString == "function") return value.toString();
+                    return null;
+                };
+                const getRepairController = () => window.__repairModal || null;
+                const attemptRepair = () => {
+                    const controller = getRepairController();
+                    if (controller && typeof controller.repairNow == "function") {
+                        controller.repairNow();
+                        return !0;
+                    }
+                    return !1;
+                };
+                const autoRepairApi = typeof window.AutoRepair == "object" ? window.AutoRepair : null;
+                const autoRepairStatus = autoRepairApi && typeof autoRepairApi.status == "function" ? autoRepairApi.status() : null;
+                const configSnapshot = typeof window.__cfg == "function" ? window.__cfg() : null;
+                const sessionDetails = sessionInfo && typeof sessionInfo == "object" ? {
+                    type: sessionInfo.type || null,
+                    wallet: toPubkeyString(sessionInfo.walletPublicKey),
+                    sessionPublicKey: toPubkeyString(sessionInfo.sessionPublicKey),
+                    payer: toPubkeyString(sessionInfo.payer),
+                    hasSendTransaction: typeof sessionInfo.sendTransaction == "function",
+                    hasEndSession: typeof sessionInfo.endSession == "function",
+                    hasStartSupercast: typeof sessionInfo.startSuperCast == "function",
+                } : null;
+                const playerData = O || null;
+                const playerSummary = playerData ? {
+                    rodLevel: playerData.rodLevel ?? null,
+                    boatTier: playerData.boatTier ?? null,
+                    castCount: playerData.castCount ?? null,
+                    power: playerData.power ?? null,
+                    unprocessedFish: playerData.unprocessedFish ?? null,
+                    durability: playerData.maxDurability ? {
+                        current: playerData.currentDurability ?? null,
+                        max: playerData.maxDurability ?? null,
+                        percent: playerData.maxDurability ? Math.round(((playerData.currentDurability ?? 0) / playerData.maxDurability) * 100) : null,
+                        canRepair: playerData.maxDurability ? (playerData.currentDurability ?? 0) <= playerData.maxDurability * 0.2 : null,
+                    } : null,
+                    supercast: { remaining: playerData.supercastRemainingCasts ?? null },
+                } : null;
+                const globalData = A || null;
+                const globalSummary = globalData ? {
+                    difficulty: globalData.currentDifficulty ?? null,
+                    totalNetworkPower: globalData.totalNetworkPower ?? null,
+                    baseEmissionRate: globalData.baseEmissionRate ?? null,
+                } : null;
+                const modalState = {
+                    initialization: xe,
+                    upgrade: Je,
+                    repair: et,
+                    supercast: st,
+                    process: ft,
+                    sessionConnect: yt,
+                };
+                const pdas = {
+                    globalState: toPubkeyString(ee),
+                    playerState: toPubkeyString(te),
+                };
+                const timestamp = Date.now();
+                const stateSnapshot = {
+                    timestamp,
+                    sessionEstablished,
+                    loadingPlayerState: U,
+                    hasPlayerState: !!O,
+                    hasEverHadPlayerState: Qe,
+                    readyForGameplay: rt,
+                    demoMode: ht,
+                    walletMismatchActive: ye,
+                    walletMismatchInfo: tt,
+                    devHUD: fe,
+                    modals: modalState,
+                    playerState: O || null,
+                    globalState: A || null,
+                    playerSummary,
+                    globalSummary,
+                    sessionDetails,
+                    referrer: ue || null,
+                    pdas,
+                    walletDetected: detectedWallet,
+                    config: configSnapshot,
+                    autoRepair: {
+                        available: !!autoRepairApi,
+                        enabled: autoRepairStatus ? !!autoRepairStatus.enabled : autoRepairApi && typeof autoRepairApi.isEnabled == "function" ? autoRepairApi.isEnabled() : null,
+                        status: autoRepairStatus,
+                    },
+                };
+                const modalHandlers = {
+                        initialization: _e,
+                        upgrade: Ke,
+                        repair: at,
+                        supercast: ot,
+                        supercastModal: ot,
+                        process: dt,
+                        processFish: dt,
+                        session: ut,
+                        sessionConnect: ut,
+                    };
+                const actions = {
+                    refreshPlayerState: () => z(),
+                    setPlayerStateFromDecoded: (payload) => X(payload),
+                    setGlobalStateFromDecoded: (payload) => J(payload),
+                    setModalState: (name, isOpen) => {
+                        const setter = modalHandlers[name];
+                        if (!setter) return !1;
+                        setter(!!isOpen);
+                        return !0;
+                    },
+                    openModal: (name) => actions.setModalState(name, !0),
+                    closeModal: (name) => actions.setModalState(name, !1),
+                    closeAllModals: () => {
+                        Object.keys(modalHandlers).forEach((key) => {
+                            const setter = modalHandlers[key];
+                            typeof setter == "function" && setter(!1);
+                        });
+                        return !0;
+                    },
+                    toggleDevHUD: (value) => {
+                        const next = typeof value == "boolean" ? value : !fe;
+                        oe(next);
+                        return next;
+                    },
+                    setDevHUD: (value) => {
+                        const next = !!value;
+                        oe(next);
+                        return next;
+                    },
+                    requestRepairModal: () => {
+                        modalHandlers.repair(!0);
+                        return !0;
+                    },
+                    repairNow: () => {
+                        modalHandlers.repair(!0);
+                        if (attemptRepair()) return !0;
+                        const delays = [50, 200, 500];
+                        delays.forEach((delay) => {
+                            window.setTimeout(() => attemptRepair(), delay);
+                        });
+                        return !1;
+                    },
+                    getRepairController: () => getRepairController(),
+                    setWalletMismatch: (value, info) => {
+                        if (typeof $e != "function") return !1;
+                        $e(!!value);
+                        if (nt && info) {
+                            typeof nt == "function" && nt(info);
+                        }
+                        return !0;
+                    },
+                    clearWalletMismatch: () => {
+                        if (typeof $e != "function") return !1;
+                        $e(!1);
+                        if (nt && typeof nt == "function") {
+                            nt({ sessionWallet: null, detectedWallet: null });
+                        }
+                        return !0;
+                    },
+                    setHasEverHadPlayerState: (value) => {
+                        if (typeof pe != "function") return !1;
+                        pe(!!value);
+                        return !!value;
+                    },
+                    setReadyForGameplay: (value) => {
+                        if (typeof lt != "function") return !1;
+                        lt(!!value);
+                        return !!value;
+                    },
+                    setDemoMode: (value) => {
+                        if (typeof vt != "function") return !1;
+                        vt(!!value);
+                        return !!value;
+                    },
+                    getSessionDetails: () => sessionDetails,
+                    getPlayerSummary: () => playerSummary,
+                    getConfigSnapshot: () => (typeof window.__cfg == "function" ? window.__cfg() : null),
+                    getConfigValue: (key, defaultValue) => (typeof window.__cfg == "function" ? window.__cfg(key, defaultValue) : defaultValue),
+                    setConfigValue: (key, value) => {
+                        if (typeof window.__cfg != "function" || typeof window.__cfg.set != "function") return null;
+                        return window.__cfg.set(key, value);
+                    },
+                    enableAutoRepair: () => {
+                        if (!autoRepairApi || typeof autoRepairApi.enable != "function") return null;
+                        return autoRepairApi.enable();
+                    },
+                    disableAutoRepair: () => {
+                        if (!autoRepairApi || typeof autoRepairApi.disable != "function") return null;
+                        return autoRepairApi.disable();
+                    },
+                    toggleAutoRepair: (value) => {
+                        if (!autoRepairApi || typeof autoRepairApi.toggle != "function") {
+                            if (!autoRepairApi || !value) return null;
+                            return value ? autoRepairApi.enable && autoRepairApi.enable() : autoRepairApi.disable && autoRepairApi.disable();
+                        }
+                        return typeof value == "boolean" ? (value ? autoRepairApi.enable && autoRepairApi.enable() : autoRepairApi.disable && autoRepairApi.disable()) : autoRepairApi.toggle();
+                    },
+                    setAutoRepairDebug: (value) => {
+                        if (!autoRepairApi || typeof autoRepairApi.setDebug != "function") return null;
+                        return autoRepairApi.setDebug(!!value);
+                    },
+                    getAutoRepairStatus: () => (autoRepairApi && typeof autoRepairApi.status == "function" ? autoRepairApi.status() : null),
+                    emitEvent: (name, detail) => {
+                        if (typeof window.dispatchEvent != "function" || typeof CustomEvent != "function") return !1;
+                        window.dispatchEvent(new CustomEvent(name, { detail }));
+                        return !0;
+                    },
+                };
+                const externalBridge = {
+                    version: "game-bridge/v1",
+                    timestamp,
+                    session: sessionInfo,
+                    program: y,
+                    walletPublicKey: walletAddress,
+                    detectedWallet,
+                    state: stateSnapshot,
+                    actions,
+                    getState: () => stateSnapshot,
+                    getPlayerState: () => stateSnapshot.playerState,
+                    getGlobalState: () => stateSnapshot.globalState,
+                };
+                window.__game = externalBridge;
+                if (typeof window.dispatchEvent == "function" && typeof CustomEvent == "function") {
+                    window.dispatchEvent(
+                        new CustomEvent("game-bridge-update", {
+                            detail: {
+                                wallet: walletAddress,
+                                hasPlayerState: !!O,
+                                ready: !!(O && y && x && !U),
+                                timestamp,
+                            },
+                        })
+                    );
+                }
+                return () => {
+                    if (window.__game === externalBridge) delete window.__game;
+                };
+            }, [b, y, x, ae, ue, A, O, U, z, X, J, ee, te, xe, Je, et, st, ft, yt, _e, Ke, at, ot, dt, ut, fe, oe, ye, tt, Qe, rt, ht, $e, nt, pe, lt, vt]),
+            // ===== END GAME EXTERNAL BRIDGE =====
+reactExports.useEffect(() => {}, []),
             jsxRuntimeExports.jsxs("div", {
                 className: "game-view-container",
                 style: { position: "fixed", top: "60px", left: 0, right: 0, bottom: 0, overflow: "hidden" },
@@ -241577,6 +242015,14 @@ export {
             border: 1px solid #2c3e50;
         }
 
+        .config-item input[type="checkbox"] {
+            width: auto;
+            min-width: 20px;
+            height: 20px;
+            transform: scale(1.2);
+            cursor: pointer;
+        }
+
         .config-item input:focus, .config-item select:focus {
             outline: none;
             border-color: #3498db;
@@ -241683,32 +242129,99 @@ export {
                     Pressione <strong>Ctrl+Shift+C</strong> para abrir/fechar este menu
                 </div>
 
-                <div class="config-section">
-                    <h3>🏹 Auto Cast</h3>
-                    <div class="config-item">
-                        <label>Velocidade (ms):</label>
-                        <input type="number" id="autocastDelay" min="50" max="5000" step="50" value="500">
-                    </div>
-                    <div class="config-presets">
-                        <button class="preset-button" data-preset="50">Instant</button>
-                        <button class="preset-button" data-preset="200">Ultra</button>
-                        <button class="preset-button" data-preset="500">Normal</button>
-                        <button class="preset-button" data-preset="1000">Lento</button>
-                        <button class="preset-button" data-preset="2000">Muito Lento</button>
-                    </div>
-                </div>
+
 
                 <div class="config-section">
-                    <h3>📊 Estatísticas</h3>
+
+                    <h3>?Y?? Auto Cast</h3>
+
                     <div class="config-item">
-                        <label>Configurações ativas:</label>
-                        <span id="configCount">-</span>
+
+                        <label>Velocidade (ms):</label>
+
+                        <input type="number" id="autocastDelay" min="50" max="5000" step="50" value="500">
+
                     </div>
-                    <div class="config-item">
-                        <label>Delay atual:</label>
-                        <span id="currentDelay">-</span>
+
+                    <div class="config-presets">
+
+                        <button class="preset-button" data-preset="50">Instant</button>
+
+                        <button class="preset-button" data-preset="200">Ultra</button>
+
+                        <button class="preset-button" data-preset="500">Normal</button>
+
+                        <button class="preset-button" data-preset="1000">Lento</button>
+
+                        <button class="preset-button" data-preset="2000">Muito Lento</button>
+
                     </div>
+
                 </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"? Auto Repair</h3>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairEnabled">Ativar Auto Repair:</label>
+
+                        <input type="checkbox" id="autoRepairEnabled">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairDebug">Modo Debug:</label>
+
+                        <input type="checkbox" id="autoRepairDebug">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Status atual:</label>
+
+                        <span id="autoRepairStatus">-</span>
+
+                    </div>
+
+                    <div class="config-info">
+
+                        Requer patch Auto Repair. Controle por aqui ou via AutoRepair.enable()/disable().
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"S Estat??sticas</h3>
+
+                    <div class="config-item">
+
+                        <label>Configura????es ativas:</label>
+
+                        <span id="configCount">-</span>
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Delay atual:</label>
+
+                        <span id="currentDelay">-</span>
+
+                    </div>
+
+                </div>
+
+
 
                 <div class="config-buttons">
                     <button class="config-button secondary" id="closeMenu">Fechar</button>
@@ -241722,55 +242235,193 @@ export {
         }
 
         // Carregar valores atuais
+
         function loadCurrentValues() {
+
             if (!menuElement) return;
 
+
+
             // Auto Cast Delay
+
             const currentDelay = window.__cfg('autocast_delay', 500);
+
             const delayInput = menuElement.querySelector('#autocastDelay');
+
             if (delayInput) delayInput.value = currentDelay;
 
-            // Estatísticas
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                autoRepairToggle.checked = !!window.__cfg('auto_repair_enabled', false);
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                autoRepairDebug.checked = !!window.__cfg('auto_repair_debug', false);
+
+            }
+
+            const autoRepairStatus = menuElement.querySelector('#autoRepairStatus');
+
+            if (autoRepairStatus) {
+
+                const apiState = typeof window.AutoRepair === 'object' && typeof window.AutoRepair.status === 'function'
+
+                    ? window.AutoRepair.status()
+
+                    : null;
+
+                const enabled = autoRepairToggle ? autoRepairToggle.checked : false;
+
+                autoRepairStatus.textContent = apiState
+
+                    ? (apiState.enabled ? 'Ativo (API)' : 'Desligado (API)')
+
+                    : (enabled ? 'Ativo' : 'Desligado');
+
+            }
+
+
+
+            // Estat??sticas
+
             const configCountSpan = menuElement.querySelector('#configCount');
+
             const currentDelaySpan = menuElement.querySelector('#currentDelay');
 
+
+
             if (configCountSpan) {
+
                 const configs = window.__cfg();
+
                 configCountSpan.textContent = Object.keys(configs).length;
+
             }
+
+
 
             if (currentDelaySpan) {
+
                 currentDelaySpan.textContent = currentDelay + 'ms';
+
             }
+
         }
 
-        // Salvar configurações
+
+
+        // Salvar configura????es
+
         function saveConfigs() {
+
             if (!menuElement) return;
 
+
+
             // Auto Cast Delay
+
             const delayInput = menuElement.querySelector('#autocastDelay');
+
             if (delayInput) {
+
                 const newDelay = parseInt(delayInput.value);
+
                 window.__cfg.set('autocast_delay', newDelay);
+
                 console.log(`[ConfigMenu] Auto Cast Delay alterado para: ${newDelay}ms`);
             }
 
-            // Atualizar estatísticas
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                const enabled = !!autoRepairToggle.checked;
+
+                window.__cfg.set('auto_repair_enabled', enabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    enabled ? window.AutoRepair.enable() : window.AutoRepair.disable();
+
+                }
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                const debugEnabled = !!autoRepairDebug.checked;
+
+                window.__cfg.set('auto_repair_debug', debugEnabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    window.AutoRepair.setDebug(debugEnabled);
+
+                }
+
+            }
+
+
+
+            // Atualizar estat??sticas
+
             loadCurrentValues();
 
-            alert('✅ Configurações salvas com sucesso!');
+
+
+            alert('?o. Configura????es salvas com sucesso!');
+
         }
 
-        // Reset configurações
+
+
+        // Reset configura????es
+
         function resetConfigs() {
-            if (confirm('🔄 Tem certeza que deseja resetar todas as configurações?')) {
+
+            if (confirm('?Y"" Tem certeza que deseja resetar todas as configura????es?')) {
+
                 window.__cfg.set('autocast_delay', 500);
+
+                window.__cfg.set('auto_repair_enabled', false);
+
+                window.__cfg.set('auto_repair_debug', false);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    window.AutoRepair.disable();
+
+                    window.AutoRepair.setDebug(false);
+
+                }
+
                 loadCurrentValues();
-                console.log('[ConfigMenu] Configurações resetadas para padrões');
-                alert('🔄 Configurações resetadas!');
+
+                console.log('[ConfigMenu] Configura????es resetadas para padr??es');
+
+                alert('?Y"" Configura????es resetadas!');
+
             }
+
         }
+
+
 
         // Mostrar menu
         function showMenu() {
@@ -241878,3 +242529,1268 @@ export {
     });
 })();
 // ===== FIM RENDER TOGGLE CONFIG INTEGRATION =====
+
+
+// ===== MANUAL BOAT CONTROL CONFIG INTEGRATION =====
+(function () {
+    "use strict";
+    const CONFIG_KEY = "manual_boat_control";
+    const GLOBAL_FLAG = "__manualBoatControlEnabled";
+    const EVENT_NAME = typeof MANUAL_BOAT_EVENT < "u" ? MANUAL_BOAT_EVENT : "manual-boat-control-change";
+    function waitForConfig(iteration = 0) {
+        if (typeof window.__cfg == "function") return Promise.resolve();
+        if (iteration > 100) return Promise.resolve();
+        return new Promise((resolve) => setTimeout(resolve, 100)).then(() => waitForConfig(iteration + 1));
+    }
+    function emitManualState(state) {
+        if (typeof window.dispatchEvent != "function" || typeof CustomEvent != "function") return;
+        window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { enabled: state } }));
+    }
+    function applyManualState(state) {
+        const normalized = !!state;
+        if (typeof window.__cfg == "function") window.__cfg.set(CONFIG_KEY, normalized);
+        window[GLOBAL_FLAG] = normalized;
+        emitManualState(normalized);
+        console.log(`[ManualBoat] Controle manual ${normalized ? "ativado" : "desativado"}`);
+        return normalized;
+    }
+    waitForConfig().then(() => {
+        const current = typeof window.__cfg == "function" ? window.__cfg(CONFIG_KEY, !1) : !1;
+        window[GLOBAL_FLAG] = current;
+        emitManualState(current);
+        window.getManualBoatControl = () => {
+            if (typeof window.__cfg == "function") return window.__cfg(CONFIG_KEY, !1);
+            return !!window[GLOBAL_FLAG];
+        };
+        window.setManualBoatControl = (value) => applyManualState(value);
+        window.toggleManualBoatControl = (value) => {
+            const next = typeof value == "boolean" ? value : !window.getManualBoatControl();
+            return applyManualState(next);
+        };
+        console.log("[ManualBoat] Use window.toggleManualBoatControl() para alternar o modo manual.");
+    });
+})();
+// ===== FIM MANUAL BOAT CONTROL CONFIG INTEGRATION =====
+
+
+// ===== CONFIG MENU SYSTEM =====
+(function() {
+    'use strict';
+
+    // Aguarda sistema de configuração estar disponível
+    function waitForConfig(callback) {
+        if (typeof window.__cfg === 'function') {
+            callback();
+        } else {
+            setTimeout(() => waitForConfig(callback), 100);
+        }
+    }
+
+    // Criar menu apenas após sistema estar pronto
+    waitForConfig(() => {
+        console.log('[ConfigMenu] Inicializando menu de configurações...');
+
+        let menuVisible = false;
+        let menuElement = null;
+
+        // Estilo CSS para o menu
+        const menuCSS = `
+        #gameConfigMenu {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            border: 2px solid #34495e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            z-index: 10000;
+            font-family: 'Arial', sans-serif;
+            color: white;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+        #gameConfigMenu h2 {
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: #ecf0f1;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .config-section {
+            margin-bottom: 20px;
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .config-section h3 {
+            margin: 0 0 15px 0;
+            color: #3498db;
+            font-size: 18px;
+            border-bottom: 1px solid #34495e;
+            padding-bottom: 5px;
+        }
+
+        .config-item {
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .config-item label {
+            flex: 1;
+            font-weight: bold;
+            color: #ecf0f1;
+        }
+
+        .config-item input, .config-item select {
+            width: 100px;
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            background: #34495e;
+            color: white;
+            border: 1px solid #2c3e50;
+        }
+
+        .config-item input[type="checkbox"] {
+            width: auto;
+            min-width: 20px;
+            height: 20px;
+            transform: scale(1.2);
+            cursor: pointer;
+        }
+
+        .config-item input:focus, .config-item select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+        }
+
+        .config-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        .config-button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .config-button.primary {
+            background: #27ae60;
+            color: white;
+        }
+
+        .config-button.primary:hover {
+            background: #2ecc71;
+            transform: translateY(-1px);
+        }
+
+        .config-button.secondary {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .config-button.secondary:hover {
+            background: #c0392b;
+            transform: translateY(-1px);
+        }
+
+        .config-button.info {
+            background: #f39c12;
+            color: white;
+        }
+
+        .config-button.info:hover {
+            background: #e67e22;
+            transform: translateY(-1px);
+        }
+
+        .config-presets {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .preset-button {
+            padding: 4px 8px;
+            background: #7f8c8d;
+            border: none;
+            border-radius: 3px;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .preset-button:hover {
+            background: #95a5a6;
+        }
+
+        .config-info {
+            background: rgba(52, 152, 219, 0.2);
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-align: center;
+        }
+        `;
+
+        // Adicionar CSS ao documento
+        function addMenuCSS() {
+            if (!document.getElementById('gameConfigMenuCSS')) {
+                const style = document.createElement('style');
+                style.id = 'gameConfigMenuCSS';
+                style.textContent = menuCSS;
+                document.head.appendChild(style);
+            }
+        }
+
+        // Criar elemento do menu
+        function createMenu() {
+            addMenuCSS();
+
+            const menu = document.createElement('div');
+            menu.id = 'gameConfigMenu';
+            menu.innerHTML = `
+                <h2>⚙️ Configurações do Jogo</h2>
+
+                <div class="config-info">
+                    Pressione <strong>Ctrl+Shift+C</strong> para abrir/fechar este menu
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y?? Auto Cast</h3>
+
+                    <div class="config-item">
+
+                        <label>Velocidade (ms):</label>
+
+                        <input type="number" id="autocastDelay" min="50" max="5000" step="50" value="500">
+
+                    </div>
+
+                    <div class="config-presets">
+
+                        <button class="preset-button" data-preset="50">Instant</button>
+
+                        <button class="preset-button" data-preset="200">Ultra</button>
+
+                        <button class="preset-button" data-preset="500">Normal</button>
+
+                        <button class="preset-button" data-preset="1000">Lento</button>
+
+                        <button class="preset-button" data-preset="2000">Muito Lento</button>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"? Auto Repair</h3>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairEnabled">Ativar Auto Repair:</label>
+
+                        <input type="checkbox" id="autoRepairEnabled">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairDebug">Modo Debug:</label>
+
+                        <input type="checkbox" id="autoRepairDebug">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Status atual:</label>
+
+                        <span id="autoRepairStatus">-</span>
+
+                    </div>
+
+                    <div class="config-info">
+
+                        Requer patch Auto Repair. Controle por aqui ou via AutoRepair.enable()/disable().
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"S Estat??sticas</h3>
+
+                    <div class="config-item">
+
+                        <label>Configura????es ativas:</label>
+
+                        <span id="configCount">-</span>
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Delay atual:</label>
+
+                        <span id="currentDelay">-</span>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-buttons">
+                    <button class="config-button secondary" id="closeMenu">Fechar</button>
+                    <button class="config-button info" id="resetConfigs">Reset</button>
+                    <button class="config-button primary" id="saveConfigs">Salvar</button>
+                </div>
+            `;
+
+            document.body.appendChild(menu);
+            return menu;
+        }
+
+        // Carregar valores atuais
+
+        function loadCurrentValues() {
+
+            if (!menuElement) return;
+
+
+
+            // Auto Cast Delay
+
+            const currentDelay = window.__cfg('autocast_delay', 500);
+
+            const delayInput = menuElement.querySelector('#autocastDelay');
+
+            if (delayInput) delayInput.value = currentDelay;
+
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                autoRepairToggle.checked = !!window.__cfg('auto_repair_enabled', false);
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                autoRepairDebug.checked = !!window.__cfg('auto_repair_debug', false);
+
+            }
+
+            const autoRepairStatus = menuElement.querySelector('#autoRepairStatus');
+
+            if (autoRepairStatus) {
+
+                const apiState = typeof window.AutoRepair === 'object' && typeof window.AutoRepair.status === 'function'
+
+                    ? window.AutoRepair.status()
+
+                    : null;
+
+                const enabled = autoRepairToggle ? autoRepairToggle.checked : false;
+
+                autoRepairStatus.textContent = apiState
+
+                    ? (apiState.enabled ? 'Ativo (API)' : 'Desligado (API)')
+
+                    : (enabled ? 'Ativo' : 'Desligado');
+
+            }
+
+
+
+            // Estat??sticas
+
+            const configCountSpan = menuElement.querySelector('#configCount');
+
+            const currentDelaySpan = menuElement.querySelector('#currentDelay');
+
+
+
+            if (configCountSpan) {
+
+                const configs = window.__cfg();
+
+                configCountSpan.textContent = Object.keys(configs).length;
+
+            }
+
+
+
+            if (currentDelaySpan) {
+
+                currentDelaySpan.textContent = currentDelay + 'ms';
+
+            }
+
+        }
+
+
+
+        // Salvar configura????es
+
+        function saveConfigs() {
+
+            if (!menuElement) return;
+
+
+
+            // Auto Cast Delay
+
+            const delayInput = menuElement.querySelector('#autocastDelay');
+
+            if (delayInput) {
+
+                const newDelay = parseInt(delayInput.value);
+
+                window.__cfg.set('autocast_delay', newDelay);
+
+                console.log(`[ConfigMenu] Auto Cast Delay alterado para: ${newDelay}ms`);
+            }
+
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                const enabled = !!autoRepairToggle.checked;
+
+                window.__cfg.set('auto_repair_enabled', enabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    enabled ? window.AutoRepair.enable() : window.AutoRepair.disable();
+
+                }
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                const debugEnabled = !!autoRepairDebug.checked;
+
+                window.__cfg.set('auto_repair_debug', debugEnabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    window.AutoRepair.setDebug(debugEnabled);
+
+                }
+
+            }
+
+
+
+            // Atualizar estat??sticas
+
+            loadCurrentValues();
+
+
+
+            alert('?o. Configura????es salvas com sucesso!');
+
+        }
+
+
+
+        // Reset configura????es
+
+        function resetConfigs() {
+
+            if (confirm('?Y"" Tem certeza que deseja resetar todas as configura????es?')) {
+
+                window.__cfg.set('autocast_delay', 500);
+
+                window.__cfg.set('auto_repair_enabled', false);
+
+                window.__cfg.set('auto_repair_debug', false);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    window.AutoRepair.disable();
+
+                    window.AutoRepair.setDebug(false);
+
+                }
+
+                loadCurrentValues();
+
+                console.log('[ConfigMenu] Configura????es resetadas para padr??es');
+
+                alert('?Y"" Configura????es resetadas!');
+
+            }
+
+        }
+
+
+
+        // Mostrar menu
+        function showMenu() {
+            if (!menuElement) {
+                menuElement = createMenu();
+
+                // Event listeners
+                menuElement.querySelector('#closeMenu').addEventListener('click', hideMenu);
+                menuElement.querySelector('#saveConfigs').addEventListener('click', saveConfigs);
+                menuElement.querySelector('#resetConfigs').addEventListener('click', resetConfigs);
+
+                // Preset buttons
+                menuElement.querySelectorAll('.preset-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const delay = e.target.dataset.preset;
+                        menuElement.querySelector('#autocastDelay').value = delay;
+                    });
+                });
+
+                // Fechar com ESC
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && menuVisible) {
+                        hideMenu();
+                    }
+                });
+            }
+
+            loadCurrentValues();
+            menuElement.style.display = 'block';
+            menuVisible = true;
+            console.log('[ConfigMenu] Menu aberto');
+        }
+
+        // Esconder menu
+        function hideMenu() {
+            if (menuElement) {
+                menuElement.style.display = 'none';
+                menuVisible = false;
+                console.log('[ConfigMenu] Menu fechado');
+            }
+        }
+
+        // Toggle menu
+        function toggleMenu() {
+            if (menuVisible) {
+                hideMenu();
+            } else {
+                showMenu();
+            }
+        }
+
+        // Hotkey listener (Ctrl+Shift+C)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.code === 'KeyF') {
+                e.preventDefault();
+                toggleMenu();
+            }
+        });
+
+        console.log('[ConfigMenu] Sistema inicializado');
+        console.log('[ConfigMenu] Pressione Ctrl+Shift+C para abrir o menu');
+    });
+
+})();
+// ===== FIM CONFIG MENU SYSTEM =====
+
+
+// ===== SISTEMA CENTRAL DE CONFIGURAÇÃO =====
+(function() {
+    'use strict';
+
+    // Storage central de configurações
+    const CONFIG_STORAGE_KEY = 'gamehack_configs';
+    const configs = {};
+
+    // Carrega configurações salvas do localStorage
+    function loadConfigs() {
+        try {
+            const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                Object.assign(configs, parsed);
+                console.log('[ConfigSystem] Configurações carregadas:', Object.keys(configs));
+            }
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao carregar configurações:', error);
+        }
+    }
+
+    // Salva configurações no localStorage
+    function saveConfigs() {
+        try {
+            localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
+        } catch (error) {
+            console.warn('[ConfigSystem] Erro ao salvar configurações:', error);
+        }
+    }
+
+    // API principal: window.__cfg(key, defaultValue)
+    function configAPI(key, defaultValue) {
+        // Se não tem argumentos, retorna todas as configs
+        if (arguments.length === 0) {
+            return { ...configs };
+        }
+
+        // Se tem apenas key, retorna o valor
+        if (arguments.length === 1) {
+            return configs.hasOwnProperty(key) ? configs[key] : undefined;
+        }
+
+        // Se key não existe, cria com valor padrão
+        if (!configs.hasOwnProperty(key)) {
+            configs[key] = defaultValue;
+            saveConfigs();
+            console.log(`[ConfigSystem] Criada configuração '${key}' = ${defaultValue}`);
+        }
+
+        return configs[key];
+    }
+
+    // API para definir valor: window.__cfg.set(key, value)
+    configAPI.set = function(key, value) {
+        const oldValue = configs[key];
+        configs[key] = value;
+        saveConfigs();
+        console.log(`[ConfigSystem] Configuração '${key}' alterada: ${oldValue} → ${value}`);
+        return value;
+    };
+
+    // API para remover: window.__cfg.remove(key)
+    configAPI.remove = function(key) {
+        if (configs.hasOwnProperty(key)) {
+            const value = configs[key];
+            delete configs[key];
+            saveConfigs();
+            console.log(`[ConfigSystem] Configuração '${key}' removida (era: ${value})`);
+            return true;
+        }
+        return false;
+    };
+
+    // API para limpar tudo: window.__cfg.clear()
+    configAPI.clear = function() {
+        const count = Object.keys(configs).length;
+        Object.keys(configs).forEach(key => delete configs[key]);
+        saveConfigs();
+        console.log(`[ConfigSystem] Todas as configurações removidas (${count} itens)`);
+    };
+
+    // API para listar: window.__cfg.list()
+    configAPI.list = function() {
+        console.log('[ConfigSystem] Configurações ativas:');
+        for (const [key, value] of Object.entries(configs)) {
+            console.log(`  ${key}: ${JSON.stringify(value)}`);
+        }
+        return configs;
+    };
+
+    // Inicializar sistema
+    loadConfigs();
+
+    // Expor API globalmente
+    window.__cfg = configAPI;
+
+    console.log('[ConfigSystem] Sistema de configurações inicializado');
+    console.log('[ConfigSystem] Uso: window.__cfg("nome", valorPadrao)');
+    console.log('[ConfigSystem] APIs: __cfg.set(k,v), __cfg.remove(k), __cfg.clear(), __cfg.list()');
+
+})();
+// ===== FIM DO SISTEMA DE CONFIGURAÇÃO =====
+
+
+// ===== CONFIG MENU SYSTEM =====
+(function() {
+    'use strict';
+
+    // Aguarda sistema de configuração estar disponível
+    function waitForConfig(callback) {
+        if (typeof window.__cfg === 'function') {
+            callback();
+        } else {
+            setTimeout(() => waitForConfig(callback), 100);
+        }
+    }
+
+    // Criar menu apenas após sistema estar pronto
+    waitForConfig(() => {
+        console.log('[ConfigMenu] Inicializando menu de configurações...');
+
+        let menuVisible = false;
+        let menuElement = null;
+
+        // Estilo CSS para o menu
+        const menuCSS = `
+        #gameConfigMenu {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            border: 2px solid #34495e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            z-index: 10000;
+            font-family: 'Arial', sans-serif;
+            color: white;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+        #gameConfigMenu h2 {
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: #ecf0f1;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .config-section {
+            margin-bottom: 20px;
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .config-section h3 {
+            margin: 0 0 15px 0;
+            color: #3498db;
+            font-size: 18px;
+            border-bottom: 1px solid #34495e;
+            padding-bottom: 5px;
+        }
+
+        .config-item {
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .config-item label {
+            flex: 1;
+            font-weight: bold;
+            color: #ecf0f1;
+        }
+
+        .config-item input, .config-item select {
+            width: 100px;
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            background: #34495e;
+            color: white;
+            border: 1px solid #2c3e50;
+        }
+
+        .config-item input[type="checkbox"] {
+            width: auto;
+            min-width: 20px;
+            height: 20px;
+            transform: scale(1.2);
+            cursor: pointer;
+        }
+
+        .config-item input:focus, .config-item select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+        }
+
+        .config-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        .config-button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .config-button.primary {
+            background: #27ae60;
+            color: white;
+        }
+
+        .config-button.primary:hover {
+            background: #2ecc71;
+            transform: translateY(-1px);
+        }
+
+        .config-button.secondary {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .config-button.secondary:hover {
+            background: #c0392b;
+            transform: translateY(-1px);
+        }
+
+        .config-button.info {
+            background: #f39c12;
+            color: white;
+        }
+
+        .config-button.info:hover {
+            background: #e67e22;
+            transform: translateY(-1px);
+        }
+
+        .config-presets {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .preset-button {
+            padding: 4px 8px;
+            background: #7f8c8d;
+            border: none;
+            border-radius: 3px;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .preset-button:hover {
+            background: #95a5a6;
+        }
+
+        .config-info {
+            background: rgba(52, 152, 219, 0.2);
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-align: center;
+        }
+        `;
+
+        // Adicionar CSS ao documento
+        function addMenuCSS() {
+            if (!document.getElementById('gameConfigMenuCSS')) {
+                const style = document.createElement('style');
+                style.id = 'gameConfigMenuCSS';
+                style.textContent = menuCSS;
+                document.head.appendChild(style);
+            }
+        }
+
+        // Criar elemento do menu
+        function createMenu() {
+            addMenuCSS();
+
+            const menu = document.createElement('div');
+            menu.id = 'gameConfigMenu';
+            menu.innerHTML = `
+                <h2>⚙️ Configurações do Jogo</h2>
+
+                <div class="config-info">
+                    Pressione <strong>Ctrl+Shift+C</strong> para abrir/fechar este menu
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y?? Auto Cast</h3>
+
+                    <div class="config-item">
+
+                        <label>Velocidade (ms):</label>
+
+                        <input type="number" id="autocastDelay" min="50" max="5000" step="50" value="500">
+
+                    </div>
+
+                    <div class="config-presets">
+
+                        <button class="preset-button" data-preset="50">Instant</button>
+
+                        <button class="preset-button" data-preset="200">Ultra</button>
+
+                        <button class="preset-button" data-preset="500">Normal</button>
+
+                        <button class="preset-button" data-preset="1000">Lento</button>
+
+                        <button class="preset-button" data-preset="2000">Muito Lento</button>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"? Auto Repair</h3>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairEnabled">Ativar Auto Repair:</label>
+
+                        <input type="checkbox" id="autoRepairEnabled">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairDebug">Modo Debug:</label>
+
+                        <input type="checkbox" id="autoRepairDebug">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Status atual:</label>
+
+                        <span id="autoRepairStatus">-</span>
+
+                    </div>
+
+                    <div class="config-info">
+
+                        Requer patch Auto Repair. Controle por aqui ou via AutoRepair.enable()/disable().
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"S Estat??sticas</h3>
+
+                    <div class="config-item">
+
+                        <label>Configura????es ativas:</label>
+
+                        <span id="configCount">-</span>
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Delay atual:</label>
+
+                        <span id="currentDelay">-</span>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-buttons">
+                    <button class="config-button secondary" id="closeMenu">Fechar</button>
+                    <button class="config-button info" id="resetConfigs">Reset</button>
+                    <button class="config-button primary" id="saveConfigs">Salvar</button>
+                </div>
+            `;
+
+            document.body.appendChild(menu);
+            return menu;
+        }
+
+        // Carregar valores atuais
+
+        function loadCurrentValues() {
+
+            if (!menuElement) return;
+
+
+
+            // Auto Cast Delay
+
+            const currentDelay = window.__cfg('autocast_delay', 500);
+
+            const delayInput = menuElement.querySelector('#autocastDelay');
+
+            if (delayInput) delayInput.value = currentDelay;
+
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                autoRepairToggle.checked = !!window.__cfg('auto_repair_enabled', false);
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                autoRepairDebug.checked = !!window.__cfg('auto_repair_debug', false);
+
+            }
+
+            const autoRepairStatus = menuElement.querySelector('#autoRepairStatus');
+
+            if (autoRepairStatus) {
+
+                const apiState = typeof window.AutoRepair === 'object' && typeof window.AutoRepair.status === 'function'
+
+                    ? window.AutoRepair.status()
+
+                    : null;
+
+                const enabled = autoRepairToggle ? autoRepairToggle.checked : false;
+
+                autoRepairStatus.textContent = apiState
+
+                    ? (apiState.enabled ? 'Ativo (API)' : 'Desligado (API)')
+
+                    : (enabled ? 'Ativo' : 'Desligado');
+
+            }
+
+
+
+            // Estat??sticas
+
+            const configCountSpan = menuElement.querySelector('#configCount');
+
+            const currentDelaySpan = menuElement.querySelector('#currentDelay');
+
+
+
+            if (configCountSpan) {
+
+                const configs = window.__cfg();
+
+                configCountSpan.textContent = Object.keys(configs).length;
+
+            }
+
+
+
+            if (currentDelaySpan) {
+
+                currentDelaySpan.textContent = currentDelay + 'ms';
+
+            }
+
+        }
+
+
+
+        // Salvar configura????es
+
+        function saveConfigs() {
+
+            if (!menuElement) return;
+
+
+
+            // Auto Cast Delay
+
+            const delayInput = menuElement.querySelector('#autocastDelay');
+
+            if (delayInput) {
+
+                const newDelay = parseInt(delayInput.value);
+
+                window.__cfg.set('autocast_delay', newDelay);
+
+                console.log(`[ConfigMenu] Auto Cast Delay alterado para: ${newDelay}ms`);
+            }
+
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                const enabled = !!autoRepairToggle.checked;
+
+                window.__cfg.set('auto_repair_enabled', enabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    enabled ? window.AutoRepair.enable() : window.AutoRepair.disable();
+
+                }
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                const debugEnabled = !!autoRepairDebug.checked;
+
+                window.__cfg.set('auto_repair_debug', debugEnabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    window.AutoRepair.setDebug(debugEnabled);
+
+                }
+
+            }
+
+
+
+            // Atualizar estat??sticas
+
+            loadCurrentValues();
+
+
+
+            alert('?o. Configura????es salvas com sucesso!');
+
+        }
+
+
+
+        // Reset configura????es
+
+        function resetConfigs() {
+
+            if (confirm('?Y"" Tem certeza que deseja resetar todas as configura????es?')) {
+
+                window.__cfg.set('autocast_delay', 500);
+
+                window.__cfg.set('auto_repair_enabled', false);
+
+                window.__cfg.set('auto_repair_debug', false);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    window.AutoRepair.disable();
+
+                    window.AutoRepair.setDebug(false);
+
+                }
+
+                loadCurrentValues();
+
+                console.log('[ConfigMenu] Configura????es resetadas para padr??es');
+
+                alert('?Y"" Configura????es resetadas!');
+
+            }
+
+        }
+
+
+
+        // Mostrar menu
+        function showMenu() {
+            if (!menuElement) {
+                menuElement = createMenu();
+
+                // Event listeners
+                menuElement.querySelector('#closeMenu').addEventListener('click', hideMenu);
+                menuElement.querySelector('#saveConfigs').addEventListener('click', saveConfigs);
+                menuElement.querySelector('#resetConfigs').addEventListener('click', resetConfigs);
+
+                // Preset buttons
+                menuElement.querySelectorAll('.preset-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const delay = e.target.dataset.preset;
+                        menuElement.querySelector('#autocastDelay').value = delay;
+                    });
+                });
+
+                // Fechar com ESC
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && menuVisible) {
+                        hideMenu();
+                    }
+                });
+            }
+
+            loadCurrentValues();
+            menuElement.style.display = 'block';
+            menuVisible = true;
+            console.log('[ConfigMenu] Menu aberto');
+        }
+
+        // Esconder menu
+        function hideMenu() {
+            if (menuElement) {
+                menuElement.style.display = 'none';
+                menuVisible = false;
+                console.log('[ConfigMenu] Menu fechado');
+            }
+        }
+
+        // Toggle menu
+        function toggleMenu() {
+            if (menuVisible) {
+                hideMenu();
+            } else {
+                showMenu();
+            }
+        }
+
+        // Hotkey listener (Ctrl+Shift+C)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.code === 'KeyF') {
+                e.preventDefault();
+                toggleMenu();
+            }
+        });
+
+        console.log('[ConfigMenu] Sistema inicializado');
+        console.log('[ConfigMenu] Pressione Ctrl+Shift+C para abrir o menu');
+    });
+
+})();
+// ===== FIM CONFIG MENU SYSTEM =====
