@@ -101,6 +101,14 @@ module.exports = {
             border: 1px solid #2c3e50;
         }
 
+        .config-item input[type="checkbox"] {
+            width: auto;
+            min-width: 20px;
+            height: 20px;
+            transform: scale(1.2);
+            cursor: pointer;
+        }
+
         .config-item input:focus, .config-item select:focus {
             outline: none;
             border-color: #3498db;
@@ -207,32 +215,99 @@ module.exports = {
                     Pressione <strong>Ctrl+Shift+C</strong> para abrir/fechar este menu
                 </div>
 
-                <div class="config-section">
-                    <h3>🏹 Auto Cast</h3>
-                    <div class="config-item">
-                        <label>Velocidade (ms):</label>
-                        <input type="number" id="autocastDelay" min="50" max="5000" step="50" value="500">
-                    </div>
-                    <div class="config-presets">
-                        <button class="preset-button" data-preset="50">Instant</button>
-                        <button class="preset-button" data-preset="200">Ultra</button>
-                        <button class="preset-button" data-preset="500">Normal</button>
-                        <button class="preset-button" data-preset="1000">Lento</button>
-                        <button class="preset-button" data-preset="2000">Muito Lento</button>
-                    </div>
-                </div>
+
 
                 <div class="config-section">
-                    <h3>📊 Estatísticas</h3>
+
+                    <h3>?Y?? Auto Cast</h3>
+
                     <div class="config-item">
-                        <label>Configurações ativas:</label>
-                        <span id="configCount">-</span>
+
+                        <label>Velocidade (ms):</label>
+
+                        <input type="number" id="autocastDelay" min="50" max="5000" step="50" value="500">
+
                     </div>
-                    <div class="config-item">
-                        <label>Delay atual:</label>
-                        <span id="currentDelay">-</span>
+
+                    <div class="config-presets">
+
+                        <button class="preset-button" data-preset="50">Instant</button>
+
+                        <button class="preset-button" data-preset="200">Ultra</button>
+
+                        <button class="preset-button" data-preset="500">Normal</button>
+
+                        <button class="preset-button" data-preset="1000">Lento</button>
+
+                        <button class="preset-button" data-preset="2000">Muito Lento</button>
+
                     </div>
+
                 </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"? Auto Repair</h3>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairEnabled">Ativar Auto Repair:</label>
+
+                        <input type="checkbox" id="autoRepairEnabled">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label for="autoRepairDebug">Modo Debug:</label>
+
+                        <input type="checkbox" id="autoRepairDebug">
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Status atual:</label>
+
+                        <span id="autoRepairStatus">-</span>
+
+                    </div>
+
+                    <div class="config-info">
+
+                        Requer patch Auto Repair. Controle por aqui ou via AutoRepair.enable()/disable().
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="config-section">
+
+                    <h3>?Y"S Estat??sticas</h3>
+
+                    <div class="config-item">
+
+                        <label>Configura????es ativas:</label>
+
+                        <span id="configCount">-</span>
+
+                    </div>
+
+                    <div class="config-item">
+
+                        <label>Delay atual:</label>
+
+                        <span id="currentDelay">-</span>
+
+                    </div>
+
+                </div>
+
+
 
                 <div class="config-buttons">
                     <button class="config-button secondary" id="closeMenu">Fechar</button>
@@ -246,56 +321,178 @@ module.exports = {
         }
 
         // Carregar valores atuais
+
         function loadCurrentValues() {
+
             if (!menuElement) return;
 
+
+
             // Auto Cast Delay
+
             const currentDelay = window.__cfg('autocast_delay', 500);
+
             const delayInput = menuElement.querySelector('#autocastDelay');
+
             if (delayInput) delayInput.value = currentDelay;
 
-            // Estatísticas
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                autoRepairToggle.checked = !!window.__cfg('auto_repair_enabled', false);
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                autoRepairDebug.checked = !!window.__cfg('auto_repair_debug', false);
+
+            }
+
+            const autoRepairStatus = menuElement.querySelector('#autoRepairStatus');
+
+            if (autoRepairStatus) {
+
+                const apiState = typeof window.AutoRepair === 'object' && typeof window.AutoRepair.status === 'function'
+
+                    ? window.AutoRepair.status()
+
+                    : null;
+
+                const enabled = autoRepairToggle ? autoRepairToggle.checked : false;
+
+                autoRepairStatus.textContent = apiState
+
+                    ? (apiState.enabled ? 'Ativo (API)' : 'Desligado (API)')
+
+                    : (enabled ? 'Ativo' : 'Desligado');
+
+            }
+
+
+
+            // Estat??sticas
+
             const configCountSpan = menuElement.querySelector('#configCount');
+
             const currentDelaySpan = menuElement.querySelector('#currentDelay');
 
+
+
             if (configCountSpan) {
+
                 const configs = window.__cfg();
+
                 configCountSpan.textContent = Object.keys(configs).length;
+
             }
+
+
 
             if (currentDelaySpan) {
+
                 currentDelaySpan.textContent = currentDelay + 'ms';
+
             }
+
         }
 
-        // Salvar configurações
+
+
+        // Salvar configura????es
+
         function saveConfigs() {
+
             if (!menuElement) return;
 
+
+
             // Auto Cast Delay
+
             const delayInput = menuElement.querySelector('#autocastDelay');
+
             if (delayInput) {
+
                 const newDelay = parseInt(delayInput.value);
+
                 window.__cfg.set('autocast_delay', newDelay);
+
                 console.log(\`[ConfigMenu] Auto Cast Delay alterado para: \${newDelay}ms\`);
             }
 
-            // Atualizar estatísticas
+
+
+            // Auto Repair
+
+            const autoRepairToggle = menuElement.querySelector('#autoRepairEnabled');
+
+            if (autoRepairToggle) {
+
+                const enabled = !!autoRepairToggle.checked;
+
+                window.__cfg.set('auto_repair_enabled', enabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    enabled ? window.AutoRepair.enable() : window.AutoRepair.disable();
+
+                }
+
+            }
+
+            const autoRepairDebug = menuElement.querySelector('#autoRepairDebug');
+
+            if (autoRepairDebug) {
+
+                const debugEnabled = !!autoRepairDebug.checked;
+
+                window.__cfg.set('auto_repair_debug', debugEnabled);
+
+                if (typeof window.AutoRepair === 'object') {
+
+                    window.AutoRepair.setDebug(debugEnabled);
+
+                }
+
+            }
+
+
+
+            // Atualizar estat??sticas
+
             loadCurrentValues();
 
-            alert('✅ Configurações salvas com sucesso!');
+
+
+            alert('?o. Configura????es salvas com sucesso!');
+
         }
 
-        // Reset configurações
-        function resetConfigs() {
-            if (confirm('🔄 Tem certeza que deseja resetar todas as configurações?')) {
-                window.__cfg.set('autocast_delay', 500);
-                loadCurrentValues();
-                console.log('[ConfigMenu] Configurações resetadas para padrões');
-                alert('🔄 Configurações resetadas!');
-            }
-        }
 
+
+        // Reset configura????es
+        function resetConfigs() {
+            if (confirm('?Y"" Tem certeza que deseja resetar todas as configura????es?')) {
+                window.__cfg.set('autocast_delay', 500);
+                window.__cfg.set('auto_repair_enabled', false);
+                window.__cfg.set('auto_repair_debug', false);
+                if (typeof window.AutoRepair === 'object') {
+                    window.AutoRepair.disable();
+                    window.AutoRepair.setDebug(false);
+                }
+                loadCurrentValues();
+                console.log('[ConfigMenu] Configura????es resetadas para padr??es');
+                alert('?Y"" Configura????es resetadas!');
+            }
+        }
+
         // Mostrar menu
         function showMenu() {
             if (!menuElement) {

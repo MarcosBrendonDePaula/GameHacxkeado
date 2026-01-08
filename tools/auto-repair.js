@@ -5,14 +5,66 @@
     let repairObserverActive = true;
     let lastRepairTime = 0;
     let repairObserver = null;
+    const CONFIG_KEYS = {
+        enabled: 'auto_repair_enabled',
+        debug: 'auto_repair_debug',
+    };
+    let configUpdateInProgress = false;
 
+    const readConfigValue = (key, fallback) => {
+        if (typeof window.__cfg === 'function') {
+            const value = window.__cfg(key);
+            if (typeof value !== 'undefined') return value;
+        }
+        return fallback;
+    };
+
+    const autoRepairState = {
+        enabled: !!readConfigValue(CONFIG_KEYS.enabled, false),
+        debug: !!readConfigValue(CONFIG_KEYS.debug, false),
+    };
+
+    const setConfigValue = (key, value) => {
+        if (typeof window.__cfg === 'function' && typeof window.__cfg.set === 'function' && !configUpdateInProgress) {
+            try {
+                configUpdateInProgress = true;
+                window.__cfg.set(key, value);
+            } catch (error) {
+                console.warn('[AutoRepair] Falha ao atualizar config:', error);
+            } finally {
+                configUpdateInProgress = false;
+            }
+        }
+    };
+
+    const applyBridgeUpdate = () => {
+        const bridge = typeof window.__game === 'object' ? window.__game : null;
+        const actions = bridge == null ? void 0 : bridge.actions;
+        const state = bridge == null ? void 0 : bridge.state;
+        if (!bridge || !actions || !state) return;
+        const bridgeEnabled = !!(state.autoRepair && state.autoRepair.enabled);
+        const shouldEnable = !!readConfigValue(CONFIG_KEYS.enabled, bridgeEnabled);
+        if (shouldEnable !== autoRepairState.enabled) {
+            autoRepairState.enabled = shouldEnable;
+            repairObserverActive = true;
+            shouldEnable ? startRepairObserver() : (repairObserverActive = false);
+            if (shouldEnable && bridge.actions.enableAutoRepair) bridge.actions.enableAutoRepair();
+            if (!shouldEnable && bridge.actions.disableAutoRepair) bridge.actions.disableAutoRepair();
+        }
+        const debugValue = !!readConfigValue(CONFIG_KEYS.debug, false);
+        autoRepairState.debug = debugValue;
+        if (bridge.actions.setAutoRepairDebug) bridge.actions.setAutoRepairDebug(debugValue);
+    };
+
+    window.addEventListener('game-bridge-update', applyBridgeUpdate);
+    applyBridgeUpdate();
     // 👀 OBSERVER PARA DETECTAR MODAL DE REPARO
     function createRepairObserver() {
         return new MutationObserver((mutations) => {
             if (!repairObserverActive) return;
 
             // Verificar se auto repair está ativado
-            if (!window.getConfig('auto_repair', false)) return;
+            if (!isAutoRepairEnabled()) return;
 
             mutations.forEach((mutation) => {
                 mutation.addedNodes.forEach((node) => {
@@ -93,7 +145,7 @@
         console.log('🔧 Auto repair: Modal de reparo detectado! Processando...');
 
         // Debug: log do modal encontrado
-        if (window.getConfig('debug_mode', false)) {
+        if (isDebugEnabled()) {
             console.log('🔧 DEBUG: Modal encontrado:', modal);
             console.log('🔧 DEBUG: HTML do modal:', modal.innerHTML);
         }
@@ -108,7 +160,7 @@
                 console.log('❌ Auto repair: Botão de reparo não encontrado no modal');
 
                 // Debug adicional
-                if (window.getConfig('debug_mode', false)) {
+                if (isDebugEnabled()) {
                     const allButtons = modal.querySelectorAll('button');
                     console.log('🔧 DEBUG: Botões encontrados no modal:', Array.from(allButtons).map(btn => btn.textContent));
                 }
@@ -167,7 +219,7 @@
             console.log('🔧 Auto repair: Executando reparo automático...');
 
             // Log de debug se ativo
-            if (window.getConfig('debug_mode', false)) {
+            if (isDebugEnabled()) {
                 console.log('🔧 DEBUG: Clicando no botão:', button);
                 console.log('🔧 DEBUG: Texto do botão:', button.textContent);
                 console.log('🔧 DEBUG: Classes do botão:', button.className);
@@ -338,20 +390,30 @@
     };
 
     // 🎯 LISTENER PARA MUDANÇAS NA CONFIGURAÇÃO AUTO_REPAIR
-    window.addEventListener('configChanged', function(e) {
-        const { key, value } = e.detail;
-
-        if (key === 'auto_repair') {
-            if (value) {
-                console.log('🔧 Auto repair ativado! Modal será monitorado.');
-                if (!repairObserverActive) {
-                    window.startRepairObserver();
-                }
-            } else {
-                console.log('🔧 Auto repair desativado.');
-            }
+    function setupConfigIntegration(attempt = 0) {
+        if (typeof window.__cfg !== "function") {
+            if (attempt > 100) return;
+            setTimeout(() => setupConfigIntegration(attempt + 1), 250);
+            return;
         }
-    });
+        applyConfigDefaults();
+        const originalSet = typeof window.__cfg.set === "function" ? window.__cfg.set : null;
+        if (originalSet && !originalSet.__autoRepairPatched) {
+            const wrapped = function(key, value) {
+                const result = originalSet.call(this, key, value);
+                if (!configUpdateInProgress) {
+                    if (key === CONFIG_KEYS.enabled) {
+                        value ? window.AutoRepair.enable() : window.AutoRepair.disable();
+                    } else if (key === CONFIG_KEYS.debug) {
+                        window.AutoRepair.setDebug(value);
+                    }
+                }
+                return result;
+            };
+            wrapped.__autoRepairPatched = true;
+            window.__cfg.set = wrapped;
+        }
+    }
 
     // 🚀 INICIALIZAR AUTOMATICAMENTE
     if (document.readyState === 'loading') {
@@ -360,8 +422,49 @@
         startRepairObserver();
     }
 
-    console.log('🔧 Sistema de Auto Repair carregado! Observer monitorando DOM...');
-    console.log('🧪 Use window.testRepairDetection() para testar manualmente.');
+    window.AutoRepair = {
+        enable() {
+            autoRepairState.enabled = true;
+            repairObserverActive = true;
+            console.log('[AutoRepair] ativado via API.');
+            startRepairObserver();
+            safeSetConfig(CONFIG_KEYS.enabled, true);
+            return true;
+        },
+        disable() {
+            autoRepairState.enabled = false;
+            console.log('[AutoRepair] desativado via API.');
+            safeSetConfig(CONFIG_KEYS.enabled, false);
+            return false;
+        },
+        toggle(value) {
+            if (typeof value === 'boolean') {
+                return value ? this.enable() : this.disable();
+            }
+            return autoRepairState.enabled ? this.disable() : this.enable();
+        },
+        setDebug(value) {
+            autoRepairState.debug = !!value;
+            console.log(`[AutoRepair] debug ${autoRepairState.debug ? 'ativado' : 'desativado'}.`);
+            safeSetConfig(CONFIG_KEYS.debug, autoRepairState.debug);
+            return autoRepairState.debug;
+        },
+        isEnabled() {
+            return autoRepairState.enabled;
+        },
+        status() {
+            return {
+                enabled: autoRepairState.enabled,
+                debug: autoRepairState.debug,
+                observerActive: repairObserverActive,
+                lastRepairTime,
+            };
+        },
+    };
+    setupConfigIntegration();
+
+    console.log('[AutoRepair] Sistema carregado. Observer monitorando DOM.');
+    console.log('[AutoRepair] Use AutoRepair.enable()/disable()/status() e window.testRepairDetection() para testar manualmente.');
 
 })();
 
