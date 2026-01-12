@@ -180,3 +180,6 @@ links.txt
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Claude temporary files
+tmpclaude-*
