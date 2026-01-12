@@ -239,10 +239,12 @@ export class FishingService {
         // Se fishCaughtAllTime aumentou, foi um CATCH
         if (BigInt(fishCaughtAfter) > BigInt(fishCaughtBefore)) {
           const diff = BigInt(fishCaughtAfter) - BigInt(fishCaughtBefore);
-          this.logger.debug(`Estado mudou: +${diff} fish`);
+          // FISH token tem 6 decimais, converter de lamports para fish
+          const fishAmount = Number(diff) / 1_000_000;
+          this.logger.debug(`Estado mudou: +${fishAmount} fish`);
           return {
             isCatch: true,
-            fishAmount: Number(diff),
+            fishAmount: fishAmount,
           };
         } else {
           this.logger.debug("Estado não mudou: MISS");

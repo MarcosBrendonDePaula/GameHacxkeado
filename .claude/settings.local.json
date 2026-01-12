@@ -25,7 +25,16 @@
       "Bash(du -sh:*)",
       "Bash(git reset:*)",
       "Bash(git commit:*)",
-      "Bash(./scripts/validate.sh:*)"
+      "Bash(./scripts/validate.sh:*)",
+      "Bash(bun add:*)",
+      "Bash(bun run:*)",
+      "Bash(HTTP_PROXY=http://2.56.249.17:50100 HTTPS_PROXY=http://2.56.249.17:50100 bun run:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(timeout 5 bun run:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(bun remove:*)",
+      "Bash(bun install)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
