@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Conta 1",
+    "enabled": true,
+    "keypair_path": "./wallets/wallet1.json",
+    "proxy": "http://2.56.249.17:50100",
+    "delay": 500
+  },
+  {
+    "name": "Conta 2",
+    "enabled": true,
+    "keypair_path": "./wallets/wallet2.json",
+    "proxy": "http://2.56.249.17:50100",
+    "delay": 600
+  },
+  {
+    "name": "Conta 3 (Sem Proxy)",
+    "enabled": false,
+    "keypair_path": "./wallets/wallet3.json",
+    "delay": 500
+  },
+  {
+    "name": "Conta 4",
+    "enabled": true,
+    "keypair_path": "./wallets/wallet4.json",
+    "proxy": "socks5://proxy.example.com:1080",
+    "delay": 700
+  }
+]

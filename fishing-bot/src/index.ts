@@ -1,14 +1,26 @@
 #!/usr/bin/env bun
 
+/**
+ * Multi-Bot Runner
+ * Executa múltiplos bots simultaneamente, cada um com sua própria configuração
+ */
+
 import { Keypair } from "@solana/web3.js";
 import { FishingService } from "./services/fishing";
 import { Logger } from "./utils/helpers";
 import { BOT_CONFIG } from "./config/constants";
-import { setGlobalProxyAgent } from "./utils/proxy";
 import * as fs from "fs";
 import * as path from "path";
 
-const logger = new Logger("🎮 BOT");
+const logger = new Logger("🎮 MULTI-BOT");
+
+interface AccountConfig {
+  name: string;
+  enabled: boolean;
+  keypair_path: string;
+  proxy?: string;
+  delay?: number;
+}
 
 /**
  * Carrega keypair de um arquivo JSON
@@ -25,8 +37,73 @@ function loadKeypairFromFile(filePath: string): Keypair {
     const secretKey = Uint8Array.from(JSON.parse(secretKeyString));
     return Keypair.fromSecretKey(secretKey);
   } catch (error: any) {
-    logger.error(`Erro ao carregar keypair de ${filePath}:`, error.message);
-    throw error;
+    throw new Error(`Erro ao carregar keypair de ${filePath}: ${error.message}`);
+  }
+}
+
+/**
+ * Executa um bot individual
+ */
+async function runBot(config: AccountConfig, index: number) {
+  // Cria arquivo de log único para este bot
+  const sanitizedName = config.name.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const logFile = path.join("logs", `bot-${index + 1}-${sanitizedName}.log`);
+
+  const botLogger = new Logger(`🤖 BOT-${index + 1} [${config.name}]`, logFile);
+
+  try {
+    botLogger.info("Iniciando...");
+    botLogger.info(`📝 Log sendo gravado em: ${logFile}`);
+
+    // Carrega keypair
+    const keypair = loadKeypairFromFile(config.keypair_path);
+    const wallet = keypair.publicKey.toBase58();
+    botLogger.info(`Wallet: ${wallet.slice(0, 8)}...${wallet.slice(-6)}`);
+
+    // Configura proxy se fornecido (cada bot tem seu próprio proxy isolado)
+    const proxyUrl = config.proxy;
+    if (proxyUrl) {
+      botLogger.info(`Proxy: ${proxyUrl}`);
+    }
+
+    // Delay personalizado ou padrão
+    const delay = config.delay || BOT_CONFIG.autocast_delay;
+    botLogger.info(`Delay: ${delay}ms`);
+
+    // Cria serviço de fishing com proxy específico desta conta
+    // IMPORTANTE: Cada bot recebe seu próprio proxyAgent isolado
+    // NÃO usamos variáveis de ambiente pois elas são globais ao processo!
+    const botId = `BOT-${index + 1} [${config.name}]`;
+    const fishingService = new FishingService(
+      keypair,
+      BOT_CONFIG.rpc_endpoint,
+      proxyUrl,
+      botId,
+      logFile
+    );
+
+    // Verifica estado do jogador
+    const playerState = await fishingService.fetchPlayerState();
+    if (!playerState) {
+      botLogger.error("Conta de jogador não encontrada!");
+      botLogger.error("Inicialize a conta no jogo antes de usar o bot.");
+      return;
+    }
+
+    botLogger.info(`Rod Level: ${playerState.rodLevel} | Power: ${playerState.power}`);
+    botLogger.info(`Durability: ${playerState.currentDurability}/${playerState.maxDurability}`);
+
+    if (playerState.currentDurability === 0) {
+      botLogger.warn("⚠️  Durabilidade em 0! Precisa reparar a vara.");
+    }
+
+    // Inicia auto-cast
+    botLogger.info("🚀 Auto-cast iniciado!");
+    await fishingService.startAutoCast(delay);
+
+  } catch (error: any) {
+    botLogger.error(`Erro fatal: ${error.message}`);
+    botLogger.error("Bot será encerrado.");
   }
 }
 
@@ -34,113 +111,125 @@ function loadKeypairFromFile(filePath: string): Keypair {
  * Função principal
  */
 async function main() {
-  logger.info("=".repeat(60));
-  logger.info("🎣 FOGO FISHING BOT - Versão 1.0");
-  logger.info("=".repeat(60));
+  console.log("=".repeat(80));
+  console.log("🎣 FOGO FISHING MULTI-BOT - Sistema de Múltiplas Contas");
+  console.log("=".repeat(80));
 
   // Verifica argumentos
   const args = process.argv.slice(2);
+  const configFile = args[0] || "accounts.json";
 
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
+  if (args.includes("--help") || args.includes("-h")) {
     console.log(`
-Uso: bun run src/index.ts <caminho-para-keypair.json> [opcoes]
+Uso: bun run src/multi-bot.ts [arquivo-config.json]
 
-Opções:
-  --delay <ms>        Delay entre casts em milissegundos (padrão: ${BOT_CONFIG.autocast_delay})
-  --rpc <url>         URL do RPC endpoint (padrão: ${BOT_CONFIG.rpc_endpoint})
-  --proxy <url>       URL do proxy (ex: http://host:port, socks5://host:port)
-  --help, -h          Mostra esta mensagem
-
-Variáveis de Ambiente:
-  PROXY_URL           URL do proxy (alternativa ao --proxy)
+Argumentos:
+  arquivo-config.json   Arquivo de configuração das contas (padrão: accounts.json)
+  --help, -h           Mostra esta mensagem
 
 Exemplo:
-  bun run src/index.ts ./wallet.json --delay 1000
-  bun run src/index.ts ./wallet.json --proxy http://127.0.0.1:8080
-  bun run src/index.ts ./wallet.json --proxy socks5://user:pass@proxy.com:1080
-  PROXY_URL=http://127.0.0.1:8080 bun run src/index.ts ./wallet.json
+  bun run src/multi-bot.ts accounts.json
+  bun run src/multi-bot.ts my-accounts.json
+
+Formato do arquivo de configuração:
+  [
+    {
+      "name": "Conta 1",
+      "enabled": true,
+      "keypair_path": "./wallets/wallet1.json",
+      "proxy": "http://2.56.249.17:50100",
+      "delay": 500
+    },
+    {
+      "name": "Conta 2",
+      "enabled": false,
+      "keypair_path": "./wallets/wallet2.json"
+    }
+  ]
+
+Campos:
+  - name: Nome descritivo da conta
+  - enabled: true/false - se o bot deve rodar
+  - keypair_path: Caminho para o arquivo JSON da keypair
+  - proxy: (opcional) URL do proxy para esta conta
+  - delay: (opcional) Delay entre casts em ms (padrão: 500)
     `);
     process.exit(0);
   }
 
-  const keypairPath = args[0];
+  logger.info(`📁 Carregando configuração de: ${configFile}`);
 
-  // Parse opções
-  let delay = BOT_CONFIG.autocast_delay;
-  let rpcEndpoint = BOT_CONFIG.rpc_endpoint;
-  let proxyUrl = BOT_CONFIG.proxy_url;
-
-  for (let i = 1; i < args.length; i++) {
-    if (args[i] === "--delay" && args[i + 1]) {
-      delay = parseInt(args[i + 1]);
-      i++;
-    } else if (args[i] === "--rpc" && args[i + 1]) {
-      rpcEndpoint = args[i + 1];
-      i++;
-    } else if (args[i] === "--proxy" && args[i + 1]) {
-      proxyUrl = args[i + 1];
-      i++;
-    }
-  }
-
-  logger.info(`📁 Carregando keypair de: ${keypairPath}`);
-  const walletKeypair = loadKeypairFromFile(keypairPath);
-
-  logger.info(`👛 Wallet: ${walletKeypair.publicKey.toBase58()}`);
-  logger.info(`🌐 RPC: ${rpcEndpoint}`);
-  logger.info(`⏱️  Auto-cast delay: ${delay}ms`);
-
-  // Configura proxy se fornecido
-  if (proxyUrl) {
-    logger.info(`🌐 Proxy: ${proxyUrl}`);
-    setGlobalProxyAgent(proxyUrl);
-  }
-
-  logger.info("=".repeat(60));
-
-  // Cria serviço de fishing
-  const fishingService = new FishingService(walletKeypair, rpcEndpoint, proxyUrl);
-
-  // Busca e exibe estado inicial
-  logger.info("📊 Buscando estado do jogo...");
-
-  const globalState = await fishingService.fetchGlobalState();
-  if (globalState) {
-    logger.info(`🌍 Dificuldade: ${globalState.currentDifficulty}`);
-    logger.info(`🐟 Total FISH mintado: ${globalState.totalFishMinted}`);
-  }
-
-  const playerState = await fishingService.fetchPlayerState();
-  if (!playerState) {
-    logger.error("❌ Conta de jogador não encontrada!");
-    logger.error("Você precisa inicializar sua conta no jogo primeiro.");
-    logger.error("Acesse o jogo no navegador e crie sua conta.");
+  // Carrega arquivo de configuração
+  const configPath = path.resolve(configFile);
+  if (!fs.existsSync(configPath)) {
+    logger.error(`❌ Arquivo de configuração não encontrado: ${configPath}`);
+    logger.error(`Crie um arquivo ${configFile} baseado em accounts.example.json`);
     process.exit(1);
   }
 
-  logger.info(`\n👤 Estado do Jogador:`);
-  logger.info(`   🎣 Rod Level: ${playerState.rodLevel}`);
-  logger.info(`   ⛵ Boat Tier: ${playerState.boatTier}`);
-  logger.info(`   ⚡ Power: ${playerState.power}`);
-  logger.info(`   🔧 Durability: ${playerState.currentDurability}/${playerState.maxDurability}`);
-  logger.info(`   📊 Casts totais: ${playerState.castCount}`);
-  logger.info(`   🐟 Peixes pescados: ${playerState.fishCaughtAllTime}`);
-
-  if (playerState.currentDurability === 0) {
-    logger.warn("⚠️  AVISO: Durabilidade está em 0! Você precisa reparar sua vara.");
-    logger.warn("O bot vai tentar fazer casts, mas provavelmente vai falhar.");
+  let accounts: AccountConfig[];
+  try {
+    const configContent = fs.readFileSync(configPath, "utf-8");
+    accounts = JSON.parse(configContent);
+  } catch (error: any) {
+    logger.error(`❌ Erro ao ler arquivo de configuração: ${error.message}`);
+    process.exit(1);
   }
 
-  logger.info("\n=".repeat(60));
-  logger.info("🚀 Iniciando bot...");
-  logger.info("Pressione Ctrl+C para parar");
-  logger.info("=".repeat(60));
+  // Filtra contas habilitadas
+  const enabledAccounts = accounts.filter((acc) => acc.enabled);
 
-  // Inicia o auto-cast
-  await fishingService.startAutoCast(delay);
+  if (enabledAccounts.length === 0) {
+    logger.error("❌ Nenhuma conta habilitada no arquivo de configuração!");
+    logger.error("Defina 'enabled: true' em pelo menos uma conta.");
+    process.exit(1);
+  }
+
+  logger.info(`✅ ${enabledAccounts.length} conta(s) habilitada(s) de ${accounts.length} total`);
+  console.log("=".repeat(80));
+
+  // Lista as contas que serão executadas
+  enabledAccounts.forEach((acc, i) => {
+    console.log(`${i + 1}. ${acc.name}`);
+    console.log(`   Keypair: ${acc.keypair_path}`);
+    if (acc.proxy) {
+      console.log(`   Proxy: ${acc.proxy}`);
+    }
+    console.log(`   Delay: ${acc.delay || BOT_CONFIG.autocast_delay}ms`);
+    console.log();
+  });
+
+  console.log("=".repeat(80));
+  logger.info("🚀 Iniciando todos os bots...");
+  logger.info("Pressione Ctrl+C para parar todos");
+  console.log("=".repeat(80));
+  console.log();
+
+  // Executa todos os bots em paralelo
+  const botPromises = enabledAccounts.map((account, index) =>
+    runBot(account, index)
+  );
+
+  // Aguarda todos os bots
+  await Promise.allSettled(botPromises);
+
+  logger.info("Todos os bots finalizaram.");
 }
 
-// Inicia o bot
+// Tratamento de sinais para encerramento gracioso
+process.on("SIGINT", () => {
+  logger.info("\n\n🛑 Recebido sinal de interrupção (Ctrl+C)");
+  logger.info("Encerrando todos os bots...");
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  logger.info("\n\n🛑 Recebido sinal de término");
+  logger.info("Encerrando todos os bots...");
+  process.exit(0);
+});
+
+// Inicia o multi-bot
 main().catch((error) => {
   logger.error("Erro fatal:", error);
   process.exit(1);

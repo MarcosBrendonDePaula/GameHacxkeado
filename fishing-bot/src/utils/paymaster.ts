@@ -3,7 +3,7 @@ import { PAYMASTER_URL, PAYMASTER_DOMAIN, CUSTOM_HEADERS } from "../config/const
 import { Logger } from "./helpers";
 import { getGlobalProxyAgent } from "./proxy";
 
-const logger = new Logger("💰 PAYMASTER");
+const defaultLogger = new Logger("💰 PAYMASTER");
 
 interface PaymasterResponse {
   signature?: string;
@@ -18,7 +18,7 @@ let cachedSponsor: PublicKey | null = null;
 /**
  * Busca o sponsor pubkey do paymaster
  */
-export async function getSponsor(): Promise<PublicKey> {
+export async function getSponsor(logger: Logger = defaultLogger): Promise<PublicKey> {
   if (cachedSponsor) {
     return cachedSponsor;
   }
@@ -64,7 +64,8 @@ export async function getSponsor(): Promise<PublicKey> {
  */
 export async function sendTransactionViaPaymaster(
   transaction: Transaction,
-  feePayer: PublicKey
+  feePayer: PublicKey,
+  logger: Logger = defaultLogger
 ): Promise<string> {
   try {
     // Serializa a transação em base64

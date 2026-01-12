@@ -11,8 +11,8 @@ coverage
 *.lcov
 
 # logs
-logs
-_.log
+logs/
+*.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # dotenv environment variable files
@@ -37,5 +37,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 *.json
 !package.json
 !tsconfig.json
+!accounts.example.json
+accounts.json
 wallet*.json
 keypair*.json
+wallets/

@@ -3,7 +3,7 @@ import { PROGRAM_ID } from "../config/constants";
 import { Logger } from "./helpers";
 import { getGlobalProxyAgent } from "./proxy";
 
-const logger = new Logger("🔐 CAPABILITY");
+const defaultLogger = new Logger("🔐 CAPABILITY");
 
 // URL do serviço de capabilities
 const CAPABILITY_URL = "https://cast.fogofishing.com/capability";
@@ -45,7 +45,7 @@ const pendingFetches = new Map<string, Promise<CapabilityResponse | null>>();
 /**
  * Busca uma capability do servidor
  */
-async function fetchCapability(wallet: string): Promise<CapabilityResponse | null> {
+async function fetchCapability(wallet: string, logger: Logger = defaultLogger): Promise<CapabilityResponse | null> {
   try {
     logger.debug(`Buscando capability para ${wallet.slice(0, 8)}...`);
 
@@ -87,7 +87,7 @@ async function fetchCapability(wallet: string): Promise<CapabilityResponse | nul
 /**
  * Obtém uma capability do cache ou busca uma nova
  */
-async function getCapability(wallet: string): Promise<CapabilityResponse | null> {
+async function getCapability(wallet: string, logger: Logger = defaultLogger): Promise<CapabilityResponse | null> {
   const now = Date.now();
   const nowSec = Math.floor(now / 1000);
 
@@ -101,7 +101,7 @@ async function getCapability(wallet: string): Promise<CapabilityResponse | null>
       // Se passou do threshold de renovação, faz refresh em background
       if (now > refreshThreshold && !pendingFetches.has(wallet)) {
         logger.debug(`🔄 Background refresh para ${wallet.slice(0, 8)}...`);
-        const promise = fetchCapability(wallet).then((resp) => {
+        const promise = fetchCapability(wallet, logger).then((resp) => {
           pendingFetches.delete(wallet);
           if (resp) {
             capabilityCache.set(wallet, {
@@ -125,7 +125,7 @@ async function getCapability(wallet: string): Promise<CapabilityResponse | null>
   }
 
   // Faz novo fetch
-  const promise = fetchCapability(wallet).then((resp) => {
+  const promise = fetchCapability(wallet, logger).then((resp) => {
     pendingFetches.delete(wallet);
     if (resp) {
       capabilityCache.set(wallet, {
@@ -145,10 +145,11 @@ async function getCapability(wallet: string): Promise<CapabilityResponse | null>
  * Cria a instrução de capability para incluir na transação
  */
 export async function createCapabilityInstruction(
-  walletPublicKey: PublicKey
+  walletPublicKey: PublicKey,
+  logger: Logger = defaultLogger
 ): Promise<TransactionInstruction> {
   const walletB58 = walletPublicKey.toBase58();
-  const capability = await getCapability(walletB58);
+  const capability = await getCapability(walletB58, logger);
 
   if (capability) {
     const issuerPubkey = new PublicKey(capability.issuer_pubkey);

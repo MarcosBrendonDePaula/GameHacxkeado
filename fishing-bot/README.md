@@ -2,19 +2,123 @@
 
 Bot automatizado em TypeScript para o jogo Fogo Fishing. Executa casts (pescas) automaticamente usando Bun runtime.
 
+## ✨ Funcionalidades
+
+- ✅ **Auto-cast automático** com delay configurável
+- ✅ **Verificação de resultados** - Mostra CATCH vs MISS após cada pescaria
+- ✅ **Estatísticas em tempo real** - Catches, misses, fish total, taxa de sucesso
+- ✅ **Suporte a Proxy** - HTTP, HTTPS e SOCKS5
+- ✅ **Multi-Bot** - Execute múltiplas contas simultaneamente
+- ✅ **Paymaster integrado** - Transações sem necessidade de SOL
+- ✅ **Sistema de capability** para autenticação
+
 ## 📋 Pré-requisitos
 
 - [Bun](https://bun.sh/) instalado
-- Uma carteira Solana com SOL para taxas de transação
 - Conta de jogador já inicializada no Fogo Fishing
+- (Opcional) Proxy HTTP/HTTPS/SOCKS5
+
+**Nota**: Não é necessário ter SOL na wallet! O bot usa um sistema de paymaster que paga as taxas.
 
 ## 🚀 Instalação
-
-As dependências já foram instaladas. Se precisar reinstalar:
 
 ```bash
 bun install
 ```
+
+## 🎮 Como Usar
+
+O bot funciona com um sistema de contas configurado em `accounts.json`. Você pode rodar **uma** ou **várias** contas simultaneamente!
+
+### 1️⃣ Configuração Inicial
+
+Crie o arquivo de configuração:
+```bash
+copy accounts.example.json accounts.json
+```
+
+### 2️⃣ Configure suas Contas
+
+Edite `accounts.json`:
+
+**Para uma única conta:**
+```json
+[
+  {
+    "name": "Minha Conta",
+    "enabled": true,
+    "keypair_path": "./wallets/wallet1.json",
+    "proxy": "http://2.56.249.17:50100",
+    "delay": 500
+  }
+]
+```
+
+**Para múltiplas contas:**
+```json
+[
+  {
+    "name": "Conta 1",
+    "enabled": true,
+    "keypair_path": "./wallets/wallet1.json",
+    "proxy": "http://2.56.249.17:50100",
+    "delay": 500
+  },
+  {
+    "name": "Conta 2",
+    "enabled": true,
+    "keypair_path": "./wallets/wallet2.json",
+    "proxy": "http://2.56.249.17:50100",
+    "delay": 600
+  },
+  {
+    "name": "Conta 3",
+    "enabled": false,
+    "keypair_path": "./wallets/wallet3.json",
+    "delay": 500
+  }
+]
+```
+
+### 3️⃣ Execute o Bot
+
+```bash
+# Forma simples
+bun run start
+
+# Ou especifique um arquivo diferente
+bun run start my-accounts.json
+
+# Com auto-reload (modo desenvolvimento)
+bun run dev
+```
+
+📖 **[Ver documentação completa do Multi-Bot](MULTI-BOT.md)**
+
+### Modo Individual (Legado)
+
+Se você preferir o modo antigo (uma conta via linha de comando):
+
+```bash
+bun run single ./wallet.json
+
+# Com opções
+bun run single ./wallet.json --delay 1000
+```
+
+## 📊 O que o Bot Mostra
+
+```
+--- Cast #5 ---
+🐟 CATCH! +2,750,259 fish
+📊 5/5 (100.0%) | 🐟 3 catches (60.0%) | 🔴 2 misses | Total: 8,345,678 fish
+```
+
+- **Taxa de sucesso**: Quantos casts foram enviados com sucesso
+- **Catches vs Misses**: Quantas pescarias resultaram em peixe
+- **Total pescado**: Quantidade total de fish capturado na sessão
+
+📖 **[Ver documentação completa de Verificação de Resultados](VERIFICACAO-RESULTADOS.md)**
 
 ## 📁 Estrutura do Projeto
 
@@ -28,17 +132,22 @@ fishing-bot/
 │   │   └── index.ts        # Tipos TypeScript
 │   ├── utils/
 │   │   ├── pda.ts          # Funções para calcular PDAs
-│   │   └── helpers.ts      # Funções auxiliares
+│   │   ├── helpers.ts      # Funções auxiliares
+│   │   ├── capability.ts   # Sistema de autenticação
+│   │   ├── paymaster.ts    # Integração com paymaster
+│   │   └── proxy.ts        # Suporte a proxy
 │   ├── services/
 │   │   └── fishing.ts      # Serviço principal de pesca
-│   └── index.ts            # Arquivo principal do bot
-├── package.json
+│   ├── index.ts            # Bot individual
+│   └── multi-bot.ts        # Multi-bot runner
+├── accounts.example.json   # Exemplo de configuração multi-bot
+├── MULTI-BOT.md           # Documentação do multi-bot
+├── PROXY.md               # Documentação de proxy
+├── VERIFICACAO-RESULTADOS.md  # Documentação de verificação
 └── README.md
 ```
 
 ## 🔑 Configurando sua Wallet
-
-Você precisa de um arquivo JSON com sua keypair Solana. Existem algumas formas de obter:
 
 ### Opção 1: Exportar da Phantom/Solflare
 
@@ -52,118 +161,134 @@ Você precisa de um arquivo JSON com sua keypair Solana. Existem algumas formas 
 solana-keygen new --outfile ./wallet.json
 ```
 
-⚠️ **IMPORTANTE**: Nunca compartilhe seu arquivo de keypair! Adicione-o ao `.gitignore`
+### Organização (Recomendado para Multi-Bot)
 
-## 🎮 Como Usar
-
-### Uso Básico
-
-```bash
-bun run src/index.ts ./caminho/para/wallet.json
+Crie uma pasta `wallets/` para organizar:
+```
+fishing-bot/
+├── accounts.json
+├── wallets/
+│   ├── wallet1.json
+│   ├── wallet2.json
+│   └── wallet3.json
 ```
 
-### Com Opções Personalizadas
+⚠️ **IMPORTANTE**: Nunca compartilhe suas keypairs! A pasta `wallets/` está no `.gitignore`
 
+## 🧪 Scripts de Teste
+
+### Testar um único cast
 ```bash
-# Delay personalizado entre casts (em ms)
-bun run src/index.ts ./wallet.json --delay 1000
-
-# RPC endpoint personalizado
-bun run src/index.ts ./wallet.json --rpc https://api.mainnet-beta.solana.com
-
-# Combinando opções
-bun run src/index.ts ./wallet.json --delay 500 --rpc https://seu-rpc.com
+bun run test-cast-result.ts wallet.json
 ```
 
-### Opções Disponíveis
+### Testar proxy
+```bash
+set HTTP_PROXY=http://2.56.249.17:50100
+set HTTPS_PROXY=http://2.56.249.17:50100
+bun run test-proxy.ts http://2.56.249.17:50100
+```
 
-- `--delay <ms>`: Define o delay entre casts em milissegundos (padrão: 500ms)
-- `--rpc <url>`: Define o endpoint RPC da Solana (padrão: https://api.mainnet-beta.solana.com)
-- `--help`, `-h`: Mostra a ajuda
+## ⚙️ Configuração Avançada
 
-## ⚙️ Configuração
-
-Edite `src/config/constants.ts` para ajustar:
+Edite `src/config/constants.ts`:
 
 ```typescript
 export const BOT_CONFIG = {
-  // Delay entre casts em milissegundos
-  autocast_delay: 500,
-
-  // RPC endpoint oficial do Fogo Fishing
-  rpc_endpoint: "https://eu.fogo.fluxrpc.com/?key=74a5f926-d7b0-4c72-9a5c-0eaec1a57781",
-
-  // Máximo de tentativas em caso de erro
+  autocast_delay: 500,  // Delay entre casts (ms)
+  rpc_endpoint: "https://eu.fogo.fluxrpc.com/?key=...",
   max_retries: 3,
-
-  // Timeout para transações (em segundos)
   transaction_timeout: 60,
 };
-
-// Headers customizados - simula requisições do navegador
-export const CUSTOM_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0",
-  "Referer": "https://app.fogofishing.com/",
-  "Origin": "https://app.fogofishing.com",
-  // ... outros headers
-};
 ```
 
-**Nota**: O bot já está configurado para usar o RPC oficial do Fogo Fishing com headers customizados que simulam um navegador. Isso ajuda a evitar bloqueios e rate limits.
+## 🔍 Logs Detalhados
 
-## 📊 O que o Bot Faz
-
-1. **Conecta** à blockchain Solana
-2. **Verifica** o estado do jogador (rod level, durability, etc)
-3. **Executa casts** automaticamente em loop
-4. **Aguarda** o delay configurado entre cada cast
-5. **Registra** sucessos e erros no console
-
-## 🔍 Logs
-
-O bot exibe informações detalhadas:
+### Console (Tempo Real)
 
 ```
-🎣 FISHING [2026-01-11T...] Wallet: ABC...XYZ
-🎣 FISHING [2026-01-11T...] 📊 Buscando estado do jogo...
-🎣 FISHING [2026-01-11T...] 🎣 Rod Level: 5
-🎣 FISHING [2026-01-11T...] ⚡ Power: 1200
-🎣 FISHING [2026-01-11T...] 🔧 Durability: 450/500
-🎣 FISHING [2026-01-11T...] ✅ Cast realizado! Sig: abc123...
+🤖 BOT-1 [Conta 1 - Bot A] Iniciando...
+🤖 BOT-1 [Conta 1 - Bot A] 📝 Log sendo gravado em: logs/bot-1-conta-1-bot-a.log
+🤖 BOT-1 [Conta 1 - Bot A] Wallet: 2Y2fq8xv...jyX8h
+🤖 BOT-1 [Conta 1 - Bot A] 🐟 CATCH! +2,750,259 fish
+🤖 BOT-2 [Conta 1 - Bot B] 🔴 MISS
 ```
+
+### Arquivos de Log (Permanentes)
+
+Cada bot grava seus logs em `logs/bot-X-nome.log`:
+
+```
+logs/
+├── bot-1-conta-1-bot-a.log
+├── bot-2-conta-1-bot-b.log
+└── bot-3-farm-principal.log
+```
+
+Ver logs em tempo real:
+```bash
+# Linux/Mac
+tail -f logs/bot-1-conta-1-bot-a.log
+
+# Windows PowerShell
+Get-Content logs/bot-1-conta-1-bot-a.log -Wait -Tail 50
+```
+
+📖 **[Ver documentação completa de Logs](LOGS.md)**
+
+## 🌐 Usando Proxy
+
+O bot suporta HTTP, HTTPS e SOCKS5:
+
+```bash
+# HTTP
+set HTTP_PROXY=http://2.56.249.17:50100
+set HTTPS_PROXY=http://2.56.249.17:50100
+
+# HTTP com autenticação
+set HTTP_PROXY=http://user:pass@proxy.com:8080
+
+# SOCKS5
+set HTTP_PROXY=socks5://proxy.com:1080
+```
+
+📖 **[Documentação completa de Proxy](PROXY.md)**
 
 ## ⚠️ Avisos Importantes
 
-1. **SOL para Taxas**: Certifique-se de ter SOL suficiente na wallet para pagar as taxas de transação
-2. **Durabilidade**: O bot não para automaticamente quando a durabilidade chega a 0. Monitore!
-3. **Rate Limits**: Cuidado com rate limits do RPC. Use um RPC privado se necessário
-4. **Segurança**: NUNCA compartilhe sua keypair ou commit ela no git
+1. **Não precisa SOL**: O bot usa paymaster, não precisa ter SOL na wallet
+2. **Durabilidade**: Monitore a durabilidade da vara (o bot avisa quando está em 0)
+3. **Proxies**: Use proxies diferentes para cada conta no multi-bot
+4. **Segurança**: NUNCA compartilhe suas keypairs ou commit no git
+5. **Backup**: Faça backup do seu `accounts.json`
 
 ## 🛠️ Troubleshooting
 
 ### "Conta de jogador não encontrada"
-
 Você precisa inicializar sua conta no jogo primeiro. Acesse o jogo no navegador e crie sua conta.
 
-### "Erro de RPC"
-
-Tente usar um RPC endpoint diferente:
-
-```bash
-bun run src/index.ts ./wallet.json --rpc https://solana-mainnet.g.alchemy.com/v2/YOUR-KEY
-```
+### "Transaction fee payer must be one of the sponsors"
+Isso é normal, o bot já corrige automaticamente usando o sistema de paymaster.
 
 ### "Durabilidade em 0"
+Seu rod precisa de reparo. Faça isso manualmente no jogo.
 
-Seu rod precisa de reparo. Faça isso manualmente no jogo por enquanto.
+### Proxy não está funcionando
+Certifique-se de usar as variáveis de ambiente `HTTP_PROXY` e `HTTPS_PROXY`:
+```bash
+set HTTP_PROXY=http://2.56.249.17:50100
+set HTTPS_PROXY=http://2.56.249.17:50100
+```
 
-## 🔄 Próximas Funcionalidades
+### Multi-bot não inicia
+Verifique se o `accounts.json` existe e tem pelo menos uma conta com `"enabled": true`.
 
-- [ ] Auto-repair quando durabilidade baixa
-- [ ] Suporte a supercast automático
-- [ ] Estatísticas detalhadas (taxa de sucesso, fish caught, etc)
-- [ ] Notificações (Discord, Telegram)
-- [ ] Interface web para monitoramento
+## 📚 Documentação Completa
+
+- **[MULTI-BOT.md](MULTI-BOT.md)** - Sistema de múltiplas contas
+- **[PROXY.md](PROXY.md)** - Configuração de proxy
+- **[VERIFICACAO-RESULTADOS.md](VERIFICACAO-RESULTADOS.md)** - Sistema de verificação de catches
+- **[LOGS.md](LOGS.md)** - Sistema de logs por arquivo
 
 ## 📝 Licença
 

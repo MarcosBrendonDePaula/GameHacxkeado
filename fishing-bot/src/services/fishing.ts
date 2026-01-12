@@ -37,8 +37,8 @@ export class FishingService {
   private logger: Logger;
   private walletPublicKey: PublicKey;
 
-  constructor(walletKeypair: Keypair, rpcEndpoint: string, proxyUrl?: string) {
-    this.logger = new Logger("🎣 FISHING");
+  constructor(walletKeypair: Keypair, rpcEndpoint: string, proxyUrl?: string, botId?: string, logFile?: string) {
+    this.logger = new Logger(botId ? `🤖 ${botId}` : "🎣 FISHING", logFile);
 
     // Cria proxy agent se configurado
     const proxyAgent = proxyUrl ? createProxyAgent(proxyUrl) : undefined;
@@ -285,7 +285,7 @@ export class FishingService {
       this.logger.debug(`Supercast: ${useSupercast}`);
 
       // Cria a instrução de capability (autenticação)
-      const capabilityIx = await createCapabilityInstruction(this.walletPublicKey);
+      const capabilityIx = await createCapabilityInstruction(this.walletPublicKey, this.logger);
 
       // Cria a instrução de cast
       // @ts-ignore
@@ -315,7 +315,7 @@ export class FishingService {
       });
 
       // Busca o sponsor (quem paga as taxas)
-      const sponsor = await getSponsor();
+      const sponsor = await getSponsor(this.logger);
 
       // Monta a transação
       const { blockhash } = await this.connection.getLatestBlockhash();
@@ -334,7 +334,7 @@ export class FishingService {
       tx.sign(this.wallet.payer);
 
       // Envia via paymaster (que paga as taxas)
-      const signature = await sendTransactionViaPaymaster(tx, sponsor);
+      const signature = await sendTransactionViaPaymaster(tx, sponsor, this.logger);
 
       this.logger.success(`Cast realizado! Sig: ${signature.slice(0, 12)}...`);
       return signature;
