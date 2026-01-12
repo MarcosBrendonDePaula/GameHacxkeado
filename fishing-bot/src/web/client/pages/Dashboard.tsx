@@ -7,6 +7,7 @@ interface Stats {
   totalMisses: number
   totalFish: number
   successRate: string
+  totalPendingCasts: number
 }
 
 interface Bot {
@@ -19,6 +20,7 @@ interface Bot {
   totalFish: number
   delay: number
   uptime: string
+  pendingCasts?: number
 }
 
 interface PlayerState {
@@ -45,6 +47,7 @@ interface HistoryPoint {
   catches: number
   misses: number
   totalFish: number
+  durability?: number
 }
 
 type SelectedView = 'overview' | string // 'overview' ou bot id
@@ -66,11 +69,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (selectedView !== 'overview') {
-      fetchBotDetails(selectedView)
+      // Primeira busca com loading
+      fetchBotDetails(selectedView, true)
       fetchBotHistory(selectedView)
+
+      // Atualiza detalhes do bot a cada 2 segundos (sem loading para não piscar)
+      const detailsInterval = setInterval(() => fetchBotDetails(selectedView, false), 2000)
+
       // Atualiza histórico a cada 5 segundos
-      const interval = setInterval(() => fetchBotHistory(selectedView), 5000)
-      return () => clearInterval(interval)
+      const historyInterval = setInterval(() => fetchBotHistory(selectedView), 5000)
+
+      return () => {
+        clearInterval(detailsInterval)
+        clearInterval(historyInterval)
+      }
     }
   }, [selectedView])
 
@@ -92,8 +104,10 @@ export default function Dashboard() {
     }
   }
 
-  async function fetchBotDetails(botId: string) {
-    setDetailsLoading(true)
+  async function fetchBotDetails(botId: string, showLoading: boolean = true) {
+    if (showLoading) {
+      setDetailsLoading(true)
+    }
     try {
       const res = await fetch(`/api/bots/${botId}/detailed`)
       const data = await res.json()
@@ -101,7 +115,9 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Erro ao buscar detalhes do bot:', error)
     } finally {
-      setDetailsLoading(false)
+      if (showLoading) {
+        setDetailsLoading(false)
+      }
     }
   }
 
@@ -317,6 +333,14 @@ function OverviewContent({ stats, bots, onStartBot, onStopBot, onStartAll, onSto
             <p className="stat-value">{stats.totalMisses}</p>
           </div>
         </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">⏳</div>
+          <div className="stat-info">
+            <h3>Casts Pendentes</h3>
+            <p className="stat-value">{stats.totalPendingCasts || 0}</p>
+          </div>
+        </div>
       </div>
 
       {/* Controle de Bots */}
@@ -447,6 +471,12 @@ function OverviewContent({ stats, bots, onStartBot, onStopBot, onStartAll, onSto
                   <span style={{ color: '#8b949e' }}>Uptime: </span>
                   <span style={{ color: '#bc8cff', fontWeight: 'bold' }}>{bot.uptime}</span>
                 </div>
+                {bot.status === 'online' && bot.pendingCasts !== undefined && (
+                  <div>
+                    <span style={{ color: '#8b949e' }}>Fila: </span>
+                    <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>⏳ {bot.pendingCasts}</span>
+                  </div>
+                )}
               </div>
 
               {/* Botão de Controle */}
@@ -489,6 +519,8 @@ function BotDetailsContent({ botDetails, botHistory, loading }: {
   botHistory: HistoryPoint[]
   loading: boolean
 }) {
+  const [timeRange, setTimeRange] = useState<string>('1h') // Padrão: última 1 hora
+
   if (loading) {
     return <div className="loading">Carregando detalhes do bot...</div>
   }
@@ -496,6 +528,41 @@ function BotDetailsContent({ botDetails, botHistory, loading }: {
   if (!botDetails) {
     return <div className="error">Erro ao carregar detalhes do bot</div>
   }
+
+  // Filtra histórico baseado no período de tempo selecionado
+  const getFilteredHistory = () => {
+    if (timeRange === 'all') return botHistory
+
+    const now = Date.now()
+    let maxAge: number
+
+    switch (timeRange) {
+      case '10m':
+        maxAge = 10 * 60 * 1000 // 10 minutos
+        break
+      case '30m':
+        maxAge = 30 * 60 * 1000 // 30 minutos
+        break
+      case '1h':
+        maxAge = 60 * 60 * 1000 // 1 hora
+        break
+      case '6h':
+        maxAge = 6 * 60 * 60 * 1000 // 6 horas
+        break
+      case '1d':
+        maxAge = 24 * 60 * 60 * 1000 // 1 dia
+        break
+      default:
+        maxAge = 60 * 60 * 1000 // 1 hora (padrão)
+    }
+
+    return botHistory.filter(point => {
+      const pointTime = new Date(point.timestamp).getTime()
+      return now - pointTime <= maxAge
+    })
+  }
+
+  const filteredHistory = getFilteredHistory()
 
   const { bot, playerState } = botDetails
   const totalCasts = bot.catches + bot.misses
@@ -554,6 +621,9 @@ function BotDetailsContent({ botDetails, botHistory, loading }: {
             <StatRow label="Média por Catch" value={`${avgFishPerCatch} fish`} color="#8b949e" />
             <StatRow label="Delay entre Casts" value={`${bot.delay}ms`} />
             <StatRow label="Uptime" value={bot.uptime} color="#bc8cff" />
+            {bot.status === 'online' && bot.pendingCasts !== undefined && (
+              <StatRow label="Casts na Fila" value={`⏳ ${bot.pendingCasts}`} color="#58a6ff" />
+            )}
           </div>
         </div>
 
@@ -678,9 +748,68 @@ function BotDetailsContent({ botDetails, botHistory, loading }: {
         padding: '20px',
         marginBottom: '20px',
       }}>
-        <h3 style={{ marginBottom: '20px', color: '#58a6ff' }}>⏱️ Evolução Temporal</h3>
-        {botHistory.length > 1 ? (
-          <TimelineChart history={botHistory} />
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3 style={{ margin: 0, color: '#58a6ff' }}>⏱️ Evolução Temporal</h3>
+            {botHistory.length > 1 && (
+              <span style={{
+                fontSize: '0.85rem',
+                color: '#8b949e',
+                backgroundColor: '#0d1117',
+                padding: '4px 12px',
+                borderRadius: '12px',
+                border: '1px solid #30363d',
+              }}>
+                🔮 Com previsão baseada em spline cúbica (Catmull-Rom)
+              </span>
+            )}
+          </div>
+
+          {/* Controles de Período de Tempo */}
+          {botHistory.length > 5 && (
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              alignItems: 'center',
+              marginBottom: '15px',
+              flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>Período:</span>
+              {[
+                { value: '10m', label: '10 min' },
+                { value: '30m', label: '30 min' },
+                { value: '1h', label: '1 hora' },
+                { value: '6h', label: '6 horas' },
+                { value: '1d', label: '1 dia' },
+                { value: 'all', label: 'Tudo' },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setTimeRange(value)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    border: timeRange === value ? '2px solid #58a6ff' : '1px solid #30363d',
+                    backgroundColor: timeRange === value ? 'rgba(88, 166, 255, 0.1)' : '#0d1117',
+                    color: timeRange === value ? '#58a6ff' : '#8b949e',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: timeRange === value ? 'bold' : 'normal',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+              <span style={{ fontSize: '0.75rem', color: '#6e7681', marginLeft: '8px' }}>
+                ({filteredHistory.length} pontos)
+              </span>
+            </div>
+          )}
+        </div>
+
+        {filteredHistory.length > 1 ? (
+          <TimelineChart history={filteredHistory} />
         ) : (
           <div style={{ textAlign: 'center', color: '#8b949e', padding: '40px' }}>
             Aguardando mais dados... (mínimo 2 pontos)
@@ -935,9 +1064,104 @@ function TimelineChart({ history }: { history: HistoryPoint[] }) {
   const chartWidth = width - padding.left - padding.right
   const chartHeight = height - padding.top - padding.bottom
 
-  // Encontra valores min/max
-  const maxFish = Math.max(...history.map(h => h.totalFish), 1)
-  const maxCatches = Math.max(...history.map(h => h.catches), 1)
+  // Função para calcular spline cúbica de Catmull-Rom
+  const catmullRomSpline = (p0: number, p1: number, p2: number, p3: number, t: number) => {
+    const t2 = t * t
+    const t3 = t2 * t
+
+    return 0.5 * (
+      (2 * p1) +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+    )
+  }
+
+  // Calcula velocidade (derivada) no último ponto usando spline
+  const calculateVelocity = (values: number[]) => {
+    const n = values.length
+    if (n < 3) {
+      // Fallback para diferença simples se não tiver pontos suficientes
+      return values[n - 1] - values[n - 2]
+    }
+
+    // Usa os últimos 4 pontos para calcular a derivada da spline
+    const p0 = values[n - 4] || values[0]
+    const p1 = values[n - 3] || values[0]
+    const p2 = values[n - 2]
+    const p3 = values[n - 1]
+
+    // Derivada da spline de Catmull-Rom em t=1
+    const velocity = 0.5 * (-p1 + p3)
+    return velocity
+  }
+
+  // Calcula aceleração (segunda derivada) para extrapolação mais precisa
+  const calculateAcceleration = (values: number[]) => {
+    const n = values.length
+    if (n < 4) return 0
+
+    const p0 = values[n - 4]
+    const p1 = values[n - 3]
+    const p2 = values[n - 2]
+    const p3 = values[n - 1]
+
+    // Segunda derivada aproximada
+    return 0.5 * (p0 - 2 * p1 + p2)
+  }
+
+  // Calcula previsões usando spline cúbica
+  const predictionPoints = 5
+  const pointsForPrediction = Math.min(15, history.length)
+  const recentHistory = history.slice(-pointsForPrediction)
+
+  // Previsão para fish usando spline
+  const fishValues = recentHistory.map(h => h.totalFish)
+  const fishVelocity = calculateVelocity(fishValues)
+  const fishAcceleration = calculateAcceleration(fishValues)
+  const fishPredictions = []
+
+  for (let i = 1; i <= predictionPoints; i++) {
+    const lastValue = fishValues[fishValues.length - 1]
+    // Extrapolação quadrática: y = y0 + v*t + 0.5*a*t²
+    const predictedValue = lastValue + fishVelocity * i + 0.5 * fishAcceleration * i * i
+    fishPredictions.push(Math.max(0, predictedValue))
+  }
+
+  // Previsão para catches usando spline
+  const catchValues = recentHistory.map(h => h.catches)
+  const catchVelocity = calculateVelocity(catchValues)
+  const catchAcceleration = calculateAcceleration(catchValues)
+  const catchPredictions = []
+
+  for (let i = 1; i <= predictionPoints; i++) {
+    const lastValue = catchValues[catchValues.length - 1]
+    const predictedValue = lastValue + catchVelocity * i + 0.5 * catchAcceleration * i * i
+    catchPredictions.push(Math.max(0, predictedValue))
+  }
+
+  // Previsão para durabilidade (se disponível)
+  const durabilityValues = recentHistory.map(h => h.durability).filter((d): d is number => d !== undefined)
+  const hasDurability = durabilityValues.length > 0
+  let durabilityPredictions: number[] = []
+
+  if (hasDurability && durabilityValues.length >= 3) {
+    const durabilityVelocity = calculateVelocity(durabilityValues)
+    const durabilityAcceleration = calculateAcceleration(durabilityValues)
+
+    for (let i = 1; i <= predictionPoints; i++) {
+      const lastValue = durabilityValues[durabilityValues.length - 1]
+      const predictedValue = lastValue + durabilityVelocity * i + 0.5 * durabilityAcceleration * i * i
+      // Limita entre 0 e 100
+      durabilityPredictions.push(Math.max(0, Math.min(100, predictedValue)))
+    }
+  }
+
+  // Encontra valores min/max (incluindo previsões)
+  const allFishValues = [...history.map(h => h.totalFish), ...fishPredictions]
+  const allCatchValues = [...history.map(h => h.catches), ...catchPredictions]
+  const maxFish = Math.max(...allFishValues, 1)
+  const maxCatches = Math.max(...allCatchValues, 1)
 
   // Escala Y para fish (à esquerda)
   const scaleYFish = (value: number) => {
@@ -949,44 +1173,189 @@ function TimelineChart({ history }: { history: HistoryPoint[] }) {
     return chartHeight - (value / maxCatches) * chartHeight
   }
 
-  // Escala X
-  const scaleX = (index: number) => {
-    return (index / (history.length - 1)) * chartWidth
+  // Escala Y para durabilidade (0-100%, eixo direito)
+  const scaleYDurability = (value: number) => {
+    return chartHeight - (value / 100) * chartHeight
   }
 
-  // Cria path para linha de fish
-  const fishPath = history
-    .map((point, i) => {
-      const x = scaleX(i)
-      const y = scaleYFish(point.totalFish)
-      return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-    })
-    .join(' ')
+  // Escala X (agora incluindo pontos de previsão)
+  const totalPoints = history.length + predictionPoints
+  const scaleX = (index: number) => {
+    return (index / (totalPoints - 1)) * chartWidth
+  }
 
-  // Cria path para linha de catches
-  const catchesPath = history
-    .map((point, i) => {
-      const x = scaleX(i)
-      const y = scaleYCatches(point.catches)
-      return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`
-    })
-    .join(' ')
+  // Cria curva suave para linha de fish (histórico) usando Catmull-Rom
+  const createSmoothPath = (
+    values: number[],
+    scaleY: (v: number) => number,
+    isStartPath: boolean = false
+  ) => {
+    if (values.length < 2) return ''
+
+    const segments: string[] = []
+
+    // Primeiro ponto
+    const x0 = scaleX(0)
+    const y0 = scaleY(values[0])
+    segments.push(`M ${x0} ${y0}`)
+
+    if (values.length === 2) {
+      // Se só tem 2 pontos, usa linha reta
+      const x1 = scaleX(1)
+      const y1 = scaleY(values[1])
+      segments.push(`L ${x1} ${y1}`)
+      return segments.join(' ')
+    }
+
+    // Usa spline de Catmull-Rom para criar curvas suaves
+    for (let i = 0; i < values.length - 1; i++) {
+      const p0 = values[Math.max(0, i - 1)]
+      const p1 = values[i]
+      const p2 = values[i + 1]
+      const p3 = values[Math.min(values.length - 1, i + 2)]
+
+      // Gera pontos intermediários da curva
+      const steps = 10
+      for (let t = 0; t <= steps; t++) {
+        const tNorm = t / steps
+        const value = catmullRomSpline(p0, p1, p2, p3, tNorm)
+        const x = scaleX(i + tNorm)
+        const y = scaleY(value)
+
+        if (t === 0 && i === 0) continue // Pula o primeiro ponto (já foi adicionado com M)
+        segments.push(`L ${x} ${y}`)
+      }
+    }
+
+    return segments.join(' ')
+  }
+
+  const fishPath = createSmoothPath(
+    history.map(h => h.totalFish),
+    scaleYFish,
+    true
+  )
+
+  const catchesPath = createSmoothPath(
+    history.map(h => h.catches),
+    scaleYCatches,
+    true
+  )
+
+  // Cria path suave para previsão de fish
+  const createPredictionPath = (
+    lastHistoricValue: number,
+    predictions: number[],
+    scaleY: (v: number) => number
+  ) => {
+    const allValues = [lastHistoricValue, ...predictions]
+    const segments: string[] = []
+
+    // Começa do último ponto histórico
+    const x0 = scaleX(history.length - 1)
+    const y0 = scaleY(lastHistoricValue)
+    segments.push(`M ${x0} ${y0}`)
+
+    if (predictions.length === 1) {
+      const x1 = scaleX(history.length)
+      const y1 = scaleY(predictions[0])
+      segments.push(`L ${x1} ${y1}`)
+      return segments.join(' ')
+    }
+
+    // Usa spline para criar curva suave na previsão
+    for (let i = 0; i < predictions.length; i++) {
+      const p0 = allValues[Math.max(0, i - 1)]
+      const p1 = allValues[i]
+      const p2 = allValues[i + 1]
+      const p3 = allValues[Math.min(allValues.length - 1, i + 2)]
+
+      const steps = 10
+      for (let t = 0; t <= steps; t++) {
+        const tNorm = t / steps
+        const value = catmullRomSpline(p0, p1, p2, p3, tNorm)
+        const x = scaleX(history.length - 1 + i + tNorm)
+        const y = scaleY(value)
+
+        if (t === 0 && i === 0) continue
+        segments.push(`L ${x} ${y}`)
+      }
+    }
+
+    return segments.join(' ')
+  }
+
+  const fishPredictionPath = createPredictionPath(
+    history[history.length - 1].totalFish,
+    fishPredictions,
+    scaleYFish
+  )
+
+  const catchPredictionPath = createPredictionPath(
+    history[history.length - 1].catches,
+    catchPredictions,
+    scaleYCatches
+  )
+
+  // Paths de durabilidade (se disponível)
+  const durabilityPath = hasDurability ? createSmoothPath(
+    history.map(h => h.durability || 0).filter((_, i) => history[i].durability !== undefined),
+    scaleYDurability,
+    true
+  ) : ''
+
+  const durabilityPredictionPath = hasDurability && durabilityPredictions.length > 0 ? createPredictionPath(
+    durabilityValues[durabilityValues.length - 1],
+    durabilityPredictions,
+    scaleYDurability
+  ) : ''
 
   // Formata timestamp para exibição
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp)
+  const formatTime = (timestamp: string | Date) => {
+    const date = timestamp instanceof Date ? timestamp : new Date(timestamp)
     return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   }
 
-  // Labels do eixo X (mostra apenas alguns pontos)
+  // Calcula intervalo médio entre pontos históricos (em ms)
+  let avgInterval = 5000 // Padrão: 5 segundos
+  if (history.length > 1) {
+    const firstTime = new Date(history[0].timestamp).getTime()
+    const lastTime = new Date(history[history.length - 1].timestamp).getTime()
+    avgInterval = (lastTime - firstTime) / (history.length - 1)
+  }
+
+  // Calcula timestamps futuros para previsões
+  const lastHistoryTime = new Date(history[history.length - 1].timestamp)
+  const predictionTimestamps: Date[] = []
+  for (let i = 1; i <= predictionPoints; i++) {
+    predictionTimestamps.push(new Date(lastHistoryTime.getTime() + avgInterval * i))
+  }
+
+  // Labels do eixo X (mostra histórico + previsões)
   const xLabels = []
-  const labelCount = Math.min(6, history.length)
+  const totalPointsForLabels = history.length + predictionPoints
+  const labelCount = Math.min(8, totalPointsForLabels)
+
   for (let i = 0; i < labelCount; i++) {
-    const index = Math.floor((i / (labelCount - 1)) * (history.length - 1))
+    const index = Math.floor((i / (labelCount - 1)) * (totalPointsForLabels - 1))
+    let label: string
+    let isPrediction = false
+
+    if (index < history.length) {
+      // Ponto histórico
+      label = formatTime(history[index].timestamp)
+    } else {
+      // Ponto de previsão
+      const predIndex = index - history.length
+      label = formatTime(predictionTimestamps[predIndex])
+      isPrediction = true
+    }
+
     xLabels.push({
       index,
       x: scaleX(index),
-      label: formatTime(history[index].timestamp),
+      label,
+      isPrediction,
     })
   }
 
@@ -1038,23 +1407,47 @@ function TimelineChart({ history }: { history: HistoryPoint[] }) {
             strokeWidth="2"
           />
 
+          {/* Área sombreada de previsão */}
+          <rect
+            x={scaleX(history.length - 1)}
+            y={0}
+            width={chartWidth - scaleX(history.length - 1)}
+            height={chartHeight}
+            fill="#58a6ff"
+            opacity="0.05"
+          />
+
+          {/* Linha vertical separando histórico de previsão */}
+          <line
+            x1={scaleX(history.length - 1)}
+            y1={0}
+            x2={scaleX(history.length - 1)}
+            y2={chartHeight}
+            stroke="#58a6ff"
+            strokeWidth="1"
+            strokeDasharray="4 4"
+            opacity="0.3"
+          />
+
           {/* Labels X */}
-          {xLabels.map(({ index, x, label }) => (
+          {xLabels.map(({ index, x, label, isPrediction }) => (
             <g key={index}>
               <line
                 x1={x}
                 y1={chartHeight}
                 x2={x}
                 y2={chartHeight + 5}
-                stroke="#8b949e"
+                stroke={isPrediction ? "#58a6ff" : "#8b949e"}
                 strokeWidth="2"
+                strokeDasharray={isPrediction ? "2 2" : "0"}
               />
               <text
                 x={x}
                 y={chartHeight + 20}
                 textAnchor="middle"
-                fill="#8b949e"
+                fill={isPrediction ? "#58a6ff" : "#8b949e"}
                 fontSize="11"
+                fontStyle={isPrediction ? "italic" : "normal"}
               >
                 {label}
               </text>
@@ -1106,6 +1499,17 @@ function TimelineChart({ history }: { history: HistoryPoint[] }) {
             strokeLinejoin="round"
           />
 
+          {/* Linha de previsão de Fish (tracejada) */}
+          <path
+            d={fishPredictionPath}
+            fill="none"
+            stroke="#d29922"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeDasharray="8 4"
+            opacity="0.7"
+          />
+
           {/* Pontos de Fish */}
           {history.map((point, i) => (
             <circle
@@ -1119,6 +1523,21 @@ function TimelineChart({ history }: { history: HistoryPoint[] }) {
             />
           ))}
 
+          {/* Pontos de previsão de Fish */}
+          {fishPredictions.map((value, i) => (
+            <circle
+              key={`fish-pred-${i}`}
+              cx={scaleX(history.length + i)}
+              cy={scaleYFish(value)}
+              r="3"
+              fill="none"
+              stroke="#d29922"
+              strokeWidth="2"
+              strokeDasharray="2 2"
+              opacity="0.7"
+            />
+          ))}
+
           {/* Linha de Catches */}
           <path
             d={catchesPath}
@@ -1126,6 +1545,17 @@ function TimelineChart({ history }: { history: HistoryPoint[] }) {
             stroke="#3fb950"
             strokeWidth="3"
             strokeLinejoin="round"
+          />
+
+          {/* Linha de previsão de Catches (tracejada) */}
+          <path
+            d={catchPredictionPath}
+            fill="none"
+            stroke="#3fb950"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeDasharray="8 4"
+            opacity="0.7"
           />
 
           {/* Pontos de Catches */}
@@ -1140,19 +1570,113 @@ function TimelineChart({ history }: { history: HistoryPoint[] }) {
               strokeWidth="2"
             />
           ))}
+
+          {/* Pontos de previsão de Catches */}
+          {catchPredictions.map((value, i) => (
+            <circle
+              key={`catch-pred-${i}`}
+              cx={scaleX(history.length + i)}
+              cy={scaleYCatches(value)}
+              r="3"
+              fill="none"
+              stroke="#3fb950"
+              strokeWidth="2"
+              strokeDasharray="2 2"
+              opacity="0.7"
+            />
+          ))}
+
+          {/* Linha de Durabilidade */}
+          {hasDurability && durabilityPath && (
+            <path
+              d={durabilityPath}
+              fill="none"
+              stroke="#a371f7"
+              strokeWidth="3"
+              strokeLinejoin="round"
+            />
+          )}
+
+          {/* Linha de previsão de Durabilidade (tracejada) */}
+          {hasDurability && durabilityPredictionPath && (
+            <path
+              d={durabilityPredictionPath}
+              fill="none"
+              stroke="#a371f7"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeDasharray="8 4"
+              opacity="0.7"
+            />
+          )}
+
+          {/* Pontos de Durabilidade */}
+          {hasDurability && history.map((point, i) => {
+            if (point.durability === undefined) return null
+            return (
+              <circle
+                key={`durability-${i}`}
+                cx={scaleX(i)}
+                cy={scaleYDurability(point.durability)}
+                r="4"
+                fill="#a371f7"
+                stroke="#0d1117"
+                strokeWidth="2"
+              />
+            )
+          })}
+
+          {/* Pontos de previsão de Durabilidade */}
+          {hasDurability && durabilityPredictions.map((value, i) => (
+            <circle
+              key={`durability-pred-${i}`}
+              cx={scaleX(history.length + i)}
+              cy={scaleYDurability(value)}
+              r="3"
+              fill="none"
+              stroke="#a371f7"
+              strokeWidth="2"
+              strokeDasharray="2 2"
+              opacity="0.7"
+            />
+          ))}
         </g>
 
         {/* Legenda */}
-        <g transform={`translate(${width / 2 - 100}, ${height - 15})`}>
-          <circle cx={0} cy={0} r="5" fill="#d29922" />
-          <text x={10} y={4} fill="#d29922" fontSize="12" fontWeight="bold">
-            Total Fish (eixo esquerdo)
+        <g transform={`translate(${width / 2 - 200}, ${height - 15})`}>
+          {/* Linha sólida */}
+          <line x1={0} y1={0} x2={20} y2={0} stroke="#8b949e" strokeWidth="2" />
+          <text x={25} y={4} fill="#8b949e" fontSize="11">
+            Histórico
           </text>
 
-          <circle cx={200} cy={0} r="5" fill="#3fb950" />
-          <text x={210} y={4} fill="#3fb950" fontSize="12" fontWeight="bold">
-            Catches (eixo direito)
+          {/* Linha tracejada */}
+          <line x1={90} y1={0} x2={110} y2={0} stroke="#8b949e" strokeWidth="2" strokeDasharray="8 4" />
+          <text x={115} y={4} fill="#8b949e" fontSize="11">
+            Previsão
           </text>
+
+          {/* Fish */}
+          <circle cx={200} cy={0} r="5" fill="#d29922" />
+          <text x={210} y={4} fill="#d29922" fontSize="11" fontWeight="bold">
+            Fish
+          </text>
+
+          {/* Catches */}
+          <circle cx={260} cy={0} r="5" fill="#3fb950" />
+          <text x={270} y={4} fill="#3fb950" fontSize="11" fontWeight="bold">
+            Catches
+          </text>
+
+          {/* Durabilidade */}
+          {hasDurability && (
+            <>
+              <circle cx={350} cy={0} r="5" fill="#a371f7" />
+              <text x={360} y={4} fill="#a371f7" fontSize="11" fontWeight="bold">
+                Durabilidade %
+              </text>
+            </>
+          )}
         </g>
       </svg>
     </div>

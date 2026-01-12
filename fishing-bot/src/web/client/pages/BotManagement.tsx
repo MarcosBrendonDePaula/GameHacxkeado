@@ -139,7 +139,8 @@ export default function BotManagement() {
     }
 
     let newBots: BotConfig[]
-    if (editingIndex !== null) {
+    const isEditing = editingIndex !== null
+    if (isEditing) {
       // Editando bot existente
       newBots = [...bots]
       newBots[editingIndex] = botData
@@ -157,7 +158,11 @@ export default function BotManagement() {
       })
 
       if (res.ok) {
-        alert('Bot salvo com sucesso! A página será recarregada.')
+        if (isEditing) {
+          alert('Bot atualizado! Se estava online, será reiniciado automaticamente com as novas configurações.')
+        } else {
+          alert('Bot adicionado com sucesso!')
+        }
         window.location.reload()
       } else {
         alert('Erro ao salvar bot')

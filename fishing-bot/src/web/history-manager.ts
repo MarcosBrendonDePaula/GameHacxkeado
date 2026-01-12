@@ -5,13 +5,14 @@ export interface HistoryPoint {
   catches: number;
   misses: number;
   totalFish: number;
+  durability?: number; // Durabilidade atual da vara (0-100%)
 }
 
 class HistoryManager {
   private history: Map<string, HistoryPoint[]> = new Map();
   private maxPoints = 100; // Mantém últimos 100 pontos
 
-  addPoint(botId: string, catches: number, misses: number, totalFish: number) {
+  addPoint(botId: string, catches: number, misses: number, totalFish: number, durability?: number) {
     if (!this.history.has(botId)) {
       this.history.set(botId, []);
     }
@@ -22,6 +23,7 @@ class HistoryManager {
       catches,
       misses,
       totalFish,
+      durability,
     });
 
     // Limita o número de pontos
