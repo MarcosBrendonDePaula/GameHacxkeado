@@ -1,12 +1,37 @@
 import { Elysia } from "elysia";
-import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
 import path from "path";
+import fs from "fs";
 import { BotManager } from "./bot-manager";
 import { resultsManager } from "./results-manager";
 
-// Cria o gerenciador de bots
-const botManager = new BotManager("accounts.json");
+// Detecta se está rodando como executável compilado
+// - import.meta.path contém ~BUN quando é executável compilado
+// - Bun.argv[0] termina em .exe MAS não é "bun.exe" (que é o runtime)
+// - Variável de ambiente forçada
+const exeName = path.basename(Bun.argv[0]).toLowerCase();
+const isExecutable =
+  import.meta.path.includes("~BUN") ||
+  (exeName.endsWith(".exe") && !exeName.includes("bun")) ||
+  process.env.FISHING_BOT_PROD === "1";
+
+const exeDir = path.dirname(Bun.argv[0]);
+
+// Caminhos dependem do modo
+const distClientPath = isExecutable
+  ? path.join(exeDir, "client")
+  : path.join(import.meta.dir, "../../dist/client");
+
+const accountsPath = isExecutable
+  ? path.join(exeDir, "accounts.json")
+  : "accounts.json";
+
+console.log(`🔧 Modo: ${isExecutable ? "Produção (Executável)" : "Desenvolvimento (Vite)"}`);
+console.log(`📂 Exe dir: ${exeDir}`);
+console.log(`📂 Client path: ${distClientPath}`);
+console.log(`📂 Accounts path: ${accountsPath}`);
+
+const botManager = new BotManager(accountsPath);
 await botManager.loadBots();
 
 // Cria API Elysia
@@ -113,60 +138,122 @@ const api = new Elysia({ prefix: "/api" })
     }
   });
 
-// Cria Vite dev server
-const vite = await createViteServer({
-  root: path.join(import.meta.dir, "client"),
-  server: { middlewareMode: true },
-  appType: "spa",
-});
+// MIME types para arquivos estáticos
+const mimeTypes: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
 
-// Cria servidor HTTP que combina API + Vite
-const server = createServer(async (req, res) => {
-  const url = req.url || "/";
+// Função para servir arquivos estáticos
+function serveStatic(req: any, res: any, urlPath: string) {
+  // Remove query string
+  const cleanPath = urlPath.split("?")[0];
 
-  // Se for rota da API, usa Elysia
-  if (url.startsWith("/api")) {
-    // Lê o body da requisição se existir
-    let body = null;
-    if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(chunk);
-      }
-      const bodyString = Buffer.concat(chunks).toString();
-      console.log("📦 Body recebido:", bodyString);
+  // Se for raiz ou não tiver extensão, serve index.html (SPA)
+  let filePath = cleanPath === "/" || !path.extname(cleanPath)
+    ? path.join(distClientPath, "index.html")
+    : path.join(distClientPath, cleanPath);
 
-      // Parse o JSON se tiver conteúdo
-      if (bodyString) {
-        try {
-          body = JSON.stringify(JSON.parse(bodyString));
-        } catch (e) {
-          console.error("❌ Erro ao parsear body:", e);
-          body = bodyString;
-        }
-      }
-    }
-
-    const request = new Request(`http://localhost${url}`, {
-      method: req.method,
-      headers: req.headers as any,
-      body: body,
-    });
-
-    const response = await api.handle(request);
-    const responseBody = await response.text();
-
-    res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-    res.end(responseBody);
-    return;
+  // Verifica se o arquivo existe
+  if (!fs.existsSync(filePath)) {
+    // Fallback para index.html (SPA routing)
+    filePath = path.join(distClientPath, "index.html");
   }
 
-  // Caso contrário, usa Vite middleware
-  vite.middlewares(req, res);
-});
+  try {
+    const content = fs.readFileSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = mimeTypes[ext] || "application/octet-stream";
 
-server.listen(3000, () => {
-  console.log(`🚀 Dashboard rodando em http://localhost:3000`);
-  console.log(`📡 API disponível em http://localhost:3000/api`);
-  console.log(`🎨 Frontend (Vite HMR) integrado no mesmo servidor`);
-});
+    res.writeHead(200, { "Content-Type": contentType });
+    res.end(content);
+  } catch (error) {
+    res.writeHead(404);
+    res.end("Not Found");
+  }
+}
+
+// Função para iniciar o servidor
+async function startServer() {
+  let vite: any = null;
+
+  // Se não for executável, usa Vite dev server
+  if (!isExecutable) {
+    const { createServer: createViteServer } = await import("vite");
+    vite = await createViteServer({
+      root: path.join(import.meta.dir, "client"),
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+  }
+
+  // Cria servidor HTTP que combina API + Frontend
+  const server = createServer(async (req, res) => {
+    const url = req.url || "/";
+
+    // Se for rota da API, usa Elysia
+    if (url.startsWith("/api")) {
+      // Lê o body da requisição se existir
+      let body = null;
+      if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(chunk);
+        }
+        const bodyString = Buffer.concat(chunks).toString();
+        console.log("📦 Body recebido:", bodyString);
+
+        // Parse o JSON se tiver conteúdo
+        if (bodyString) {
+          try {
+            body = JSON.stringify(JSON.parse(bodyString));
+          } catch (e) {
+            console.error("❌ Erro ao parsear body:", e);
+            body = bodyString;
+          }
+        }
+      }
+
+      const request = new Request(`http://localhost${url}`, {
+        method: req.method,
+        headers: req.headers as any,
+        body: body,
+      });
+
+      const response = await api.handle(request);
+      const responseBody = await response.text();
+
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(responseBody);
+      return;
+    }
+
+    // Frontend: Vite (dev) ou arquivos estáticos (prod)
+    if (isExecutable) {
+      serveStatic(req, res, url);
+    } else {
+      vite.middlewares(req, res);
+    }
+  });
+
+  server.listen(3000, () => {
+    console.log(`🚀 Dashboard rodando em http://localhost:3000`);
+    console.log(`📡 API disponível em http://localhost:3000/api`);
+    if (isExecutable) {
+      console.log(`📦 Frontend servindo arquivos estáticos de: ${distClientPath}`);
+    } else {
+      console.log(`🎨 Frontend (Vite HMR) integrado no mesmo servidor`);
+    }
+  });
+}
+
+startServer();
