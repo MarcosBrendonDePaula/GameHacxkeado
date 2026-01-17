@@ -29,6 +29,7 @@ import { sendTransactionViaPaymaster, getSponsor } from "../utils/paymaster";
 import { FOGO_FISHING_IDL } from "../config/idl";
 import { PlayerState, GlobalState } from "../types";
 import { createProxyAgent } from "../utils/proxy";
+import { CastLogMonitor } from "./log-monitor";
 
 export class FishingService {
   private connection: Connection;
@@ -36,9 +37,14 @@ export class FishingService {
   private program: Program;
   private logger: Logger;
   private walletPublicKey: PublicKey;
+  private logMonitor: CastLogMonitor;
 
   constructor(walletKeypair: Keypair, rpcEndpoint: string, proxyUrl?: string, botId?: string, logFile?: string) {
     this.logger = new Logger(botId ? `🤖 ${botId}` : "🎣 FISHING", logFile);
+
+    // Calcula o PlayerState PDA para monitorar via WebSocket
+    const [playerStatePDA] = getPlayerStatePDA(walletKeypair.publicKey);
+    this.logMonitor = new CastLogMonitor(rpcEndpoint, proxyUrl, botId ?? "FISHING", playerStatePDA.toBase58());
 
     // Cria proxy agent se configurado
     const proxyAgent = proxyUrl ? createProxyAgent(proxyUrl) : undefined;
@@ -180,86 +186,44 @@ export class FishingService {
   }
 
   /**
-   * Verifica o resultado de um cast analisando os logs da transação e comparando estado
+   * Verifica resultado de um cast via RPC (usado pelo sistema web)
    */
-  async checkCastResult(
-    signature: string,
-    fishCaughtBefore: string
-  ): Promise<{
-    isCatch: boolean;
-    fishAmount?: number;
-    rarity?: number;
-    tile?: number;
-  } | null> {
+  async checkCastResult(signature: string, fishCaughtBefore: string): Promise<{ isCatch: boolean; fishAmount?: number } | null> {
     try {
-      // Aguarda um pouco para garantir que a transação foi processada
+      // Aguarda um pouco para a transação ser processada
       await sleep(1500);
 
-      // Busca a transação com logs
+      // Verifica o estado atual do jogador
+      const playerStateAfter = await this.fetchPlayerState();
+      if (!playerStateAfter) return null;
+
+      const fishCaughtAfter = playerStateAfter.fishCaughtAllTime;
+
+      if (BigInt(fishCaughtAfter) > BigInt(fishCaughtBefore)) {
+        const diff = BigInt(fishCaughtAfter) - BigInt(fishCaughtBefore);
+        const fishAmount = Number(diff) / 1_000_000;
+        return { isCatch: true, fishAmount };
+      }
+
+      // Verifica se a transação existe e não tem erro
       const txData = await this.connection.getTransaction(signature, {
         maxSupportedTransactionVersion: 0,
         commitment: "confirmed",
       });
 
-      if (!txData || !txData.meta) {
-        this.logger.warn("Transação não encontrada ou sem metadata");
-        return null;
+      if (txData?.meta?.err) {
+        return { isCatch: false };
       }
 
-      // Procura por logs que indicam CATCH ou MISS
-      const logs = txData.meta.logMessages || [];
-
-      // Procura por padrões nos logs (similar ao que o jogo mostra)
-      for (const log of logs) {
-        // Procura por CATCH - o log geralmente contém algo como "Program log: Catch"
-        if (log.includes("Catch") || log.includes("catch")) {
-          // Tenta extrair informações do log
-          this.logger.debug(`Log de catch encontrado: ${log}`);
-          return {
-            isCatch: true,
-          };
-        }
-
-        // Procura por MISS
-        if (log.includes("Miss") || log.includes("miss")) {
-          this.logger.debug(`Log de miss encontrado: ${log}`);
-          return {
-            isCatch: false,
-          };
-        }
+      // Se a transação existe mas fish não aumentou = MISS
+      if (txData) {
+        return { isCatch: false };
       }
 
-      // Se não encontrou logs específicos, compara o estado do jogador
-      this.logger.debug("Comparando estado do jogador para determinar resultado...");
-      const playerStateAfter = await this.fetchPlayerState();
-
-      if (playerStateAfter) {
-        const fishCaughtAfter = playerStateAfter.fishCaughtAllTime;
-
-        // Se fishCaughtAllTime aumentou, foi um CATCH
-        if (BigInt(fishCaughtAfter) > BigInt(fishCaughtBefore)) {
-          const diff = BigInt(fishCaughtAfter) - BigInt(fishCaughtBefore);
-          // FISH token tem 6 decimais, converter de lamports para fish
-          const fishAmount = Number(diff) / 1_000_000;
-          this.logger.debug(`Estado mudou: +${fishAmount} fish`);
-          return {
-            isCatch: true,
-            fishAmount: fishAmount,
-          };
-        } else {
-          this.logger.debug("Estado não mudou: MISS");
-          return {
-            isCatch: false,
-          };
-        }
-      }
-
-      // Se não conseguiu determinar de nenhuma forma
-      this.logger.debug("Não foi possível determinar o resultado");
+      // Transação ainda não confirmada
       return null;
-
     } catch (error: any) {
-      this.logger.error("Erro ao verificar resultado:", error.message);
+      this.logger.debug(`Erro ao verificar resultado: ${error.message}`);
       return null;
     }
   }
@@ -347,7 +311,8 @@ export class FishingService {
   }
 
   /**
-   * Loop principal do bot
+   * Loop principal do bot (não-bloqueante)
+   * Resultados são atualizados via WebSocket callback
    */
   async startAutoCast(autocastDelay: number = BOT_CONFIG.autocast_delay) {
     this.logger.info("🚀 Iniciando auto-cast...");
@@ -364,6 +329,7 @@ export class FishingService {
     this.logger.info(`⚡ Power: ${playerState.power}`);
     this.logger.info(`🔧 Durability: ${playerState.currentDurability}/${playerState.maxDurability}`);
 
+    // Estatísticas
     let castCount = 0;
     let successCount = 0;
     let errorCount = 0;
@@ -371,63 +337,59 @@ export class FishingService {
     let missCount = 0;
     let totalFishCaught = 0;
 
+    // Registra callback para resultados do WebSocket
+    this.logMonitor.onResult((result) => {
+      if (result.isCatch) {
+        catchCount++;
+        const fishAmount = result.fishAmount || 0;
+        totalFishCaught += fishAmount;
+        if (fishAmount > 0) {
+          this.logger.success(`🐟 CATCH! +${fishAmount.toFixed(3)} fish`);
+        } else {
+          this.logger.success(`🐟 CATCH!`);
+        }
+      } else {
+        missCount++;
+        this.logger.warn(`🔴 MISS`);
+      }
+
+      // Mostra estatísticas
+      const pending = this.logMonitor.getPendingCount();
+      const catchRate = catchCount > 0 ? ((catchCount / (catchCount + missCount)) * 100).toFixed(1) : "0.0";
+      this.logger.info(
+        `📊 🐟 ${catchCount} (${catchRate}%) | 🔴 ${missCount} | Total: ${totalFishCaught.toFixed(3)} | ⏳ ${pending} pendentes`
+      );
+    });
+
+    // Busca estado inicial para o monitor
+    let lastFishCaught = playerState.fishCaughtAllTime;
+
     while (true) {
       try {
         castCount++;
-        this.logger.info(`\n--- Cast #${castCount} ---`);
-
-        // Busca estado antes do cast
-        const playerStateBefore = await this.fetchPlayerState();
-        const fishCaughtBefore = playerStateBefore?.fishCaughtAllTime || "0";
 
         const signature = await this.castLine(false);
 
         if (signature) {
           successCount++;
 
-          // Verifica o resultado do cast
-          const result = await this.checkCastResult(signature, fishCaughtBefore);
+          // Registra o cast como pendente (não bloqueia)
+          this.logMonitor.registerCast(signature, lastFishCaught);
 
-          if (result !== null) {
-            if (result.isCatch) {
-              catchCount++;
-              const fishAmount = result.fishAmount || 0;
-              totalFishCaught += fishAmount;
-
-              if (fishAmount > 0) {
-                this.logger.success(`🐟 CATCH! +${fishAmount.toLocaleString()} fish`);
-              } else {
-                this.logger.success(`🐟 CATCH!`);
-              }
-            } else {
-              missCount++;
-              this.logger.warn(`🔴 MISS`);
-            }
-          } else {
-            this.logger.info(`⚠️ Resultado indeterminado`);
-          }
-
-          // Estatísticas gerais
-          const successRate = ((successCount / castCount) * 100).toFixed(1);
-          const catchRate = catchCount > 0 ? ((catchCount / (catchCount + missCount)) * 100).toFixed(1) : "0.0";
-
-          this.logger.success(
-            `📊 ${successCount}/${castCount} (${successRate}%) | 🐟 ${catchCount} catches (${catchRate}%) | 🔴 ${missCount} misses | Total: ${totalFishCaught.toLocaleString()} fish`
-          );
+          this.logger.debug(`Cast #${castCount} enviado, ${this.logMonitor.getPendingCount()} pendentes`);
         } else {
           errorCount++;
-          this.logger.warn(`❌ Erros: ${errorCount}/${castCount}`);
+          if (errorCount % 5 === 0) {
+            this.logger.warn(`❌ ${errorCount} erros de ${castCount} casts`);
+          }
         }
 
         // Aguarda o delay configurado
-        this.logger.debug(`Aguardando ${autocastDelay}ms...`);
         await sleep(autocastDelay);
 
       } catch (error: any) {
         this.logger.error("Erro no loop:", error);
         errorCount++;
-
-        // Em caso de erro, aguarda um pouco mais
         await sleep(autocastDelay * 2);
       }
     }

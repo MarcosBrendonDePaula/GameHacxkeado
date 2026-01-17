@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
 import path from "path";
 import { BotManager } from "./bot-manager";
+import { resultsManager } from "./results-manager";
 
 // Cria o gerenciador de bots
 const botManager = new BotManager("accounts.json");
@@ -70,6 +71,18 @@ const api = new Elysia({ prefix: "/api" })
   .get("/logs/bots", () => ({
     bots: botManager.getAvailableBots()
   }))
+  // Endpoints de resultados (feed de CATCH/MISS)
+  .get("/results", ({ query }) => {
+    const botId = query.bot as string | undefined;
+    const limit = query.limit ? parseInt(query.limit as string) : 50;
+    const since = query.since as string | undefined;
+
+    return {
+      results: resultsManager.getResults({ botId, limit, since }),
+      stats: resultsManager.getStats()
+    };
+  })
+  .get("/results/stats", () => resultsManager.getStats())
   .get("/bot-configs", () => {
     console.log("📋 GET /api/bot-configs");
     const configs = botManager.getBotConfigs();

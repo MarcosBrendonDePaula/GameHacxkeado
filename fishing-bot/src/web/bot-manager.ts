@@ -1,9 +1,12 @@
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { FishingService } from "../services/fishing";
+import { CastLogMonitor } from "../services/log-monitor";
+import { getPlayerStatePDA } from "../utils/pda";
 import { Logger } from "../utils/helpers";
 import { BOT_CONFIG } from "../config/constants";
 import { logManager } from "./log-manager";
 import { historyManager } from "./history-manager";
+import { resultsManager } from "./results-manager";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -30,20 +33,15 @@ export interface BotStats {
   pendingCasts?: number; // Quantidade de casts aguardando resultado
 }
 
-interface PendingCast {
-  signature: string;
-  fishCaughtBefore: string;
-  timestamp: Date;
-  retries: number; // Quantas vezes tentou verificar
-}
-
 class BotInstance {
   public stats: BotStats;
   private service?: FishingService;
+  private logMonitor?: CastLogMonitor;
   private isRunning = false;
   private startTime?: Date;
   private iterationCount = 0;
-  private pendingCasts: PendingCast[] = [];
+  private pendingCount = 0;
+  private lastFishCaught = "0"; // Estado compartilhado entre loops
 
   constructor(
     public id: string,
@@ -70,69 +68,140 @@ class BotInstance {
     this.startTime = new Date();
     this.stats.status = "online";
     this.stats.startedAt = this.startTime;
+    this.pendingCount = 0;
 
     const sanitizedName = this.config.name.replace(/[^a-z0-9]/gi, "-").toLowerCase();
     const logFile = path.join("logs", `bot-${this.id}-${sanitizedName}.log`);
+    const botName = `BOT-${this.id} [${this.config.name}]`;
 
     // Cria serviço de fishing
     this.service = new FishingService(
       this.keypair,
       BOT_CONFIG.rpc_endpoint,
       this.config.proxy,
-      `BOT-${this.id} [${this.config.name}]`,
+      botName,
       logFile
     );
 
-    // Limpa fila de pendentes
-    this.pendingCasts = [];
+    // Calcula PlayerState PDA para WebSocket
+    const [playerStatePDA] = getPlayerStatePDA(this.keypair.publicKey);
 
-    // Inicia os dois loops em paralelo (não-bloqueante)
+    // Cria WebSocket monitor para este bot
+    this.logMonitor = new CastLogMonitor(
+      BOT_CONFIG.rpc_endpoint,
+      this.config.proxy,
+      botName,
+      playerStatePDA.toBase58()
+    );
+
+    // Configura callback para resultados do WebSocket
+    this.logMonitor.onResult((result) => {
+      this.pendingCount = Math.max(0, this.pendingCount - 1);
+
+      if (result.isCatch) {
+        this.stats.catches++;
+        const fishAmount = result.fishAmount || 0;
+        this.stats.totalFish += fishAmount;
+
+        // Registra resultado
+        resultsManager.addResult(this.id, this.config.name, "catch", fishAmount);
+
+        if (fishAmount > 0) {
+          logManager.addLog(botName, "success", `🐟 CATCH via WS! +${fishAmount.toFixed(3)} fish`);
+        } else {
+          logManager.addLog(botName, "success", `🐟 CATCH via WS!`);
+        }
+      } else {
+        this.stats.misses++;
+        resultsManager.addResult(this.id, this.config.name, "miss");
+        logManager.addLog(botName, "warn", `🔴 MISS via WS`);
+      }
+
+      // Atualiza uptime
+      this.updateUptime();
+
+      // Registra ponto no histórico a cada 5 resultados
+      this.iterationCount++;
+      if (this.iterationCount % 5 === 0) {
+        this.recordHistoryPoint();
+      }
+    });
+
+    // Inicia loops em PARALELO (não-bloqueante)
     this.castLoop();
-    this.processLoop();
+    this.stateUpdateLoop(); // Atualiza estado a cada 2s
   }
 
-  async stop() {
-    this.isRunning = false;
-    this.stats.status = "offline";
-    // Limpa fila de pendentes ao parar
-    this.pendingCasts = [];
-  }
-
-  // Loop 1: Fazer casts instantaneamente (sem delay)
-  private async castLoop() {
-    const delay = this.config.delay || BOT_CONFIG.autocast_delay;
+  // Loop paralelo: Atualiza estado do jogador periodicamente
+  private async stateUpdateLoop() {
     const botName = `BOT-${this.id} [${this.config.name}]`;
+    const updateInterval = 2000; // 2 segundos
 
     while (this.isRunning) {
       try {
         if (!this.service) break;
 
-        // Limita a fila para não crescer demais (máximo 20 pendentes)
-        if (this.pendingCasts.length >= 20) {
-          await Bun.sleep(500);
+        const playerState = await this.service.fetchPlayerState();
+        if (playerState) {
+          this.lastFishCaught = playerState.fishCaughtAllTime;
+        }
+
+        await Bun.sleep(updateInterval);
+      } catch (error: any) {
+        // Silencioso - não precisa logar erro de atualização de estado
+        await Bun.sleep(updateInterval * 2);
+      }
+    }
+  }
+
+  async stop() {
+    this.isRunning = false;
+    this.stats.status = "offline";
+    this.pendingCount = 0;
+
+    // Fecha WebSocket
+    if (this.logMonitor) {
+      this.logMonitor.close();
+      this.logMonitor = undefined;
+    }
+  }
+
+  // Loop de casts usando WebSocket para resultados (NÃO-BLOQUEANTE)
+  private async castLoop() {
+    const delay = this.config.delay || BOT_CONFIG.autocast_delay;
+    const botName = `BOT-${this.id} [${this.config.name}]`;
+
+    // Busca estado inicial (stateUpdateLoop vai manter atualizado)
+    try {
+      const initialState = await this.service?.fetchPlayerState();
+      this.lastFishCaught = initialState?.fishCaughtAllTime || "0";
+      logManager.addLog(botName, "info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish`);
+    } catch (error) {
+      logManager.addLog(botName, "warn", `⚠️ Não foi possível buscar estado inicial`);
+    }
+
+    while (this.isRunning) {
+      try {
+        if (!this.service || !this.logMonitor) break;
+
+        // Limita pendentes para não crescer demais (mas permite vários simultâneos)
+        if (this.pendingCount >= 20) {
+          await Bun.sleep(200);
           continue;
         }
 
-        // Busca estado do player antes do cast
-        const playerStateBefore = await this.service.fetchPlayerState();
-        const fishCaughtBefore = playerStateBefore?.fishCaughtAllTime || "0";
-
-        // Faz o cast (não aguarda resultado)
+        // Faz o cast IMEDIATAMENTE (não busca estado antes de cada cast)
         const signature = await this.service.castLine(false);
 
         if (signature) {
-          // Adiciona na fila de pendentes
-          this.pendingCasts.push({
-            signature,
-            fishCaughtBefore,
-            timestamp: new Date(),
-            retries: 0,
-          });
+          // Registra cast pendente no WebSocket monitor (usa estado atualizado pelo loop paralelo)
+          this.logMonitor.registerCast(signature, this.lastFishCaught);
+          this.pendingCount++;
 
-          logManager.addLog(botName, "info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (${this.pendingCasts.length} pendentes)`);
+          logManager.addLog(botName, "info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`);
         }
 
-        // Aguarda o delay configurado entre casts
+        // Aguarda delay configurado entre casts
         await Bun.sleep(delay);
       } catch (error: any) {
         logManager.addLog(botName, "error", `❌ Erro no cast: ${error.message}`);
@@ -142,112 +211,28 @@ class BotInstance {
     }
   }
 
-  // Loop 2: Processar fila de casts pendentes (RÁPIDO - processa a fila rapidamente)
-  private async processLoop() {
-    const botName = `BOT-${this.id} [${this.config.name}]`;
+  private async recordHistoryPoint() {
+    if (!this.service) return;
 
-    while (this.isRunning) {
-      try {
-        if (!this.service || this.pendingCasts.length === 0) {
-          // Se não há pendentes, aguarda um pouco antes de verificar novamente
-          await Bun.sleep(200);
-          continue;
-        }
-
-        // Pega o cast mais antigo da fila
-        const pending = this.pendingCasts.shift();
-        if (!pending) continue;
-
-        // Verifica há quanto tempo o cast foi feito
-        const elapsedMs = Date.now() - pending.timestamp.getTime();
-        const elapsedSec = Math.floor(elapsedMs / 1000);
-
-        // TIMEOUT: Remove da fila após 20 segundos sem resposta
-        if (elapsedMs > 20000) {
-          logManager.addLog(botName, "warn", `⏱️ Cast descartado após timeout (${elapsedSec}s) - Sig: ${pending.signature.slice(0, 12)}...`);
-          // NÃO recoloca na fila - descarta definitivamente
-          continue;
-        }
-
-        // Incrementa tentativas
-        pending.retries++;
-
-        // Só tenta verificar se já passou pelo menos 2 segundos (tempo mínimo para tx ser processada)
-        if (elapsedMs < 2000) {
-          // Recoloca na fila e aguarda
-          this.pendingCasts.push(pending);
-          await Bun.sleep(50);
-          continue;
-        }
-
-        // Verifica resultado do cast
-        const result = await this.service.checkCastResult(
-          pending.signature,
-          pending.fishCaughtBefore
-        );
-
-        if (result !== null) {
-          if (result.isCatch) {
-            this.stats.catches++;
-            const fishAmount = result.fishAmount || 0;
-            this.stats.totalFish += fishAmount;
-
-            // Log de catch
-            if (fishAmount > 0) {
-              logManager.addLog(botName, "success", `🐟 CATCH! +${fishAmount.toLocaleString()} fish (${elapsedSec}s)`);
-            } else {
-              logManager.addLog(botName, "success", `🐟 CATCH! (${elapsedSec}s)`);
-            }
-          } else {
-            this.stats.misses++;
-            logManager.addLog(botName, "warn", `🔴 MISS (${elapsedSec}s)`);
-          }
-
-          // Atualiza uptime
-          this.updateUptime();
-
-          // Registra ponto no histórico a cada 5 resultados processados
-          this.iterationCount++;
-          if (this.iterationCount % 5 === 0) {
-            // Busca durabilidade atual
-            let durabilityPercent: number | undefined;
-            try {
-              const playerState = await this.service.fetchPlayerState();
-              if (playerState) {
-                const current = playerState.currentDurability;
-                const max = playerState.maxDurability;
-                durabilityPercent = max > 0 ? (current / max) * 100 : 0;
-              }
-            } catch (error) {
-              // Se falhar ao buscar durabilidade, adiciona sem ela
-            }
-
-            historyManager.addPoint(
-              this.id,
-              this.stats.catches,
-              this.stats.misses,
-              this.stats.totalFish,
-              durabilityPercent
-            );
-          }
-        } else {
-          // Se não conseguiu obter resultado ainda, recoloca na fila
-          this.pendingCasts.push(pending);
-
-          // Log apenas a cada 5 tentativas para não poluir
-          if (pending.retries % 5 === 0) {
-            logManager.addLog(botName, "info", `⏳ Aguardando resultado... (${elapsedSec}s, ${pending.retries} tentativas)`);
-          }
-        }
-
-        // Delay mínimo para não sobrecarregar (50ms)
-        await Bun.sleep(50);
-      } catch (error: any) {
-        logManager.addLog(botName, "error", `❌ Erro ao processar: ${error.message}`);
-        console.error(`Erro ao processar resultado do bot ${this.id}:`, error);
-        await Bun.sleep(1000);
+    let durabilityPercent: number | undefined;
+    try {
+      const playerState = await this.service.fetchPlayerState();
+      if (playerState) {
+        const current = playerState.currentDurability;
+        const max = playerState.maxDurability;
+        durabilityPercent = max > 0 ? (current / max) * 100 : 0;
       }
+    } catch (error) {
+      // Ignora erro
     }
+
+    historyManager.addPoint(
+      this.id,
+      this.stats.catches,
+      this.stats.misses,
+      this.stats.totalFish,
+      durabilityPercent
+    );
   }
 
   private updateUptime() {
@@ -257,6 +242,10 @@ class BotInstance {
       const minutes = Math.floor((uptimeMs % 3600000) / 60000);
       this.stats.uptime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
     }
+  }
+
+  getPendingCount(): number {
+    return this.logMonitor?.getPendingCount() || this.pendingCount;
   }
 }
 
@@ -324,12 +313,11 @@ export class BotManager {
   }
 
   getAllBots(): BotStats[] {
-    // Atualiza uptime de bots online antes de retornar
+    // Atualiza uptime e pendentes de bots online antes de retornar
     this.bots.forEach((bot) => {
       if (bot.stats.status === "online") {
         (bot as any).updateUptime();
-        // Atualiza contagem de pendentes
-        bot.stats.pendingCasts = (bot as any).pendingCasts?.length || 0;
+        bot.stats.pendingCasts = bot.getPendingCount();
       }
     });
 
@@ -340,8 +328,7 @@ export class BotManager {
     const bot = this.bots.get(id);
     if (bot && bot.stats.status === "online") {
       (bot as any).updateUptime();
-      // Atualiza contagem de pendentes
-      bot.stats.pendingCasts = (bot as any).pendingCasts?.length || 0;
+      bot.stats.pendingCasts = bot.getPendingCount();
     }
     return bot ? bot.stats : null;
   }

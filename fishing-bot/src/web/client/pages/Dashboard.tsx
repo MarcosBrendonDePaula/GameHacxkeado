@@ -50,6 +50,26 @@ interface HistoryPoint {
   durability?: number
 }
 
+interface CastResult {
+  id: string
+  timestamp: string
+  botId: string
+  botName: string
+  type: 'catch' | 'miss'
+  fishAmount?: number
+  signature?: string
+}
+
+interface ResultsStats {
+  last5min: {
+    catches: number
+    misses: number
+    totalFish: number
+    rate: string
+  }
+  totalResults: number
+}
+
 type SelectedView = 'overview' | string // 'overview' ou bot id
 
 export default function Dashboard() {
@@ -342,6 +362,9 @@ function OverviewContent({ stats, bots, onStartBot, onStopBot, onStartAll, onSto
           </div>
         </div>
       </div>
+
+      {/* Feed de Resultados em Tempo Real */}
+      <ResultsFeed />
 
       {/* Controle de Bots */}
       <div style={{
@@ -1050,6 +1073,196 @@ function ProgressChart({ totalFish, catches }: { totalFish: number; catches: num
           </div>
           <span style={{ fontSize: '0.9rem', color: '#8b949e' }}>Média/Catch</span>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ResultsFeed() {
+  const [results, setResults] = useState<CastResult[]>([])
+  const [stats, setStats] = useState<ResultsStats | null>(null)
+  const [filterBot, setFilterBot] = useState<string>('')
+
+  useEffect(() => {
+    fetchResults()
+    const interval = setInterval(fetchResults, 1500) // Atualiza a cada 1.5s
+    return () => clearInterval(interval)
+  }, [filterBot])
+
+  async function fetchResults() {
+    try {
+      const params = new URLSearchParams()
+      if (filterBot) params.set('bot', filterBot)
+      params.set('limit', '30')
+
+      const res = await fetch(`/api/results?${params}`)
+      const data = await res.json()
+      setResults(data.results)
+      setStats(data.stats)
+    } catch (error) {
+      console.error('Erro ao buscar resultados:', error)
+    }
+  }
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  }
+
+  const timeSince = (timestamp: string) => {
+    const seconds = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000)
+    if (seconds < 60) return `${seconds}s`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m`
+    return `${Math.floor(minutes / 60)}h`
+  }
+
+  return (
+    <div style={{
+      backgroundColor: '#161b22',
+      border: '1px solid #30363d',
+      borderRadius: '8px',
+      padding: '20px',
+      marginBottom: '20px',
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '15px',
+      }}>
+        <h3 style={{ margin: 0, color: '#58a6ff' }}>📡 Feed de Resultados (Tempo Real)</h3>
+        {stats && (
+          <div style={{
+            display: 'flex',
+            gap: '15px',
+            fontSize: '0.85rem',
+            backgroundColor: '#0d1117',
+            padding: '8px 15px',
+            borderRadius: '20px',
+            border: '1px solid #30363d',
+          }}>
+            <span style={{ color: '#8b949e' }}>Últimos 5min:</span>
+            <span style={{ color: '#3fb950', fontWeight: 'bold' }}>🐟 {stats.last5min.catches}</span>
+            <span style={{ color: '#f85149', fontWeight: 'bold' }}>🔴 {stats.last5min.misses}</span>
+            <span style={{ color: '#d29922', fontWeight: 'bold' }}>💰 {stats.last5min.totalFish.toFixed(2)}</span>
+            <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>📈 {stats.last5min.rate}%</span>
+          </div>
+        )}
+      </div>
+
+      {/* Lista de Resultados */}
+      <div style={{
+        maxHeight: '300px',
+        overflowY: 'auto',
+        backgroundColor: '#0d1117',
+        borderRadius: '6px',
+        border: '1px solid #30363d',
+      }}>
+        {results.length === 0 ? (
+          <div style={{
+            padding: '40px',
+            textAlign: 'center',
+            color: '#8b949e',
+          }}>
+            Aguardando resultados...
+          </div>
+        ) : (
+          results.map((result) => (
+            <div
+              key={result.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 15px',
+                borderBottom: '1px solid #21262d',
+                transition: 'background-color 0.2s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              {/* Ícone de resultado */}
+              <div style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                backgroundColor: result.type === 'catch' ? 'rgba(63, 185, 80, 0.15)' : 'rgba(248, 81, 73, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.2rem',
+              }}>
+                {result.type === 'catch' ? '🐟' : '🔴'}
+              </div>
+
+              {/* Info do resultado */}
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}>
+                  <span style={{
+                    fontWeight: 'bold',
+                    color: result.type === 'catch' ? '#3fb950' : '#f85149',
+                  }}>
+                    {result.type === 'catch' ? 'CATCH' : 'MISS'}
+                  </span>
+                  {result.type === 'catch' && result.fishAmount && (
+                    <span style={{
+                      color: '#d29922',
+                      fontSize: '0.9rem',
+                      fontWeight: 'bold',
+                    }}>
+                      +{result.fishAmount.toFixed(3)} fish
+                    </span>
+                  )}
+                </div>
+                <div style={{
+                  fontSize: '0.8rem',
+                  color: '#8b949e',
+                  display: 'flex',
+                  gap: '8px',
+                  alignItems: 'center',
+                }}>
+                  <span style={{
+                    backgroundColor: '#21262d',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                  }}>
+                    {result.botName}
+                  </span>
+                  {result.signature && (
+                    <a
+                      href={`https://solscan.io/tx/${result.signature}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: '#58a6ff',
+                        textDecoration: 'none',
+                        fontSize: '0.75rem',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {result.signature.slice(0, 8)}...
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Timestamp */}
+              <div style={{
+                textAlign: 'right',
+                fontSize: '0.8rem',
+                color: '#8b949e',
+              }}>
+                <div>{formatTime(result.timestamp)}</div>
+                <div style={{ color: '#6e7681' }}>{timeSince(result.timestamp)} atrás</div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   )

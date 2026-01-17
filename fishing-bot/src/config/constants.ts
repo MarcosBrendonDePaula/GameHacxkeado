@@ -52,6 +52,12 @@ export const BOT_CONFIG = {
   // - Com autenticação: http://user:pass@host:port
   // Pode ser definido também via variável de ambiente PROXY_URL
   proxy_url: process.env.PROXY_URL || "",
+
+  // Websocket
+  ws_timeout_ms: 15000,
+  ws_reconnect_ms: 1500,
+  ws_ping_interval_ms: 15000,
+  ws_watch_account: "2boFwRY5EGZ18fhTLkC6PEH3VDcVHr7ZMt9APyJAKYtw",
 };
 
 // Headers customizados para simular navegador
