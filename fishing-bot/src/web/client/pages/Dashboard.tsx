@@ -1082,18 +1082,31 @@ function ResultsFeed() {
   const [results, setResults] = useState<CastResult[]>([])
   const [stats, setStats] = useState<ResultsStats | null>(null)
   const [filterBot, setFilterBot] = useState<string>('')
+  const [availableBots, setAvailableBots] = useState<{ id: string; name: string }[]>([])
+  const [limit, setLimit] = useState<number>(20)
 
   useEffect(() => {
     fetchResults()
+    fetchBots()
     const interval = setInterval(fetchResults, 1500) // Atualiza a cada 1.5s
     return () => clearInterval(interval)
-  }, [filterBot])
+  }, [filterBot, limit])
+
+  async function fetchBots() {
+    try {
+      const res = await fetch('/api/bots')
+      const data = await res.json()
+      setAvailableBots(data.bots.map((b: any) => ({ id: b.id, name: b.name })))
+    } catch (error) {
+      console.error('Erro ao buscar bots:', error)
+    }
+  }
 
   async function fetchResults() {
     try {
       const params = new URLSearchParams()
       if (filterBot) params.set('bot', filterBot)
-      params.set('limit', '30')
+      params.set('limit', String(limit))
 
       const res = await fetch(`/api/results?${params}`)
       const data = await res.json()
@@ -1125,11 +1138,12 @@ function ResultsFeed() {
       padding: '20px',
       marginBottom: '20px',
     }}>
+      {/* Header com título e stats */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '15px',
+        marginBottom: '12px',
       }}>
         <h3 style={{ margin: 0, color: '#58a6ff' }}>📡 Feed de Resultados (Tempo Real)</h3>
         {stats && (
@@ -1149,6 +1163,80 @@ function ResultsFeed() {
             <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>📈 {stats.last5min.rate}%</span>
           </div>
         )}
+      </div>
+
+      {/* Filtros: Bot e Limite */}
+      <div style={{
+        display: 'flex',
+        gap: '20px',
+        marginBottom: '15px',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+      }}>
+        {/* Filtro por Bot */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>Bot:</span>
+          <button
+            onClick={() => setFilterBot('')}
+            style={{
+              padding: '5px 12px',
+              borderRadius: '14px',
+              border: filterBot === '' ? '2px solid #58a6ff' : '1px solid #30363d',
+              backgroundColor: filterBot === '' ? 'rgba(88, 166, 255, 0.15)' : '#0d1117',
+              color: filterBot === '' ? '#58a6ff' : '#8b949e',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              fontWeight: filterBot === '' ? 'bold' : 'normal',
+              transition: 'all 0.2s',
+            }}
+          >
+            Todos
+          </button>
+          {availableBots.map(bot => (
+            <button
+              key={bot.id}
+              onClick={() => setFilterBot(bot.id)}
+              style={{
+                padding: '5px 12px',
+                borderRadius: '14px',
+                border: filterBot === bot.id ? '2px solid #58a6ff' : '1px solid #30363d',
+                backgroundColor: filterBot === bot.id ? 'rgba(88, 166, 255, 0.15)' : '#0d1117',
+                color: filterBot === bot.id ? '#58a6ff' : '#8b949e',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: filterBot === bot.id ? 'bold' : 'normal',
+                transition: 'all 0.2s',
+              }}
+            >
+              {bot.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Limite de resultados */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>Mostrar:</span>
+          {[10, 20, 50, 100].map(l => (
+            <button
+              key={l}
+              onClick={() => setLimit(l)}
+              style={{
+                padding: '5px 10px',
+                borderRadius: '14px',
+                border: limit === l ? '2px solid #d29922' : '1px solid #30363d',
+                backgroundColor: limit === l ? 'rgba(210, 153, 34, 0.15)' : '#0d1117',
+                color: limit === l ? '#d29922' : '#8b949e',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: limit === l ? 'bold' : 'normal',
+                transition: 'all 0.2s',
+                minWidth: '40px',
+              }}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Lista de Resultados */}
