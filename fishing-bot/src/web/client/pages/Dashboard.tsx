@@ -1116,9 +1116,11 @@ function ResultsFeed() {
 
       const res = await fetch(`/api/results?${params}`)
       const data = await res.json()
-      setResults(data.results)
+      setResults(data.results || [])
       setStats(data.stats)
-      setTotal(data.total || data.results.length)
+      // Usa total da resposta, ou totalResults dos stats, ou length dos results
+      const totalCount = data.total ?? data.stats?.totalResults ?? data.results?.length ?? 0
+      setTotal(totalCount)
     } catch (error) {
       console.error('Erro ao buscar resultados:', error)
     }
@@ -1372,7 +1374,7 @@ function ResultsFeed() {
       </div>
 
       {/* Paginação */}
-      {total > 0 && (
+      {results.length > 0 && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',

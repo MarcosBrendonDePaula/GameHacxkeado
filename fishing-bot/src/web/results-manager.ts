@@ -10,7 +10,7 @@ export interface CastResult {
 
 class ResultsManager {
   private results: CastResult[] = [];
-  private maxResults = 200;
+  private maxResults = 1000; // Aumentado para suportar mais histórico
   private nextId = 1;
 
   addResult(botId: string, botName: string, type: "catch" | "miss", fishAmount?: number, signature?: string) {
