@@ -75,10 +75,13 @@ const api = new Elysia({ prefix: "/api" })
   .get("/results", ({ query }) => {
     const botId = query.bot as string | undefined;
     const limit = query.limit ? parseInt(query.limit as string) : 50;
+    const offset = query.offset ? parseInt(query.offset as string) : 0;
     const since = query.since as string | undefined;
 
+    const { results, total } = resultsManager.getResults({ botId, limit, offset, since });
     return {
-      results: resultsManager.getResults({ botId, limit, since }),
+      results,
+      total,
       stats: resultsManager.getStats()
     };
   })

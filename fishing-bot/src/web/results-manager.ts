@@ -34,8 +34,8 @@ class ResultsManager {
     return result;
   }
 
-  getResults(options: { botId?: string; limit?: number; since?: string } = {}): CastResult[] {
-    const { botId, limit = 50, since } = options;
+  getResults(options: { botId?: string; limit?: number; offset?: number; since?: string } = {}): { results: CastResult[]; total: number } {
+    const { botId, limit = 50, offset = 0, since } = options;
 
     let filtered = this.results;
 
@@ -50,7 +50,10 @@ class ResultsManager {
       filtered = filtered.filter(r => r.timestamp > sinceDate);
     }
 
-    return filtered.slice(0, limit);
+    const total = filtered.length;
+    const results = filtered.slice(offset, offset + limit);
+
+    return { results, total };
   }
 
   getStats() {

@@ -1084,13 +1084,18 @@ function ResultsFeed() {
   const [filterBot, setFilterBot] = useState<string>('')
   const [availableBots, setAvailableBots] = useState<{ id: string; name: string }[]>([])
   const [limit, setLimit] = useState<number>(20)
+  const [page, setPage] = useState<number>(1)
+  const [total, setTotal] = useState<number>(0)
+
+  const totalPages = Math.ceil(total / limit) || 1
 
   useEffect(() => {
     fetchResults()
     fetchBots()
-    const interval = setInterval(fetchResults, 1500) // Atualiza a cada 1.5s
-    return () => clearInterval(interval)
-  }, [filterBot, limit])
+    // Só atualiza automaticamente na página 1
+    const interval = page === 1 ? setInterval(fetchResults, 1500) : null
+    return () => { if (interval) clearInterval(interval) }
+  }, [filterBot, limit, page])
 
   async function fetchBots() {
     try {
@@ -1107,14 +1112,27 @@ function ResultsFeed() {
       const params = new URLSearchParams()
       if (filterBot) params.set('bot', filterBot)
       params.set('limit', String(limit))
+      params.set('offset', String((page - 1) * limit))
 
       const res = await fetch(`/api/results?${params}`)
       const data = await res.json()
       setResults(data.results)
       setStats(data.stats)
+      setTotal(data.total || data.results.length)
     } catch (error) {
       console.error('Erro ao buscar resultados:', error)
     }
+  }
+
+  // Reseta página ao mudar filtros
+  function handleFilterChange(botId: string) {
+    setFilterBot(botId)
+    setPage(1)
+  }
+
+  function handleLimitChange(newLimit: number) {
+    setLimit(newLimit)
+    setPage(1)
   }
 
   const formatTime = (timestamp: string) => {
@@ -1177,7 +1195,7 @@ function ResultsFeed() {
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>Bot:</span>
           <button
-            onClick={() => setFilterBot('')}
+            onClick={() => handleFilterChange('')}
             style={{
               padding: '5px 12px',
               borderRadius: '14px',
@@ -1195,7 +1213,7 @@ function ResultsFeed() {
           {availableBots.map(bot => (
             <button
               key={bot.id}
-              onClick={() => setFilterBot(bot.id)}
+              onClick={() => handleFilterChange(bot.id)}
               style={{
                 padding: '5px 12px',
                 borderRadius: '14px',
@@ -1215,11 +1233,11 @@ function ResultsFeed() {
 
         {/* Limite de resultados */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>Mostrar:</span>
-          {[10, 20, 50, 100].map(l => (
+          <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>Por página:</span>
+          {[10, 20, 50].map(l => (
             <button
               key={l}
-              onClick={() => setLimit(l)}
+              onClick={() => handleLimitChange(l)}
               style={{
                 padding: '5px 10px',
                 borderRadius: '14px',
@@ -1352,6 +1370,121 @@ function ResultsFeed() {
           ))
         )}
       </div>
+
+      {/* Paginação */}
+      {total > 0 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: '12px',
+          padding: '10px 15px',
+          backgroundColor: '#0d1117',
+          borderRadius: '6px',
+          border: '1px solid #30363d',
+        }}>
+          <span style={{ fontSize: '0.85rem', color: '#8b949e' }}>
+            {total} resultado{total !== 1 ? 's' : ''} • Página {page} de {totalPages}
+          </span>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '6px',
+                border: '1px solid #30363d',
+                backgroundColor: page === 1 ? '#21262d' : '#0d1117',
+                color: page === 1 ? '#484f58' : '#8b949e',
+                cursor: page === 1 ? 'not-allowed' : 'pointer',
+                fontSize: '0.8rem',
+              }}
+            >
+              ««
+            </button>
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #30363d',
+                backgroundColor: page === 1 ? '#21262d' : '#0d1117',
+                color: page === 1 ? '#484f58' : '#8b949e',
+                cursor: page === 1 ? 'not-allowed' : 'pointer',
+                fontSize: '0.8rem',
+              }}
+            >
+              ‹ Anterior
+            </button>
+
+            {/* Números das páginas */}
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum: number
+              if (totalPages <= 5) {
+                pageNum = i + 1
+              } else if (page <= 3) {
+                pageNum = i + 1
+              } else if (page >= totalPages - 2) {
+                pageNum = totalPages - 4 + i
+              } else {
+                pageNum = page - 2 + i
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    border: page === pageNum ? '2px solid #58a6ff' : '1px solid #30363d',
+                    backgroundColor: page === pageNum ? 'rgba(88, 166, 255, 0.15)' : '#0d1117',
+                    color: page === pageNum ? '#58a6ff' : '#8b949e',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    fontWeight: page === pageNum ? 'bold' : 'normal',
+                    minWidth: '32px',
+                  }}
+                >
+                  {pageNum}
+                </button>
+              )
+            })}
+
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #30363d',
+                backgroundColor: page === totalPages ? '#21262d' : '#0d1117',
+                color: page === totalPages ? '#484f58' : '#8b949e',
+                cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                fontSize: '0.8rem',
+              }}
+            >
+              Próxima ›
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={page === totalPages}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '6px',
+                border: '1px solid #30363d',
+                backgroundColor: page === totalPages ? '#21262d' : '#0d1117',
+                color: page === totalPages ? '#484f58' : '#8b949e',
+                cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                fontSize: '0.8rem',
+              }}
+            >
+              »»
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
