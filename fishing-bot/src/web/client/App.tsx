@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { WalletProvider } from './providers/WalletProvider'
 import Dashboard from './pages/Dashboard'
 import Bots from './pages/Bots'
 import Logs from './pages/Logs'
 import BotInfo from './pages/BotInfo'
 import BotManagement from './pages/BotManagement'
+import AddWallet from './pages/AddWallet'
 
 function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
@@ -70,6 +72,20 @@ function Layout({ children }: { children: React.ReactNode }) {
                 </button>
               </NavLink>
             </li>
+            <li>
+              <NavLink
+                to="/add-wallet"
+                className={location.pathname === '/add-wallet' ? 'active' : ''}
+                style={{
+                  textDecoration: 'none',
+                  color: 'inherit',
+                }}
+              >
+                <button className={location.pathname === '/add-wallet' ? 'active' : ''} style={{ backgroundColor: '#7c3aed' }}>
+                  + Carteira
+                </button>
+              </NavLink>
+            </li>
           </ul>
         </div>
       </nav>
@@ -87,17 +103,20 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/bots" element={<Bots />} />
-          <Route path="/bots/:id" element={<BotInfo />} />
-          <Route path="/management" element={<BotManagement />} />
-          <Route path="/logs" element={<Logs />} />
-        </Routes>
-      </Layout>
-    </BrowserRouter>
+    <WalletProvider>
+      <BrowserRouter>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/bots" element={<Bots />} />
+            <Route path="/bots/:id" element={<BotInfo />} />
+            <Route path="/management" element={<BotManagement />} />
+            <Route path="/logs" element={<Logs />} />
+            <Route path="/add-wallet" element={<AddWallet />} />
+          </Routes>
+        </Layout>
+      </BrowserRouter>
+    </WalletProvider>
   )
 }
 

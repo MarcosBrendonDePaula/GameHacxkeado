@@ -36,14 +36,26 @@ export class FishingService {
   private wallet: Wallet;
   private program: Program;
   private logger: Logger;
-  private walletPublicKey: PublicKey;
+  private walletPublicKey: PublicKey; // Wallet original (para PDAs e conta do jogador)
+  private signerPublicKey: PublicKey; // Quem assina (session key ou wallet)
   private logMonitor: CastLogMonitor;
 
-  constructor(walletKeypair: Keypair, rpcEndpoint: string, proxyUrl?: string, botId?: string, logFile?: string) {
+  constructor(
+    walletKeypair: Keypair,
+    rpcEndpoint: string,
+    proxyUrl?: string,
+    botId?: string,
+    logFile?: string,
+    ownerPublicKey?: PublicKey // Para session keys: a wallet original que tem a conta do jogador
+  ) {
     this.logger = new Logger(botId ? `🤖 ${botId}` : "🎣 FISHING", logFile);
 
+    // Se tem ownerPublicKey, usa ela para PDAs (session key mode)
+    // Caso contrário, usa a public key do keypair
+    const playerWallet = ownerPublicKey ?? walletKeypair.publicKey;
+
     // Calcula o PlayerState PDA para monitorar via WebSocket
-    const [playerStatePDA] = getPlayerStatePDA(walletKeypair.publicKey);
+    const [playerStatePDA] = getPlayerStatePDA(playerWallet);
     this.logMonitor = new CastLogMonitor(rpcEndpoint, proxyUrl, botId ?? "FISHING", playerStatePDA.toBase58());
 
     // Cria proxy agent se configurado
@@ -87,7 +99,10 @@ export class FishingService {
     });
 
     this.wallet = new Wallet(walletKeypair);
-    this.walletPublicKey = walletKeypair.publicKey;
+    // Usa a wallet original para PDAs/transações (para session keys)
+    this.walletPublicKey = playerWallet;
+    // Quem assina é sempre o keypair (session key ou wallet normal)
+    this.signerPublicKey = walletKeypair.publicKey;
 
     const provider = new AnchorProvider(
       this.connection,
@@ -263,7 +278,7 @@ export class FishingService {
           nonce
         )
         .accounts({
-          signer: this.walletPublicKey,
+          signer: this.signerPublicKey, // Session key ou wallet normal
           globalState: globalStatePDA,
           config: configPDA,
           rateState: rateStatePDA,

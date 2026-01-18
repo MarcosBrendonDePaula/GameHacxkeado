@@ -136,6 +136,135 @@ const api = new Elysia({ prefix: "/api" })
       console.error("❌ Erro ao salvar:", error);
       return { success: false, error: error.message };
     }
+  })
+  // Endpoint para adicionar bot via session key (conexão de carteira)
+  .post("/bots/add-session", async ({ body }) => {
+    console.log("🔐 POST /api/bots/add-session");
+
+    try {
+      if (!body) {
+        return { success: false, error: "Body vazio" };
+      }
+
+      const { name, walletPublicKey, sessionPublicKey, sessionSecretKey } = body as any;
+
+      // Validações básicas
+      if (!name || !walletPublicKey || !sessionPublicKey || !sessionSecretKey) {
+        return { success: false, error: "Campos obrigatórios: name, walletPublicKey, sessionPublicKey, sessionSecretKey" };
+      }
+
+      console.log(`🔐 Adicionando bot "${name}" para wallet ${walletPublicKey.slice(0, 8)}...`);
+
+      const result = await botManager.addBotWithSession({
+        name,
+        sessionSecretKey,
+        sessionPublicKey,
+        walletPublicKey,
+      });
+
+      return result;
+    } catch (error: any) {
+      console.error("❌ Erro ao adicionar bot via session:", error);
+      return { success: false, error: error.message };
+    }
+  })
+  // Endpoint para remover bot
+  .delete("/bots/:id", async ({ params }) => {
+    console.log(`🗑️ DELETE /api/bots/${params.id}`);
+    const result = await botManager.removeBot(params.id);
+    return result;
+  })
+  // Proxy RPC para contornar CORS (usa RPC da Fogo)
+  .post("/rpc", async ({ body }) => {
+    try {
+      const response = await fetch("https://eu.fogo.fluxrpc.com/?key=74a5f926-d7b0-4c72-9a5c-0eaec1a57781", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Origin": "https://app.fogofishing.com",
+          "Referer": "https://app.fogofishing.com/",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error("❌ Erro no proxy RPC:", error);
+      return { error: error.message };
+    }
+  })
+  // Proxy Paymaster - rotas específicas para contornar CORS
+  .get("/sponsor_pubkey", async ({ request }) => {
+    const url = new URL(request.url);
+    const targetUrl = `https://fogo-mainnet.dourolabs-paymaster.xyz/api/sponsor_pubkey${url.search}`;
+
+    try {
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        headers: {
+          "Origin": "https://app.fogofishing.com",
+          "Referer": "https://app.fogofishing.com/",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
+
+      return new Response(await response.text(), {
+        status: response.status,
+        headers: { "Content-Type": "text/plain" },
+      });
+    } catch (error: any) {
+      console.error("❌ Erro no proxy sponsor_pubkey:", error);
+      return new Response(error.message, { status: 500 });
+    }
+  })
+  .post("/sponsor_and_send", async ({ request }) => {
+    const url = new URL(request.url);
+    const targetUrl = `https://fogo-mainnet.dourolabs-paymaster.xyz/api/sponsor_and_send${url.search}`;
+
+    try {
+      const body = await request.text();
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Origin": "https://app.fogofishing.com",
+          "Referer": "https://app.fogofishing.com/",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+        body,
+      });
+
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error("❌ Erro no proxy sponsor_and_send:", error);
+      return { error: error.message };
+    }
+  })
+  .get("/fee", async ({ request }) => {
+    const url = new URL(request.url);
+    const targetUrl = `https://fogo-mainnet.dourolabs-paymaster.xyz/api/fee${url.search}`;
+
+    try {
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        headers: {
+          "Origin": "https://app.fogofishing.com",
+          "Referer": "https://app.fogofishing.com/",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
+
+      return new Response(await response.text(), {
+        status: response.status,
+        headers: { "Content-Type": "text/plain" },
+      });
+    } catch (error: any) {
+      console.error("❌ Erro no proxy fee:", error);
+      return new Response(error.message, { status: 500 });
+    }
   });
 
 // MIME types para arquivos estáticos

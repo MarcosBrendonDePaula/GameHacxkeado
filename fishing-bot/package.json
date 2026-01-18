@@ -19,7 +19,8 @@
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vite-plugin-node-polyfills": "^0.25.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -28,17 +29,29 @@
     "@coral-xyz/anchor": "^0.32.1",
     "@elysiajs/cors": "^1.4.1",
     "@elysiajs/static": "^1.4.7",
+    "@fogo/sessions-sdk": "^0.1.3",
+    "@fogo/sessions-sdk-react": "^0.1.14",
+    "@fogo/sessions-sdk-web": "^0.1.0",
     "@solana/spl-token": "^0.4.14",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.37",
     "@solana/web3.js": "^1.98.4",
     "@types/ejs": "^3.1.5",
     "bn.js": "^5.2.2",
+    "bs58": "^6.0.0",
+    "buffer": "^6.0.3",
     "ejs": "^3.1.10",
     "elysia": "^1.4.21",
     "https-proxy-agent": "^7.0.6",
     "kire-workspace": "github:drysius/kire",
+    "lightningcss": "^1.30.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.12.0",
-    "socks-proxy-agent": "^8.0.5"
+    "semver": "^7.7.3",
+    "socks-proxy-agent": "^8.0.5",
+    "stream-browserify": "^3.0.0"
   }
 }

@@ -17,6 +17,11 @@ export interface BotConfig {
   keypair?: string;
   proxy?: string;
   delay?: number;
+  // Session key fields (from Fogo Sessions)
+  sessionKey?: string; // Base64 encoded secret key (32 bytes)
+  sessionPublicKey?: string; // Base58 encoded session public key
+  walletPublicKey?: string; // Original wallet that authorized the session
+  createdAt?: string;
 }
 
 export interface BotStats {
@@ -48,11 +53,15 @@ class BotInstance {
     public config: BotConfig,
     public keypair: Keypair
   ) {
+    // Se tem walletPublicKey (session key), mostra a wallet original
+    // Caso contrário, mostra a public key do keypair
+    const displayWallet = config.walletPublicKey || keypair.publicKey.toBase58();
+
     this.stats = {
       id,
       name: config.name,
       status: "offline",
-      wallet: keypair.publicKey.toBase58(),
+      wallet: displayWallet,
       catches: 0,
       misses: 0,
       totalFish: 0,
@@ -74,17 +83,24 @@ class BotInstance {
     const logFile = path.join("logs", `bot-${this.id}-${sanitizedName}.log`);
     const botName = `BOT-${this.id} [${this.config.name}]`;
 
+    // Se tem walletPublicKey, é uma session key - passa a wallet original como owner
+    const ownerPublicKey = this.config.walletPublicKey
+      ? new PublicKey(this.config.walletPublicKey)
+      : undefined;
+
     // Cria serviço de fishing
     this.service = new FishingService(
       this.keypair,
       BOT_CONFIG.rpc_endpoint,
       this.config.proxy,
       botName,
-      logFile
+      logFile,
+      ownerPublicKey // Passa a wallet original para session keys
     );
 
-    // Calcula PlayerState PDA para WebSocket
-    const [playerStatePDA] = getPlayerStatePDA(this.keypair.publicKey);
+    // Calcula PlayerState PDA para WebSocket (usa wallet original se for session key)
+    const playerWallet = ownerPublicKey ?? this.keypair.publicKey;
+    const [playerStatePDA] = getPlayerStatePDA(playerWallet);
 
     // Cria WebSocket monitor para este bot
     this.logMonitor = new CastLogMonitor(
@@ -287,7 +303,36 @@ export class BotManager {
   }
 
   private loadKeypair(config: BotConfig): Keypair {
-    // Se tem keypair direto, usa ele
+    // Se tem session key
+    if (config.sessionKey) {
+      try {
+        const secretKeyBuffer = Buffer.from(config.sessionKey, 'base64');
+
+        // Se tem 64 bytes, é o formato completo (antigo)
+        if (secretKeyBuffer.length === 64) {
+          return Keypair.fromSecretKey(new Uint8Array(secretKeyBuffer));
+        }
+
+        // Se tem 32 bytes, precisa da sessionPublicKey para completar
+        if (secretKeyBuffer.length === 32 && config.sessionPublicKey) {
+          const publicKey = new PublicKey(config.sessionPublicKey);
+          const publicKeyBytes = publicKey.toBytes();
+
+          // Combina para formar o secret key de 64 bytes (privada + pública)
+          const fullSecretKey = new Uint8Array(64);
+          fullSecretKey.set(secretKeyBuffer, 0);
+          fullSecretKey.set(publicKeyBytes, 32);
+
+          return Keypair.fromSecretKey(fullSecretKey);
+        }
+
+        throw new Error(`Session key inválida: ${secretKeyBuffer.length} bytes (esperado 32 ou 64)`);
+      } catch (error) {
+        throw new Error(`Erro ao carregar session key do bot "${config.name}": ${error}`);
+      }
+    }
+
+    // Se tem keypair direto (JSON array), usa ele
     if (config.keypair) {
       try {
         const secretKey = Uint8Array.from(JSON.parse(config.keypair));
@@ -302,7 +347,7 @@ export class BotManager {
       return this.loadKeypairFromFile(config.keypair_path);
     }
 
-    throw new Error(`Bot "${config.name}" não tem keypair_path nem keypair configurado`);
+    throw new Error(`Bot "${config.name}" não tem keypair_path, keypair nem sessionKey configurado`);
   }
 
   private loadKeypairFromFile(filePath: string): Keypair {
@@ -527,5 +572,93 @@ export class BotManager {
       console.error("Erro ao salvar configurações:", error);
       throw error;
     }
+  }
+
+  // Adiciona um novo bot via session key
+  async addBotWithSession(params: {
+    name: string;
+    sessionSecretKey: string; // Base64 encoded (32 bytes - só a parte privada)
+    sessionPublicKey: string; // Base58 encoded public key
+    walletPublicKey: string;
+  }): Promise<{ success: boolean; bot?: BotStats; error?: string }> {
+    try {
+      // Decodifica a session key privada (32 bytes)
+      const secretKeyBuffer = Buffer.from(params.sessionSecretKey, 'base64');
+
+      // Decodifica a public key
+      const publicKey = new PublicKey(params.sessionPublicKey);
+      const publicKeyBytes = publicKey.toBytes();
+
+      // Combina para formar o secret key de 64 bytes (privada + pública)
+      const fullSecretKey = new Uint8Array(64);
+      fullSecretKey.set(secretKeyBuffer, 0);
+      fullSecretKey.set(publicKeyBytes, 32);
+
+      const keypair = Keypair.fromSecretKey(fullSecretKey);
+
+      // Verifica se já existe um bot com essa session key
+      for (const bot of this.bots.values()) {
+        if (bot.keypair.publicKey.equals(keypair.publicKey)) {
+          return { success: false, error: 'Já existe um bot com essa session key' };
+        }
+      }
+
+      // Cria a config do novo bot
+      const newConfig: BotConfig = {
+        name: params.name,
+        enabled: true,
+        sessionKey: params.sessionSecretKey,
+        sessionPublicKey: params.sessionPublicKey,
+        walletPublicKey: params.walletPublicKey,
+        createdAt: new Date().toISOString(),
+        delay: BOT_CONFIG.autocast_delay,
+      };
+
+      // Adiciona às configs
+      this.configs.push(newConfig);
+
+      // Salva no arquivo
+      await Bun.write(this.accountsPath, JSON.stringify(this.configs, null, 2));
+
+      // Cria e registra a instância do bot
+      const newId = String(this.bots.size + 1);
+      const bot = new BotInstance(newId, newConfig, keypair);
+      this.bots.set(newId, bot);
+
+      console.log(`✅ Novo bot adicionado: ${params.name} (ID: ${newId})`);
+      console.log(`   Session: ${keypair.publicKey.toBase58()}`);
+      console.log(`   Wallet: ${params.walletPublicKey}`);
+
+      return { success: true, bot: bot.stats };
+    } catch (error: any) {
+      console.error('Erro ao adicionar bot:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Remove um bot
+  async removeBot(id: string): Promise<{ success: boolean; error?: string }> {
+    const bot = this.bots.get(id);
+    if (!bot) {
+      return { success: false, error: 'Bot não encontrado' };
+    }
+
+    // Para o bot se estiver rodando
+    if (bot.stats.status === 'online') {
+      await bot.stop();
+    }
+
+    // Remove da lista de bots
+    this.bots.delete(id);
+
+    // Remove das configs pelo índice (bots são numerados sequencialmente)
+    const index = parseInt(id) - 1;
+    if (index >= 0 && index < this.configs.length) {
+      this.configs.splice(index, 1);
+      await Bun.write(this.accountsPath, JSON.stringify(this.configs, null, 2));
+    }
+
+    console.log(`🗑️ Bot ${id} removido`);
+    return { success: true };
   }
 }

@@ -110,8 +110,16 @@ export async function sendTransactionViaPaymaster(
     const result: PaymasterResponse = await response.json();
 
     if (result.error) {
-      logger.error(`Paymaster error: ${result.error}`);
-      throw new Error(`Paymaster error: ${result.error}`);
+      const errorStr = typeof result.error === 'object' ? JSON.stringify(result.error) : result.error;
+      logger.error(`Paymaster error: ${errorStr}`);
+      throw new Error(`Paymaster error: ${errorStr}`);
+    }
+
+    // Verifica se falhou (type === "failed")
+    if (result.type === 'failed') {
+      const errorDetail = JSON.stringify(result);
+      logger.error(`Paymaster failed: ${errorDetail}`);
+      throw new Error(`Paymaster failed: ${errorDetail}`);
     }
 
     if (!result.signature) {
