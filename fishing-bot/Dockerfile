@@ -51,11 +51,8 @@ COPY --from=build /app/package.json ./
 # Cria diretorio para dados persistentes
 RUN mkdir -p /app/data
 
-# Copia drizzle config
-COPY --from=build /app/drizzle.config.ts ./
-
 # Expoe a porta do servidor web
 EXPOSE 3000
 
 # Script de inicialização: migra DB e inicia servidor
-CMD ["sh", "-c", "bun drizzle-kit push && bun run src/web/server.ts"]
+CMD ["sh", "-c", "bun run src/db/migrate.ts && bun run src/web/server.ts"]
