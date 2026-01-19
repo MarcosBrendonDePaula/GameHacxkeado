@@ -1,0 +1,42 @@
+services:
+  fishing-bot:
+    image: fishing-bot:latest
+    container_name: fishing-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Dados persistentes (banco de dados, logs, etc)
+      - ./data:/app/data
+      # Arquivo de contas (se existir)
+      - ./accounts.json:/app/accounts.json:ro
+    environment:
+      - NODE_ENV=production
+      - FISHING_BOT_PROD=1
+      - APP_DIR=/app
+      # Descomente e configure conforme necessario:
+      # - DATABASE_URL=file:/app/data/fishing-bot.db
+      # - LOG_LEVEL=info
+    # Healthcheck para monitoramento
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/stats/global"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# Para desenvolvimento, descomente o servico abaixo:
+#
+#   fishing-bot-dev:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: fishing-bot-dev
+#     ports:
+#       - "3000:3000"
+#     volumes:
+#       - ./src:/app/src
+#       - ./data:/app/data
+#     environment:
+#       - NODE_ENV=development
+#     command: ["bun", "--watch", "src/web/server.ts"]
