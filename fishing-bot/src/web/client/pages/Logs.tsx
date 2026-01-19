@@ -1,10 +1,12 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { useAuth } from '../providers/AuthProvider'
+import { getLogs } from '../lib/api'
 
 interface Log {
-  timestamp: Date
-  bot: string
+  id: number
   level: 'success' | 'warn' | 'error' | 'info'
   message: string
+  timestamp: Date
 }
 
 interface LogsResponse {
@@ -18,11 +20,10 @@ interface LogsResponse {
 type LogLevel = 'all' | 'success' | 'warn' | 'error' | 'info'
 
 export default function Logs() {
+  const { isConnected } = useAuth()
   const [logs, setLogs] = useState<Log[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedBot, setSelectedBot] = useState<string>('all')
   const [selectedLevel, setSelectedLevel] = useState<LogLevel>('all')
-  const [availableBots, setAvailableBots] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [totalLogs, setTotalLogs] = useState(0)
   const [logsPerPage, setLogsPerPage] = useState(50)
@@ -30,67 +31,53 @@ export default function Logs() {
 
   const totalPages = Math.ceil(totalLogs / logsPerPage)
 
-  useEffect(() => {
-    fetchBots()
-  }, [])
-
-  useEffect(() => {
-    setCurrentPage(1)
-    fetchLogs(1)
-  }, [selectedBot, selectedLevel, logsPerPage])
-
-  useEffect(() => {
-    fetchLogs(currentPage)
-  }, [currentPage])
-
-  useEffect(() => {
-    if (currentPage === 1) {
-      const interval = setInterval(() => {
-        fetchLogs(1, true)
-      }, 3000)
-      return () => clearInterval(interval)
+  const fetchLogs = useCallback(async (page: number, silent = false) => {
+    if (!isConnected) {
+      setLoading(false)
+      return
     }
-  }, [selectedBot, selectedLevel, currentPage, logsPerPage])
 
-  async function fetchBots() {
-    try {
-      const res = await fetch('/api/logs/bots')
-      const data = await res.json()
-      setAvailableBots(data.bots)
-    } catch (error) {
-      console.error('Erro ao buscar bots:', error)
-    }
-  }
-
-  async function fetchLogs(page: number, silent = false) {
     if (!silent) setLoading(true)
 
     try {
       const offset = (page - 1) * logsPerPage
-      const params = new URLSearchParams({
-        limit: String(logsPerPage),
-        offset: String(offset),
-      })
-
-      if (selectedBot !== 'all') {
-        params.append('bot', selectedBot)
+      const params: { limit: number; offset: number; level?: string } = {
+        limit: logsPerPage,
+        offset,
       }
 
       if (selectedLevel !== 'all') {
-        params.append('level', selectedLevel)
+        params.level = selectedLevel
       }
 
-      const res = await fetch(`/api/logs?${params}`)
-      const data: LogsResponse = await res.json()
+      const data: LogsResponse = await getLogs(params)
 
-      setLogs(data.logs)
-      setTotalLogs(data.total)
+      setLogs(data.logs || [])
+      setTotalLogs(data.total || 0)
     } catch (error) {
       console.error('Erro ao buscar logs:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [isConnected, logsPerPage, selectedLevel])
+
+  useEffect(() => {
+    setCurrentPage(1)
+    fetchLogs(1)
+  }, [selectedLevel, logsPerPage])
+
+  useEffect(() => {
+    fetchLogs(currentPage)
+  }, [currentPage, fetchLogs])
+
+  useEffect(() => {
+    if (currentPage === 1 && isConnected) {
+      const interval = setInterval(() => {
+        fetchLogs(1, true)
+      }, 3000)
+      return () => clearInterval(interval)
+    }
+  }, [selectedLevel, currentPage, logsPerPage, isConnected, fetchLogs])
 
   function goToPage(page: number) {
     if (page >= 1 && page <= totalPages) {
@@ -102,14 +89,25 @@ export default function Logs() {
   }
 
   const levelFilters = [
-    { id: 'all' as LogLevel, label: 'Todos', icon: '📋', color: '#8b949e' },
-    { id: 'success' as LogLevel, label: 'Success', icon: '✅', color: '#3fb950' },
-    { id: 'warn' as LogLevel, label: 'Avisos', icon: '⚠️', color: '#d29922' },
-    { id: 'error' as LogLevel, label: 'Erros', icon: '❌', color: '#f85149' },
-    { id: 'info' as LogLevel, label: 'Info', icon: 'ℹ️', color: '#58a6ff' },
+    { id: 'all' as LogLevel, label: 'Todos', icon: '', color: '#8b949e' },
+    { id: 'success' as LogLevel, label: 'Success', icon: '', color: '#3fb950' },
+    { id: 'warn' as LogLevel, label: 'Avisos', icon: '', color: '#d29922' },
+    { id: 'error' as LogLevel, label: 'Erros', icon: '', color: '#f85149' },
+    { id: 'info' as LogLevel, label: 'Info', icon: '', color: '#58a6ff' },
   ]
 
   const logsPerPageOptions = [25, 50, 100, 200]
+
+  if (!isConnected) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+        <h3>Conecte sua carteira</h3>
+        <p style={{ color: '#888', marginTop: '1rem' }}>
+          Use o botao "+ Carteira" no menu para conectar e ver os logs do seu bot.
+        </p>
+      </div>
+    )
+  }
 
   if (loading && logs.length === 0) {
     return <div className="loading">Carregando logs...</div>
@@ -117,60 +115,10 @@ export default function Logs() {
 
   return (
     <div>
-      <h2>📝 Logs em Tempo Real</h2>
-
-      {/* Tabs por Bot (Horizontal) */}
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        marginTop: '20px',
-        marginBottom: '20px',
-        overflowX: 'auto',
-        paddingBottom: '10px',
-        borderBottom: '2px solid #30363d',
-      }}>
-        <button
-          onClick={() => setSelectedBot('all')}
-          style={{
-            padding: '10px 20px',
-            borderRadius: '6px 6px 0 0',
-            border: 'none',
-            backgroundColor: selectedBot === 'all' ? '#21262d' : 'transparent',
-            color: selectedBot === 'all' ? '#58a6ff' : '#8b949e',
-            cursor: 'pointer',
-            fontWeight: selectedBot === 'all' ? 'bold' : 'normal',
-            borderBottom: selectedBot === 'all' ? '3px solid #58a6ff' : 'none',
-            whiteSpace: 'nowrap',
-            transition: 'all 0.2s',
-          }}
-        >
-          🤖 Todos os Bots
-        </button>
-
-        {availableBots.map(bot => (
-          <button
-            key={bot}
-            onClick={() => setSelectedBot(bot)}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '6px 6px 0 0',
-              border: 'none',
-              backgroundColor: selectedBot === bot ? '#21262d' : 'transparent',
-              color: selectedBot === bot ? '#58a6ff' : '#8b949e',
-              cursor: 'pointer',
-              fontWeight: selectedBot === bot ? 'bold' : 'normal',
-              borderBottom: selectedBot === bot ? '3px solid #58a6ff' : 'none',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.2s',
-            }}
-          >
-            {bot}
-          </button>
-        ))}
-      </div>
+      <h2>Logs do Bot</h2>
 
       {/* Layout: Sidebar + Content */}
-      <div style={{ display: 'flex', gap: '20px' }}>
+      <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
         {/* Sidebar - Filtros de Nível */}
         <div style={{
           width: '200px',
@@ -183,7 +131,7 @@ export default function Logs() {
             padding: '15px',
           }}>
             <h3 style={{ fontSize: '0.9rem', color: '#8b949e', marginBottom: '12px' }}>
-              🔍 Filtrar por tipo
+              Filtrar por tipo
             </h3>
 
             {levelFilters.map(filter => (
@@ -207,7 +155,6 @@ export default function Logs() {
                   textAlign: 'left',
                 }}
               >
-                <span style={{ fontSize: '1.2rem' }}>{filter.icon}</span>
                 <span>{filter.label}</span>
               </button>
             ))}
@@ -223,7 +170,7 @@ export default function Logs() {
                 color: '#8b949e',
                 marginBottom: '8px',
               }}>
-                📄 Logs por página
+                Logs por pagina
               </label>
               <select
                 value={logsPerPage}
@@ -253,11 +200,11 @@ export default function Logs() {
               color: '#8b949e',
             }}>
               <div style={{ marginBottom: '5px' }}>
-                📊 Total: <strong style={{ color: '#58a6ff' }}>{totalLogs}</strong>
+                Total: <strong style={{ color: '#58a6ff' }}>{totalLogs}</strong>
               </div>
               {currentPage === 1 && (
                 <div style={{ color: '#3fb950' }}>
-                  🔄 Auto-refresh
+                  Auto-refresh ativo
                 </div>
               )}
             </div>
@@ -287,15 +234,18 @@ export default function Logs() {
 
             {logs.length === 0 ? (
               <p style={{ color: '#8b949e', textAlign: 'center', padding: '40px' }}>
-                Nenhum log disponível para os filtros selecionados
+                Nenhum log disponivel para os filtros selecionados
               </p>
             ) : (
-              logs.map((log, index) => (
-                <div key={index} className={`log-line ${log.level}`}>
+              logs.map((log) => (
+                <div key={log.id} className={`log-line ${log.level}`}>
                   <span className="timestamp">
                     {new Date(log.timestamp).toLocaleTimeString()}
                   </span>
-                  <span className="bot">{log.bot}</span> {log.message}
+                  <span className={`level-badge ${log.level}`}>
+                    {log.level.toUpperCase()}
+                  </span>
+                  {log.message}
                 </div>
               ))
             )}
@@ -322,7 +272,7 @@ export default function Logs() {
                   cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                 }}
               >
-                ← Anterior
+                Anterior
               </button>
 
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -366,7 +316,7 @@ export default function Logs() {
                   cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
                 }}
               >
-                Próxima →
+                Proxima
               </button>
             </div>
           )}
@@ -382,10 +332,76 @@ export default function Logs() {
             color: '#8b949e',
             textAlign: 'center',
           }}>
-            Página {currentPage} de {totalPages} · Mostrando logs {((currentPage - 1) * logsPerPage) + 1}-{Math.min(currentPage * logsPerPage, totalLogs)} de {totalLogs}
+            Pagina {currentPage} de {totalPages || 1} - Mostrando logs {((currentPage - 1) * logsPerPage) + 1}-{Math.min(currentPage * logsPerPage, totalLogs)} de {totalLogs}
           </div>
         </div>
       </div>
+
+      <style>{`
+        .log-viewer {
+          background: #0d1117;
+          border: 1px solid #30363d;
+          border-radius: 8px;
+          padding: 15px;
+          max-height: 500px;
+          overflow-y: auto;
+          font-family: monospace;
+          font-size: 0.85rem;
+        }
+        .log-line {
+          padding: 6px 10px;
+          border-radius: 4px;
+          margin-bottom: 4px;
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+        .log-line.success {
+          background: rgba(63, 185, 80, 0.1);
+          border-left: 3px solid #3fb950;
+        }
+        .log-line.warn {
+          background: rgba(210, 153, 34, 0.1);
+          border-left: 3px solid #d29922;
+        }
+        .log-line.error {
+          background: rgba(248, 81, 73, 0.1);
+          border-left: 3px solid #f85149;
+        }
+        .log-line.info {
+          background: rgba(88, 166, 255, 0.1);
+          border-left: 3px solid #58a6ff;
+        }
+        .timestamp {
+          color: #8b949e;
+          font-size: 0.8rem;
+          min-width: 80px;
+        }
+        .level-badge {
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-size: 0.7rem;
+          font-weight: bold;
+          min-width: 60px;
+          text-align: center;
+        }
+        .level-badge.success {
+          background: #3fb950;
+          color: white;
+        }
+        .level-badge.warn {
+          background: #d29922;
+          color: white;
+        }
+        .level-badge.error {
+          background: #f85149;
+          color: white;
+        }
+        .level-badge.info {
+          background: #58a6ff;
+          color: white;
+        }
+      `}</style>
     </div>
   )
 }

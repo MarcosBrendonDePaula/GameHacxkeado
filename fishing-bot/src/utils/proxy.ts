@@ -71,3 +71,28 @@ export function createProxyFetch(proxyUrl: string) {
     return fetch(url, opts);
   };
 }
+
+/**
+ * Verifica o IP público usando o proxy (para debug)
+ */
+export async function checkProxyIP(proxyUrl?: string): Promise<string | null> {
+  try {
+    const agent = proxyUrl ? createProxyAgent(proxyUrl) : undefined;
+
+    const response = await fetch("https://api.ipify.org?format=json", {
+      // @ts-ignore
+      agent,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return data.ip;
+  } catch (error: any) {
+    logger.error(`Erro ao verificar IP: ${error.message}`);
+    return null;
+  }
+}

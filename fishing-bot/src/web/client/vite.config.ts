@@ -33,6 +33,9 @@ export default defineConfig({
       semver: path.resolve(__dirname, '../../../node_modules/semver/index.js'),
     },
   },
+  server: {
+    allowedHosts: ['local.marcosbrendon.com'],
+  },
   optimizeDeps: {
     include: [
       '@solana/wallet-adapter-base',

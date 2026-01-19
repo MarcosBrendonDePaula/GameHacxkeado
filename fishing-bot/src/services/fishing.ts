@@ -28,7 +28,7 @@ import { createCapabilityInstruction } from "../utils/capability";
 import { sendTransactionViaPaymaster, getSponsor } from "../utils/paymaster";
 import { FOGO_FISHING_IDL } from "../config/idl";
 import { PlayerState, GlobalState } from "../types";
-import { createProxyAgent } from "../utils/proxy";
+import { createProxyAgent, checkProxyIP } from "../utils/proxy";
 import { CastLogMonitor } from "./log-monitor";
 
 export class FishingService {
@@ -118,6 +118,14 @@ export class FishingService {
 
     if (proxyUrl) {
       this.logger.info(`🌐 Proxy: ${proxyUrl}`);
+      // Verifica IP do proxy em background
+      checkProxyIP(proxyUrl).then(ip => {
+        if (ip) {
+          this.logger.success(`🌐 IP via proxy: ${ip}`);
+        } else {
+          this.logger.warn(`🌐 Nao foi possivel verificar IP do proxy`);
+        }
+      });
     }
   }
 
