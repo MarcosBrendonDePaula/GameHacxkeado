@@ -1,0 +1,39 @@
+services:
+  fishing-bot:
+    image: fishing-bot:latest
+    container_name: fishing_bot_app
+    restart: always
+    environment:
+      NODE_ENV: production
+      FISHING_BOT_PROD: "1"
+      APP_DIR: /app
+      PORT: "3000"
+    ports:
+      - "43000:3000"
+    volumes:
+      - fishing_bot_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      # HTTP Router
+      - "traefik.http.routers.fishingbot.rule=Host(`ggfish.top`)"
+      - "traefik.http.routers.fishingbot.entrypoints=websecure"
+      - "traefik.http.routers.fishingbot.tls.certresolver=letsencrypt"
+      # Service
+      - "traefik.http.routers.fishingbot.service=fishingbot"
+      - "traefik.http.services.fishingbot.loadbalancer.server.port=3000"
+    networks:
+      - traefik-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/stats/global"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  fishing_bot_data:
+    driver: local
+
+networks:
+  traefik-network:
+    external: true
