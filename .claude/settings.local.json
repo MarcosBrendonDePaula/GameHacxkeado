@@ -34,7 +34,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(bun remove:*)",
       "Bash(bun install)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git init:*)"
     ],
     "deny": [],
     "ask": []

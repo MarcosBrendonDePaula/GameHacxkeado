@@ -183,3 +183,5 @@ Thumbs.db
 
 # Claude temporary files
 tmpclaude-*
+/fishing-bot/data
+/FogoFishing.Unity
