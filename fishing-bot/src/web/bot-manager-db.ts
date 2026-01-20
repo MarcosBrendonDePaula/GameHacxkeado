@@ -23,6 +23,12 @@ export interface BotStats {
   startedAt?: Date;
   pendingCasts?: number;
   sessionPubkey?: string;
+  rodLevel?: number;
+  durability?: {
+    current: number;
+    max: number;
+    percent: number;
+  };
 }
 
 /**
@@ -137,6 +143,14 @@ class BotInstance {
         const playerState = await this.service.fetchPlayerState();
         if (playerState) {
           this.lastFishCaught = playerState.fishCaughtAllTime;
+          this.stats.rodLevel = playerState.rodLevel;
+          this.stats.durability = {
+            current: playerState.currentDurability,
+            max: playerState.maxDurability,
+            percent: playerState.maxDurability > 0
+              ? Math.round((playerState.currentDurability / playerState.maxDurability) * 100)
+              : 0,
+          };
         }
 
         await Bun.sleep(updateInterval);
@@ -163,7 +177,20 @@ class BotInstance {
     try {
       const initialState = await this.service?.fetchPlayerState();
       this.lastFishCaught = initialState?.fishCaughtAllTime || "0";
-      await this.addLog("info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish`);
+      if (initialState) {
+        this.stats.rodLevel = initialState.rodLevel;
+        const durabilityPercent = initialState.maxDurability > 0
+          ? Math.round((initialState.currentDurability / initialState.maxDurability) * 100)
+          : 0;
+        this.stats.durability = {
+          current: initialState.currentDurability,
+          max: initialState.maxDurability,
+          percent: durabilityPercent,
+        };
+        await this.addLog("info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish | 🎣 Rod Level: ${initialState.rodLevel} | 🔧 Durabilidade: ${durabilityPercent}%`);
+      } else {
+        await this.addLog("info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish`);
+      }
     } catch {
       await this.addLog("warn", `⚠️ Não foi possível buscar estado inicial`);
     }
@@ -206,6 +233,11 @@ class BotInstance {
   }
 
   private async addLog(level: "info" | "success" | "warn" | "error", message: string) {
+    // Imprime no console também
+    const botName = `BOT [${this.walletPubkey.slice(0, 8)}...]`;
+    const levelEmoji = level === "success" ? "✅" : level === "warn" ? "⚠️" : level === "error" ? "❌" : "ℹ️";
+    console.log(`${botName} ${levelEmoji} ${message}`);
+
     try {
       await db.insert(logs).values({
         walletPubkey: this.walletPubkey,

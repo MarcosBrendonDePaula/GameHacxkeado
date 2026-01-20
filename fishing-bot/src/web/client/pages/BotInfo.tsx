@@ -13,6 +13,12 @@ interface BotStats {
   uptime: string
   pendingCasts?: number
   sessionPubkey?: string
+  rodLevel?: number
+  durability?: {
+    current: number
+    max: number
+    percent: number
+  }
 }
 
 interface BotInfo {
@@ -256,6 +262,12 @@ export default function BotInfo() {
         }}>
           <h3 style={{ marginBottom: '20px', color: '#58a6ff' }}>Estatisticas Gerais</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <StatRow label="🎣 Rod Level" value={botStats?.rodLevel?.toString() || '-'} color="#ffd700" />
+            <StatRow
+              label="🔧 Durabilidade"
+              value={botStats?.durability ? `${botStats.durability.current}/${botStats.durability.max} (${botStats.durability.percent}%)` : '-'}
+              color={botStats?.durability?.percent && botStats.durability.percent <= 20 ? '#f85149' : '#4ade80'}
+            />
             <StatRow label="Total de Casts" value={totalCasts.toLocaleString()} />
             <StatRow label="Catches" value={catches.toLocaleString()} color="#3fb950" />
             <StatRow label="Misses" value={misses.toLocaleString()} color="#f85149" />

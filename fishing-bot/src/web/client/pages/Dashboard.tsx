@@ -28,6 +28,12 @@ interface BotStats {
   uptime: string
   pendingCasts?: number
   sessionPubkey?: string
+  rodLevel?: number
+  durability?: {
+    current: number
+    max: number
+    percent: number
+  }
 }
 
 interface BotInfo {
@@ -257,6 +263,16 @@ export default function Dashboard() {
             </div>
 
             <div className="stats-grid">
+              <div className="stat-card small">
+                <h4>🎣 Rod Level</h4>
+                <span className="stat-value">{botStats?.rodLevel || '-'}</span>
+              </div>
+              <div className="stat-card small">
+                <h4>🔧 Durabilidade</h4>
+                <span className="stat-value" style={{ color: botStats?.durability?.percent && botStats.durability.percent <= 20 ? '#f85149' : '#4ade80' }}>
+                  {botStats?.durability ? `${botStats.durability.percent}%` : '-'}
+                </span>
+              </div>
               <div className="stat-card small">
                 <h4>Catches</h4>
                 <span className="stat-value">{botStats?.catches || 0}</span>

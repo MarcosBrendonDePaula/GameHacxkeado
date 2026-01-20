@@ -36,6 +36,7 @@ export interface BotStats {
   uptime: string;
   startedAt?: Date;
   pendingCasts?: number; // Quantidade de casts aguardando resultado
+  rodLevel?: number; // Nível da vara de pesca
 }
 
 class BotInstance {
@@ -160,6 +161,7 @@ class BotInstance {
         const playerState = await this.service.fetchPlayerState();
         if (playerState) {
           this.lastFishCaught = playerState.fishCaughtAllTime;
+          this.stats.rodLevel = playerState.rodLevel;
         }
 
         await Bun.sleep(updateInterval);
@@ -191,7 +193,12 @@ class BotInstance {
     try {
       const initialState = await this.service?.fetchPlayerState();
       this.lastFishCaught = initialState?.fishCaughtAllTime || "0";
-      logManager.addLog(botName, "info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish`);
+      if (initialState) {
+        this.stats.rodLevel = initialState.rodLevel;
+        logManager.addLog(botName, "info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish | 🎣 Rod Level: ${initialState.rodLevel}`);
+      } else {
+        logManager.addLog(botName, "info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish`);
+      }
     } catch (error) {
       logManager.addLog(botName, "warn", `⚠️ Não foi possível buscar estado inicial`);
     }
