@@ -52,12 +52,13 @@ export default function AddWallet() {
           setHasConfiguredBot(true)
           localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
           if (data.bot.proxy) setProxy(data.bot.proxy)
-          if (data.bot.delayMin) setDelayMin(data.bot.delayMin)
-          if (data.bot.delayMax) setDelayMax(data.bot.delayMax)
+          // Usa valores do banco ou padrões se não existirem
+          setDelayMin(data.bot.delayMin ?? 1500)
+          setDelayMax(data.bot.delayMax ?? 3000)
           if (data.bot.autoRepair !== undefined) setAutoRepair(data.bot.autoRepair)
-          if (data.bot.autoRepairMin !== undefined) setAutoRepairMin(data.bot.autoRepairMin)
-          if (data.bot.autoRepairMax !== undefined) setAutoRepairMax(data.bot.autoRepairMax)
-          if (data.bot.autoRestartMinutes !== undefined) setAutoRestartMinutes(data.bot.autoRestartMinutes)
+          setAutoRepairMin(data.bot.autoRepairMin ?? 15)
+          setAutoRepairMax(data.bot.autoRepairMax ?? 25)
+          setAutoRestartMinutes(data.bot.autoRestartMinutes ?? 240)
         }
       }).catch(err => {
         console.error('[AddWallet] Erro ao buscar bot:', err)
@@ -75,12 +76,13 @@ export default function AddWallet() {
       }
       console.log('[AddWallet] Setting proxy:', bot.proxy, 'delayMin:', bot.delayMin, 'delayMax:', bot.delayMax)
       if (bot.proxy) setProxy(bot.proxy)
-      if (bot.delayMin) setDelayMin(bot.delayMin)
-      if (bot.delayMax) setDelayMax(bot.delayMax)
+      // Usa valores do bot ou mantém padrões
+      setDelayMin(bot.delayMin ?? 1500)
+      setDelayMax(bot.delayMax ?? 3000)
       if (bot.autoRepair !== undefined) setAutoRepair(bot.autoRepair)
-      if (bot.autoRepairMin !== undefined) setAutoRepairMin(bot.autoRepairMin)
-      if (bot.autoRepairMax !== undefined) setAutoRepairMax(bot.autoRepairMax)
-      if (bot.autoRestartMinutes !== undefined) setAutoRestartMinutes(bot.autoRestartMinutes)
+      setAutoRepairMin(bot.autoRepairMin ?? 15)
+      setAutoRepairMax(bot.autoRepairMax ?? 25)
+      setAutoRestartMinutes(bot.autoRestartMinutes ?? 240)
     }
   }, [bot, walletPubkey])
 
