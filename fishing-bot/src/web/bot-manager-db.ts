@@ -47,6 +47,7 @@ class BotInstance {
   private isRepairing = false;
   private autoRestartTimer?: NodeJS.Timeout;
   private restartCallback?: () => Promise<void>;
+  private currentRepairThreshold: number = 20; // Threshold atual (randomizado)
 
   constructor(
     public walletPubkey: string,
@@ -54,8 +55,13 @@ class BotInstance {
     public delay: number,
     public proxy?: string,
     public autoRepair: boolean = true,
+    public autoRepairMin: number = 15,
+    public autoRepairMax: number = 25,
     public autoRestartMinutes: number = 240
   ) {
+    // Sorteia threshold inicial dentro da range
+    this.currentRepairThreshold = this.randomThreshold();
+
     this.stats = {
       walletPubkey,
       status: "offline",
@@ -66,6 +72,15 @@ class BotInstance {
       uptime: "0m",
       sessionPubkey: keypair.publicKey.toBase58(),
     };
+  }
+
+  /**
+   * Gera um threshold aleatório dentro da range configurada
+   */
+  private randomThreshold(): number {
+    const min = Math.min(this.autoRepairMin, this.autoRepairMax);
+    const max = Math.max(this.autoRepairMin, this.autoRepairMax);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
   async start() {
@@ -187,15 +202,18 @@ class BotInstance {
             percent: durabilityPercent,
           };
 
-          // Auto-reparo quando durabilidade <= 20%
-          if (this.autoRepair && durabilityPercent <= 20 && !this.isRepairing) {
+          // Auto-reparo quando durabilidade <= threshold (randomizado)
+          if (this.autoRepair && durabilityPercent <= this.currentRepairThreshold && !this.isRepairing) {
             this.isRepairing = true;
-            await this.addLog("info", `🔧 Durabilidade baixa (${durabilityPercent}%), iniciando reparo automático...`);
+            await this.addLog("info", `🔧 Durabilidade ${durabilityPercent}% (threshold: ${this.currentRepairThreshold}%), reparando...`);
 
             try {
               const signature = await this.service.repairRod();
               if (signature) {
-                await this.addLog("success", `🔧 Reparo concluído! Sig: ${signature.slice(0, 12)}...`);
+                // Sorteia novo threshold para próximo reparo
+                const oldThreshold = this.currentRepairThreshold;
+                this.currentRepairThreshold = this.randomThreshold();
+                await this.addLog("success", `🔧 Reparo OK! Próximo em ~${this.currentRepairThreshold}%`);
               } else {
                 await this.addLog("error", `🔧 Falha no reparo automático`);
               }
@@ -477,6 +495,8 @@ export class BotManager {
         bot.delay || BOT_CONFIG.autocast_delay,
         bot.proxy || undefined,
         bot.autoRepair ?? true,
+        bot.autoRepairMin ?? 15,
+        bot.autoRepairMax ?? 25,
         bot.autoRestartMinutes ?? 240
       );
 
@@ -680,7 +700,7 @@ export class BotManager {
    */
   async updateBotConfig(
     walletPubkey: string,
-    config: { delay?: number; proxy?: string; autoRepair?: boolean; autoRestartMinutes?: number }
+    config: { delay?: number; proxy?: string; autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number; autoRestartMinutes?: number }
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await db
@@ -689,6 +709,8 @@ export class BotManager {
           delay: config.delay,
           proxy: config.proxy,
           autoRepair: config.autoRepair,
+          autoRepairMin: config.autoRepairMin,
+          autoRepairMax: config.autoRepairMax,
           autoRestartMinutes: config.autoRestartMinutes,
           updatedAt: new Date(),
         })
@@ -700,6 +722,12 @@ export class BotManager {
         instance.stats.delay = config.delay || instance.stats.delay;
         if (config.autoRepair !== undefined) {
           instance.autoRepair = config.autoRepair;
+        }
+        if (config.autoRepairMin !== undefined) {
+          instance.autoRepairMin = config.autoRepairMin;
+        }
+        if (config.autoRepairMax !== undefined) {
+          instance.autoRepairMax = config.autoRepairMax;
         }
         if (config.autoRestartMinutes !== undefined) {
           instance.autoRestartMinutes = config.autoRestartMinutes;

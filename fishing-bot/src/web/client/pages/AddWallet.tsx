@@ -28,6 +28,9 @@ export default function AddWallet() {
   // Configuracoes do bot
   const [proxy, setProxy] = useState('')
   const [delay, setDelay] = useState(2000)
+  const [autoRepair, setAutoRepair] = useState(true)
+  const [autoRepairMin, setAutoRepairMin] = useState(15)
+  const [autoRepairMax, setAutoRepairMax] = useState(25)
   const [autoRestartMinutes, setAutoRestartMinutes] = useState(240)
 
   // Verifica se ja configurou o bot (localStorage ou estado do backend)
@@ -49,6 +52,9 @@ export default function AddWallet() {
           localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
           if (data.bot.proxy) setProxy(data.bot.proxy)
           if (data.bot.delay) setDelay(data.bot.delay)
+          if (data.bot.autoRepair !== undefined) setAutoRepair(data.bot.autoRepair)
+          if (data.bot.autoRepairMin !== undefined) setAutoRepairMin(data.bot.autoRepairMin)
+          if (data.bot.autoRepairMax !== undefined) setAutoRepairMax(data.bot.autoRepairMax)
           if (data.bot.autoRestartMinutes !== undefined) setAutoRestartMinutes(data.bot.autoRestartMinutes)
         }
       }).catch(err => {
@@ -68,6 +74,9 @@ export default function AddWallet() {
       console.log('[AddWallet] Setting proxy:', bot.proxy, 'delay:', bot.delay)
       if (bot.proxy) setProxy(bot.proxy)
       if (bot.delay) setDelay(bot.delay)
+      if (bot.autoRepair !== undefined) setAutoRepair(bot.autoRepair)
+      if (bot.autoRepairMin !== undefined) setAutoRepairMin(bot.autoRepairMin)
+      if (bot.autoRepairMax !== undefined) setAutoRepairMax(bot.autoRepairMax)
       if (bot.autoRestartMinutes !== undefined) setAutoRestartMinutes(bot.autoRestartMinutes)
     }
   }, [bot, walletPubkey])
@@ -99,6 +108,9 @@ export default function AddWallet() {
       const result = await updateBotConfig({
         proxy: proxy.trim(),
         delay,
+        autoRepair,
+        autoRepairMin,
+        autoRepairMax,
         autoRestartMinutes,
       })
 
@@ -423,6 +435,63 @@ export default function AddWallet() {
           </p>
         </div>
 
+        {/* Auto Reparo */}
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            marginBottom: '12px',
+            color: 'var(--text-primary)',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+          }}>
+            <WrenchIcon />
+            Auto Reparo
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={autoRepair}
+                onChange={(e) => { setAutoRepair(e.target.checked); setStatus('idle'); }}
+                disabled={isLoading}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+              <span style={{ color: 'var(--text-secondary)' }}>Habilitado</span>
+            </label>
+          </div>
+          {autoRepair && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Reparar entre</span>
+              <input
+                type="number"
+                value={autoRepairMin}
+                onChange={(e) => { setAutoRepairMin(Math.max(1, Math.min(99, parseInt(e.target.value) || 15))); setStatus('idle'); }}
+                min={1}
+                max={99}
+                disabled={isLoading}
+                style={{ width: '70px', opacity: isLoading ? 0.6 : 1 }}
+              />
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>% e</span>
+              <input
+                type="number"
+                value={autoRepairMax}
+                onChange={(e) => { setAutoRepairMax(Math.max(1, Math.min(99, parseInt(e.target.value) || 25))); setStatus('idle'); }}
+                min={1}
+                max={99}
+                disabled={isLoading}
+                style={{ width: '70px', opacity: isLoading ? 0.6 : 1 }}
+              />
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>%</span>
+            </div>
+          )}
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <InfoIcon />
+            Repara a vara quando durabilidade cair na faixa. Valor exato e randomizado para parecer humano.
+          </p>
+        </div>
+
         {/* Auto Restart */}
         <div style={{ marginBottom: '24px' }}>
           <label style={{
@@ -741,6 +810,14 @@ function RestartIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1 4v6h6"/>
       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+    </svg>
+  )
+}
+
+function WrenchIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
     </svg>
   )
 }

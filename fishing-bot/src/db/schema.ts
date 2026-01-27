@@ -20,7 +20,9 @@ export const bots = sqliteTable("bots", {
   sessionPubkey: text("session_pubkey"), // Public key da session
   delay: integer("delay").default(500),
   proxy: text("proxy"),
-  autoRepair: integer("auto_repair", { mode: "boolean" }).default(true), // Auto-reparo quando durabilidade <= 20%
+  autoRepair: integer("auto_repair", { mode: "boolean" }).default(true), // Auto-reparo habilitado
+  autoRepairMin: integer("auto_repair_min").default(15), // Durabilidade minima da range (%)
+  autoRepairMax: integer("auto_repair_max").default(25), // Durabilidade maxima da range (%)
   autoRestartMinutes: integer("auto_restart_minutes").default(240), // Auto-restart a cada X minutos (0 = desabilitado)
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })

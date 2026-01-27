@@ -95,6 +95,24 @@ try {
   }
 }
 
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_repair_min INTEGER DEFAULT 15;`);
+  console.log("  ✓ Coluna 'auto_repair_min' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_repair_min:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_repair_max INTEGER DEFAULT 25;`);
+  console.log("  ✓ Coluna 'auto_repair_max' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_repair_max:", e.message);
+  }
+}
+
 sqlite.close();
 
 console.log(`✅ Migração concluída com sucesso!`);

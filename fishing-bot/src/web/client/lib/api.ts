@@ -274,7 +274,14 @@ export async function upsertBot(params: {
 /**
  * Atualiza configurações do bot
  */
-export async function updateBotConfig(params: { delay?: number; proxy?: string; autoRestartMinutes?: number }) {
+export async function updateBotConfig(params: {
+  delay?: number;
+  proxy?: string;
+  autoRepair?: boolean;
+  autoRepairMin?: number;
+  autoRepairMax?: number;
+  autoRestartMinutes?: number;
+}) {
   return apiRequest<{ success: boolean; error?: string }>("/bot", {
     method: "PATCH",
     body: params,
