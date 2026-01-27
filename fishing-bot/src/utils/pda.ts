@@ -46,3 +46,13 @@ export function getConfigPDA(): [PublicKey, number] {
     PROGRAM_ID
   );
 }
+
+/**
+ * Calcula o PDA do Program Signer (para transferências de token)
+ */
+export function getProgramSignerPDA(): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("fogo_session_program_signer")],
+    PROGRAM_ID
+  );
+}

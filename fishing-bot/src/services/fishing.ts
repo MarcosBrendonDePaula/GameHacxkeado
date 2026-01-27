@@ -13,16 +13,23 @@ import {
   SYSVAR_INSTRUCTIONS_PUBKEY,
   SYSVAR_SLOT_HASHES_PUBKEY,
   SYSTEM_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
   CU_LIMITS,
   BOT_CONFIG,
   CUSTOM_HEADERS,
+  FOGO_MINT,
+  BUYBACK_TREASURY,
+  LIQUIDITY_TREASURY,
+  OPS_TREASURY,
 } from "../config/constants";
 import {
   getGlobalStatePDA,
   getPlayerStatePDA,
   getRateStatePDA,
   getConfigPDA,
+  getProgramSignerPDA,
 } from "../utils/pda";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { generateRandomNonce, Logger, sleep } from "../utils/helpers";
 import { createCapabilityInstruction } from "../utils/capability";
 import { sendTransactionViaPaymaster, getSponsor } from "../utils/paymaster";
@@ -329,6 +336,90 @@ export class FishingService {
       return signature;
     } catch (error: any) {
       this.logger.error("Erro ao fazer cast:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Repara a vara de pesca
+   */
+  async repairRod(): Promise<string | null> {
+    try {
+      this.logger.info("🔧 Iniciando reparo da vara...");
+
+      // Calcula PDAs
+      const [globalStatePDA] = getGlobalStatePDA();
+      const [configPDA] = getConfigPDA();
+      const [playerStatePDA] = getPlayerStatePDA(this.walletPublicKey);
+      const [programSignerPDA] = getProgramSignerPDA();
+
+      // Calcula ATA do FOGO token para o owner
+      const ownerFogoAta = getAssociatedTokenAddressSync(FOGO_MINT, this.walletPublicKey);
+
+      // Cria a instrução de capability (autenticação)
+      const capabilityIx = await createCapabilityInstruction(this.walletPublicKey, this.logger);
+
+      // Cria a instrução de reparo
+      // @ts-ignore
+      const repairIx = await this.program.methods
+        .repairRod(this.walletPublicKey)
+        .accounts({
+          signer: this.signerPublicKey,
+          globalState: globalStatePDA,
+          config: configPDA,
+          playerState: playerStatePDA,
+          fogoMint: FOGO_MINT,
+          ownerFogoAta: ownerFogoAta,
+          buybackTreasury: BUYBACK_TREASURY,
+          liquidityTreasury: LIQUIDITY_TREASURY,
+          opsTreasury: OPS_TREASURY,
+          programSigner: programSignerPDA,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        })
+        .instruction();
+
+      // Adiciona compute unit limit
+      const computeUnitIx = ComputeBudgetProgram.setComputeUnitLimit({
+        units: CU_LIMITS.REPAIR_ROD,
+      });
+
+      // Busca o sponsor (quem paga as taxas)
+      const sponsor = await getSponsor(this.logger);
+
+      // Monta a transação
+      const { blockhash } = await this.connection.getLatestBlockhash();
+
+      const Transaction = require("@solana/web3.js").Transaction;
+      const tx = new Transaction();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = sponsor;
+
+      // Adiciona as instruções na ordem correta
+      tx.add(computeUnitIx);
+      tx.add(capabilityIx);
+      tx.add(repairIx);
+
+      // Assina a transação
+      tx.sign(this.wallet.payer);
+
+      // Envia via paymaster
+      const signature = await sendTransactionViaPaymaster(tx, sponsor, this.logger);
+
+      this.logger.success(`🔧 Reparo enviado! Sig: ${signature.slice(0, 12)}...`);
+
+      // Aguarda confirmação
+      await sleep(2000);
+
+      // Verifica se o reparo foi bem-sucedido
+      const playerState = await this.fetchPlayerState();
+      if (playerState && playerState.currentDurability >= playerState.maxDurability * 0.9) {
+        this.logger.success(`🔧 Reparo confirmado! Durabilidade: ${playerState.currentDurability}/${playerState.maxDurability}`);
+      }
+
+      return signature;
+    } catch (error: any) {
+      this.logger.error("Erro ao reparar vara:", error.message || error);
       return null;
     }
   }

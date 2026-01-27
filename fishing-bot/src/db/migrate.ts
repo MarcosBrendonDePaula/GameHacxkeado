@@ -31,6 +31,7 @@ sqlite.exec(`
     session_pubkey TEXT,
     delay INTEGER DEFAULT 500,
     proxy TEXT,
+    auto_repair INTEGER DEFAULT 1,
     enabled INTEGER DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -74,6 +75,17 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_logs_wallet ON logs(wallet_pubkey);
   CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
 `);
+
+// Migrações incrementais (para bancos existentes)
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_repair INTEGER DEFAULT 1;`);
+  console.log("  ✓ Coluna 'auto_repair' adicionada à tabela bots");
+} catch (e: any) {
+  // Ignora erro se coluna já existe
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_repair:", e.message);
+  }
+}
 
 sqlite.close();
 

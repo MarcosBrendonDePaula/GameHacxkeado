@@ -11,7 +11,16 @@ export const CONFIG_SEED = "config";
 
 // Token Mints
 export const FISH_MINT = new PublicKey("F1SHuJ3sFF2wJoYbUJxK4iZ6CYg6MakFj8q6QHACFd4s");
+export const FOGO_MINT = new PublicKey("FoGoH4MNuR3nPrGb8ckdT6aKBMdFxTMLD2r8vaQUpump");
 export const PAYMENT_TOKEN_MINT = new PublicKey("uSd2czE61Evaf76RNbq4KPpXnkiL3irdzgLFUMe3NoG"); // USDC
+
+// Treasury Accounts (para reparo)
+export const BUYBACK_TREASURY = new PublicKey("GdA82MAfigaBJm6r5UJJRRSVKN958nsh5dngBG1wR71p");
+export const LIQUIDITY_TREASURY = new PublicKey("BXSy9qEa9u4W9sk3GpfnD184ttzyae1PhZXLAqKGgmeB");
+export const OPS_TREASURY = new PublicKey("CAQ9C4GYAkqXDBt9Lqom5iF2oBJEAwjZugWbzfSuw2uG");
+
+// Token Program
+export const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
 // System Program IDs
 export const SYSTEM_PROGRAM_ID = new PublicKey("11111111111111111111111111111111");
