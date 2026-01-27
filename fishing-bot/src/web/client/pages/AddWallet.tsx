@@ -15,7 +15,7 @@ import {
 import { useAuth } from '../providers/AuthProvider'
 import { upsertBot, updateBotConfig, getEncryptionSignature, getBot } from '../lib/api'
 
-// Chave do localStorage para saber se bot já foi configurado
+// Chave do localStorage para saber se bot ja foi configurado
 const BOT_CONFIGURED_KEY = 'fogo_bot_configured_'
 
 export default function AddWallet() {
@@ -25,11 +25,11 @@ export default function AddWallet() {
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string>('')
 
-  // Configurações do bot
+  // Configuracoes do bot
   const [proxy, setProxy] = useState('')
   const [delay, setDelay] = useState(2000)
 
-  // Verifica se já configurou o bot (localStorage ou estado do backend)
+  // Verifica se ja configurou o bot (localStorage ou estado do backend)
   const [hasConfiguredBot, setHasConfiguredBot] = useState(false)
 
   // Carrega do localStorage e busca config do bot ao montar
@@ -55,7 +55,7 @@ export default function AddWallet() {
     }
   }, [walletPubkey])
 
-  // Também marca como configurado se o backend retornar bot
+  // Tambem marca como configurado se o backend retornar bot
   useEffect(() => {
     console.log('[AddWallet] bot changed:', bot)
     if (bot) {
@@ -85,7 +85,7 @@ export default function AddWallet() {
     return true
   }
 
-  // Salva apenas as configurações (proxy, delay)
+  // Salva apenas as configuracoes (proxy, delay)
   const handleSaveConfig = useCallback(async () => {
     if (!validateProxy()) return
 
@@ -100,8 +100,9 @@ export default function AddWallet() {
 
       if (result.success) {
         setStatus('success')
-        setSuccessMessage('Configuracoes salvas!')
+        setSuccessMessage('Configuracoes salvas com sucesso!')
         refreshAccount()
+        setTimeout(() => setStatus('idle'), 3000)
       } else {
         throw new Error(result.error || 'Erro ao salvar')
       }
@@ -112,7 +113,7 @@ export default function AddWallet() {
     }
   }, [proxy, delay, refreshAccount])
 
-  // Cria/recria a sessão do bot
+  // Cria/recria a sessao do bot
   const handleCreateSession = useCallback(async () => {
     if (!isEstablished(sessionState)) {
       setError('Sessao nao estabelecida')
@@ -127,7 +128,7 @@ export default function AddWallet() {
     try {
       const { walletPublicKey, sessionKey } = sessionState
 
-      // Primeiro, tenta exportar a sessão atual
+      // Primeiro, tenta exportar a sessao atual
       let sessionSecretKey: string
       let sessionPublicKey: string
 
@@ -136,7 +137,7 @@ export default function AddWallet() {
         if (!privateKeyJwk.d) {
           throw new Error('Key nao exportavel')
         }
-        // Sessão atual é exportável!
+        // Sessao atual e exportavel!
         sessionSecretKey = privateKeyJwk.d.replace(/-/g, '+').replace(/_/g, '/')
 
         // Exporta public key para base58
@@ -146,7 +147,7 @@ export default function AddWallet() {
 
         console.log('Usando sessao atual (exportavel)')
       } catch {
-        // Sessão atual não é exportável, cria uma nova
+        // Sessao atual nao e exportavel, cria uma nova
         console.log('Sessao atual nao e exportavel, criando nova...')
 
         const connection = createSessionConnection({
@@ -195,7 +196,7 @@ export default function AddWallet() {
         sessionPublicKey = session.sessionPublicKey.toBase58()
       }
 
-      // Obtém a assinatura de criptografia para proteger a session key
+      // Obtem a assinatura de criptografia para proteger a session key
       const encryptionSignature = await getEncryptionSignature()
 
       // Envia para o backend com proxy e delay
@@ -215,6 +216,7 @@ export default function AddWallet() {
           localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
         }
         refreshAccount()
+        setTimeout(() => setStatus('idle'), 3000)
       } else {
         throw new Error(apiResult.error || 'Erro ao salvar')
       }
@@ -225,7 +227,7 @@ export default function AddWallet() {
     }
   }, [sessionState, refreshAccount, proxy, delay])
 
-  // Função auxiliar para converter bytes para Base58
+  // Funcao auxiliar para converter bytes para Base58
   function encodeBase58(bytes: Uint8Array): string {
     const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
     const digits: number[] = [0]
@@ -250,15 +252,33 @@ export default function AddWallet() {
 
   const isSessionEstablished = isEstablished(sessionState)
 
-  // Se não está conectado, mostra tela de conexão
+  // Se nao esta conectado, mostra tela de conexao
   if (!isSessionEstablished) {
     return (
-      <div>
-        <h2>Configurar Bot</h2>
-        <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-          <h3>Conecte sua Carteira</h3>
-          <p style={{ color: '#888', margin: '1.5rem 0' }}>
-            Use sua carteira Phantom ou Solflare para criar uma sessao Fogo.
+      <div style={{ animation: 'fadeIn 0.4s ease' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+          <ConfigHeaderIcon />
+          <h2 style={{
+            margin: 0,
+            fontSize: '1.75rem',
+            fontWeight: 700,
+            background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}>
+            Configurar Bot
+          </h2>
+        </div>
+
+        <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+          <div style={{ marginBottom: '1.5rem' }}>
+            <WalletIcon />
+          </div>
+          <h3 style={{ fontSize: '1.5rem', marginBottom: '0.75rem', fontWeight: 600 }}>Conecte sua Carteira</h3>
+          <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto 2rem' }}>
+            Use sua carteira Phantom ou Solflare para criar uma sessao Fogo e configurar seu bot.
           </p>
           <SessionButton />
         </div>
@@ -271,55 +291,84 @@ export default function AddWallet() {
   const isLoading = status === 'saving' || status === 'creating'
 
   return (
-    <div>
-      <h2>Configurar Bot</h2>
+    <div style={{ animation: 'fadeIn 0.4s ease' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+        <ConfigHeaderIcon />
+        <h2 style={{
+          margin: 0,
+          fontSize: '1.75rem',
+          fontWeight: 700,
+          background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}>
+          Configurar Bot
+        </h2>
+      </div>
 
       {/* Mensagem de sucesso */}
       {status === 'success' && (
         <div style={{
-          padding: '12px 16px',
-          marginBottom: '1rem',
-          backgroundColor: 'rgba(74, 222, 128, 0.1)',
-          border: '1px solid #4ade80',
-          borderRadius: '8px',
-          color: '#4ade80',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          background: 'rgba(63, 185, 80, 0.1)',
+          border: '1px solid rgba(63, 185, 80, 0.3)',
+          borderRadius: '12px',
+          color: 'var(--success)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          animation: 'fadeIn 0.3s ease',
         }}>
-          {successMessage}
+          <SuccessIcon />
+          <span style={{ fontWeight: 500 }}>{successMessage}</span>
         </div>
       )}
 
-      <div className="card">
+      <div className="card" style={{ padding: '28px' }}>
         {/* Info da Wallet */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '10px',
-          marginBottom: '1.5rem',
-          padding: '12px',
-          backgroundColor: 'rgba(74, 222, 128, 0.1)',
-          border: '1px solid #4ade80',
-          borderRadius: '8px',
+          gap: '12px',
+          marginBottom: '28px',
+          padding: '16px',
+          background: 'rgba(63, 185, 80, 0.08)',
+          border: '1px solid rgba(63, 185, 80, 0.2)',
+          borderRadius: '12px',
         }}>
           <div style={{
             width: '10px',
             height: '10px',
-            backgroundColor: '#4ade80',
+            background: 'var(--success)',
             borderRadius: '50%',
+            boxShadow: '0 0 10px var(--success)',
+            animation: 'pulse 2s ease infinite',
           }} />
-          <span style={{ color: '#4ade80' }}>
-            Carteira conectada: {walletPubkey?.slice(0, 8)}...{walletPubkey?.slice(-8)}
+          <span style={{ color: 'var(--success)', fontWeight: 500 }}>
+            Carteira conectada:
+          </span>
+          <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontWeight: 600 }}>
+            {walletPubkey?.slice(0, 6)}...{walletPubkey?.slice(-6)}
           </span>
         </div>
 
         {/* Campo Proxy */}
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div style={{ marginBottom: '24px' }}>
           <label style={{
-            display: 'block',
-            marginBottom: '8px',
-            color: '#c9d1d9',
-            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '10px',
+            color: 'var(--text-primary)',
+            fontWeight: 600,
+            fontSize: '0.95rem',
           }}>
-            Proxy <span style={{ color: '#f85149' }}>*</span>
+            <ProxyIcon />
+            Proxy
+            <span style={{ color: 'var(--danger)', fontSize: '1.1rem' }}>*</span>
           </label>
           <input
             type="text"
@@ -328,29 +377,27 @@ export default function AddWallet() {
             placeholder="http://host:porta ou usuario:senha@host:porta"
             disabled={isLoading}
             style={{
-              width: '100%',
-              padding: '12px',
-              borderRadius: '6px',
-              border: '1px solid #30363d',
-              backgroundColor: '#0d1117',
-              color: '#c9d1d9',
-              fontSize: '0.95rem',
               opacity: isLoading ? 0.6 : 1,
             }}
           />
-          <p style={{ color: '#8b949e', fontSize: '0.85rem', marginTop: '6px' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <InfoIcon />
             Obrigatorio. Use um proxy residencial para evitar bloqueios.
           </p>
         </div>
 
         {/* Campo Delay */}
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div style={{ marginBottom: '28px' }}>
           <label style={{
-            display: 'block',
-            marginBottom: '8px',
-            color: '#c9d1d9',
-            fontWeight: 'bold',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '10px',
+            color: 'var(--text-primary)',
+            fontWeight: 600,
+            fontSize: '0.95rem',
           }}>
+            <TimerIcon />
             Delay entre Casts (ms)
           </label>
           <input
@@ -363,16 +410,11 @@ export default function AddWallet() {
             disabled={isLoading}
             style={{
               width: '200px',
-              padding: '12px',
-              borderRadius: '6px',
-              border: '1px solid #30363d',
-              backgroundColor: '#0d1117',
-              color: '#c9d1d9',
-              fontSize: '0.95rem',
               opacity: isLoading ? 0.6 : 1,
             }}
           />
-          <p style={{ color: '#8b949e', fontSize: '0.85rem', marginTop: '6px' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <InfoIcon />
             Tempo de espera entre cada cast. Minimo: 100ms. Padrao: 2000ms
           </p>
         </div>
@@ -380,82 +422,155 @@ export default function AddWallet() {
         {/* Erro */}
         {error && (
           <div style={{
-            padding: '12px',
-            marginBottom: '1.5rem',
-            backgroundColor: 'rgba(248, 81, 73, 0.1)',
-            border: '1px solid #f85149',
-            borderRadius: '6px',
-            color: '#f85149',
+            padding: '16px',
+            marginBottom: '24px',
+            background: 'rgba(248, 81, 73, 0.1)',
+            border: '1px solid rgba(248, 81, 73, 0.3)',
+            borderRadius: '12px',
+            color: 'var(--danger)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            animation: 'fadeIn 0.3s ease',
           }}>
-            {error}
+            <ErrorIcon />
+            <span>{error}</span>
           </div>
         )}
 
-        {/* Botões */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {/* Botão principal: Salvar Config (se já tem bot) ou Criar Sessão (se não tem) */}
+        {/* Botoes */}
+        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+          {/* Botao principal: Salvar Config (se ja tem bot) ou Criar Sessao (se nao tem) */}
           {showBotConfig ? (
             <>
               <button
                 onClick={handleSaveConfig}
                 disabled={isLoading}
+                className="btn-success"
                 style={{
                   flex: 1,
                   minWidth: '200px',
-                  padding: '14px',
+                  padding: '14px 24px',
                   fontSize: '1rem',
-                  fontWeight: 'bold',
-                  cursor: isLoading ? 'wait' : 'pointer',
-                  opacity: isLoading ? 0.7 : 1,
-                  backgroundColor: '#238636',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
                 }}
               >
-                {status === 'saving' ? 'Salvando...' : 'Salvar Configuracoes'}
+                {status === 'saving' ? (
+                  <>
+                    <Spinner />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <SaveIcon />
+                    Salvar Configuracoes
+                  </>
+                )}
               </button>
               <button
                 onClick={handleCreateSession}
                 disabled={isLoading}
+                className="btn-purple"
                 style={{
-                  padding: '14px 20px',
+                  padding: '14px 24px',
                   fontSize: '0.95rem',
-                  cursor: isLoading ? 'wait' : 'pointer',
-                  opacity: isLoading ? 0.7 : 1,
-                  backgroundColor: '#6e40c9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
                 }}
               >
-                {status === 'creating' ? 'Criando...' : 'Recriar Sessao'}
+                {status === 'creating' ? (
+                  <>
+                    <Spinner />
+                    Criando...
+                  </>
+                ) : (
+                  <>
+                    <RefreshIcon />
+                    Recriar Sessao
+                  </>
+                )}
               </button>
             </>
           ) : (
             <button
               onClick={handleCreateSession}
               disabled={isLoading}
+              className="btn-success"
               style={{
                 width: '100%',
-                padding: '14px',
+                padding: '16px 24px',
                 fontSize: '1rem',
-                fontWeight: 'bold',
-                cursor: isLoading ? 'wait' : 'pointer',
-                opacity: isLoading ? 0.7 : 1,
-                backgroundColor: '#238636',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
               }}
             >
-              {status === 'creating' ? 'Criando Sessao...' : 'Criar Sessao e Configurar Bot'}
+              {status === 'creating' ? (
+                <>
+                  <Spinner />
+                  Criando Sessao...
+                </>
+              ) : (
+                <>
+                  <RocketIcon />
+                  Criar Sessao e Configurar Bot
+                </>
+              )}
             </button>
           )}
         </div>
 
         {status === 'creating' && (
-          <p style={{ color: '#fbbf24', marginTop: '1rem', textAlign: 'center' }}>
+          <p style={{
+            color: 'var(--warning)',
+            marginTop: '16px',
+            textAlign: 'center',
+            padding: '12px',
+            background: 'rgba(210, 153, 34, 0.1)',
+            borderRadius: '8px',
+            border: '1px solid rgba(210, 153, 34, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+          }}>
+            <AlertIcon />
             Criando sessao... Pode ser necessario confirmar na carteira.
           </p>
         )}
       </div>
 
       {/* Info Box */}
-      <div className="card" style={{ marginTop: '1rem', backgroundColor: '#1e293b' }}>
-        <h4>Informacoes</h4>
-        <ul style={{ color: '#888', lineHeight: 1.8, paddingLeft: '1.5rem', margin: 0 }}>
+      <div className="card" style={{
+        marginTop: '20px',
+        padding: '24px',
+        background: 'linear-gradient(145deg, rgba(88, 166, 255, 0.05) 0%, var(--bg-secondary) 100%)',
+        borderColor: 'rgba(88, 166, 255, 0.2)',
+      }}>
+        <h4 style={{
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          color: 'var(--accent)',
+          fontSize: '1rem',
+          fontWeight: 600,
+        }}>
+          <InfoCircleIcon />
+          Informacoes Importantes
+        </h4>
+        <ul style={{
+          color: 'var(--text-secondary)',
+          lineHeight: 2,
+          paddingLeft: '1.25rem',
+          margin: 0,
+        }}>
           <li>O proxy e necessario para evitar rate-limit do jogo</li>
           <li>A sessao expira em 7 dias - use "Recriar Sessao" para renovar</li>
           <li>Sua carteira principal nunca e exposta ao servidor</li>
@@ -463,5 +578,137 @@ export default function AddWallet() {
         </ul>
       </div>
     </div>
+  )
+}
+
+// Icons
+function ConfigHeaderIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  )
+}
+
+function WalletIcon() {
+  return (
+    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.8 }}>
+      <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+      <line x1="1" y1="10" x2="23" y2="10"/>
+    </svg>
+  )
+}
+
+function SuccessIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+      <polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+  )
+}
+
+function ProxyIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="2" y1="12" x2="22" y2="12"/>
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    </svg>
+  )
+}
+
+function TimerIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </svg>
+  )
+}
+
+function InfoIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="16" x2="12" y2="12"/>
+      <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+  )
+}
+
+function ErrorIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="15" y1="9" x2="9" y2="15"/>
+      <line x1="9" y1="9" x2="15" y2="15"/>
+    </svg>
+  )
+}
+
+function SaveIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+      <polyline points="17 21 17 13 7 13 7 21"/>
+      <polyline points="7 3 7 8 15 8"/>
+    </svg>
+  )
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10"/>
+      <polyline points="1 20 1 14 7 14"/>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+    </svg>
+  )
+}
+
+function RocketIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
+      <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
+    </svg>
+  )
+}
+
+function AlertIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+  )
+}
+
+function InfoCircleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="16" x2="12" y2="12"/>
+      <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+  )
+}
+
+function Spinner() {
+  return (
+    <span style={{
+      width: '16px',
+      height: '16px',
+      border: '2px solid rgba(255,255,255,0.3)',
+      borderTopColor: 'white',
+      borderRadius: '50%',
+      display: 'inline-block',
+      animation: 'spin 1s linear infinite',
+    }} />
   )
 }

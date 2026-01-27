@@ -349,6 +349,30 @@ export async function getLogs(params?: {
   return apiRequest(`/logs${queryString ? `?${queryString}` : ""}`);
 }
 
+/**
+ * Obtém dados do player diretamente da blockchain (não requer auth)
+ */
+export async function getPlayerState(walletPubkey: string) {
+  return apiRequest<{
+    exists: boolean;
+    player?: {
+      rodLevel: number;
+      boatTier: number;
+      power: string;
+      currentDurability: number;
+      maxDurability: number;
+      durabilityPercent: number;
+      castCount: string;
+      fishCaughtAllTime: string;
+      unprocessedFish: string;
+      supercastRemainingCasts: number;
+      upgradeInProgress: boolean;
+      upgradeTargetLevel: number;
+    };
+    error?: string;
+  }>(`/player/${walletPubkey}`, { requiresAuth: false });
+}
+
 // ============================================
 // Mensagem de criptografia E2E
 // ============================================

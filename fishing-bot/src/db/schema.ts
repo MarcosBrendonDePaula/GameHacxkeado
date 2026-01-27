@@ -20,6 +20,7 @@ export const bots = sqliteTable("bots", {
   sessionPubkey: text("session_pubkey"), // Public key da session
   delay: integer("delay").default(500),
   proxy: text("proxy"),
+  autoRepair: integer("auto_repair", { mode: "boolean" }).default(true), // Auto-reparo quando durabilidade <= 20%
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

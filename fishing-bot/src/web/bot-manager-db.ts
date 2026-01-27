@@ -44,12 +44,14 @@ class BotInstance {
   private iterationCount = 0;
   private pendingCount = 0;
   private lastFishCaught = "0";
+  private isRepairing = false;
 
   constructor(
     public walletPubkey: string,
     public keypair: Keypair,
     public delay: number,
-    public proxy?: string
+    public proxy?: string,
+    public autoRepair: boolean = true
   ) {
     this.stats = {
       walletPubkey,
@@ -144,13 +146,33 @@ class BotInstance {
         if (playerState) {
           this.lastFishCaught = playerState.fishCaughtAllTime;
           this.stats.rodLevel = playerState.rodLevel;
+          const durabilityPercent = playerState.maxDurability > 0
+            ? Math.round((playerState.currentDurability / playerState.maxDurability) * 100)
+            : 0;
           this.stats.durability = {
             current: playerState.currentDurability,
             max: playerState.maxDurability,
-            percent: playerState.maxDurability > 0
-              ? Math.round((playerState.currentDurability / playerState.maxDurability) * 100)
-              : 0,
+            percent: durabilityPercent,
           };
+
+          // Auto-reparo quando durabilidade <= 20%
+          if (this.autoRepair && durabilityPercent <= 20 && !this.isRepairing) {
+            this.isRepairing = true;
+            await this.addLog("info", `🔧 Durabilidade baixa (${durabilityPercent}%), iniciando reparo automático...`);
+
+            try {
+              const signature = await this.service.repairRod();
+              if (signature) {
+                await this.addLog("success", `🔧 Reparo concluído! Sig: ${signature.slice(0, 12)}...`);
+              } else {
+                await this.addLog("error", `🔧 Falha no reparo automático`);
+              }
+            } catch (error: any) {
+              await this.addLog("error", `🔧 Erro no reparo: ${error.message}`);
+            }
+
+            this.isRepairing = false;
+          }
         }
 
         await Bun.sleep(updateInterval);
@@ -416,7 +438,8 @@ export class BotManager {
         walletPubkey,
         keypair,
         bot.delay || BOT_CONFIG.autocast_delay,
-        bot.proxy || undefined
+        bot.proxy || undefined,
+        bot.autoRepair ?? true
       );
 
       // Inicia
@@ -594,7 +617,7 @@ export class BotManager {
    */
   async updateBotConfig(
     walletPubkey: string,
-    config: { delay?: number; proxy?: string }
+    config: { delay?: number; proxy?: string; autoRepair?: boolean }
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await db
@@ -602,6 +625,7 @@ export class BotManager {
         .set({
           delay: config.delay,
           proxy: config.proxy,
+          autoRepair: config.autoRepair,
           updatedAt: new Date(),
         })
         .where(eq(bots.walletPubkey, walletPubkey));
@@ -610,6 +634,9 @@ export class BotManager {
       const instance = this.runningBots.get(walletPubkey);
       if (instance) {
         instance.stats.delay = config.delay || instance.stats.delay;
+        if (config.autoRepair !== undefined) {
+          instance.autoRepair = config.autoRepair;
+        }
         // Nota: proxy requer reiniciar o bot
       }
 

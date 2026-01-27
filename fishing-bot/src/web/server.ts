@@ -6,6 +6,7 @@ import { botManager } from "./bot-manager-db";
 import { verifySignedRequest, ensureAccountExists, type AuthHeaders } from "../auth";
 import { db, accounts } from "../db";
 import { eq } from "drizzle-orm";
+import { getPlayerReader } from "../services/player-reader";
 
 // Detecta se está rodando como executável compilado ou em Docker
 const exeName = path.basename(Bun.argv[0]).toLowerCase();
@@ -120,6 +121,39 @@ const publicApi = new Elysia({ prefix: "/api" })
     } catch (error: any) {
       return new Response(error.message, { status: 500 });
     }
+  })
+
+  // Busca dados do player diretamente da blockchain (público)
+  .get("/player/:wallet", async ({ params }) => {
+    try {
+      const playerReader = getPlayerReader();
+      const playerState = await playerReader.fetchPlayerState(params.wallet);
+
+      if (!playerState) {
+        return { exists: false, error: "Player não encontrado na blockchain" };
+      }
+
+      return {
+        exists: true,
+        player: {
+          rodLevel: playerState.rodLevel,
+          boatTier: playerState.boatTier,
+          power: playerState.power,
+          currentDurability: playerState.currentDurability,
+          maxDurability: playerState.maxDurability,
+          durabilityPercent: Math.round((playerState.currentDurability / playerState.maxDurability) * 100),
+          castCount: playerState.castCount,
+          fishCaughtAllTime: playerState.fishCaughtAllTime,
+          unprocessedFish: playerState.unprocessedFish,
+          supercastRemainingCasts: playerState.supercastRemainingCasts,
+          upgradeInProgress: playerState.upgradeInProgress,
+          upgradeTargetLevel: playerState.upgradeTargetLevel,
+        },
+      };
+    } catch (error: any) {
+      console.error("Erro ao buscar player:", error);
+      return { exists: false, error: error.message };
+    }
   });
 
 // ============================================
@@ -219,7 +253,8 @@ const protectedApi = new Elysia({ prefix: "/api" })
     }
 
     const isRunning = botManager.isRunning(walletPubkey!);
-    const stats = botManager.getBotStats(walletPubkey!);
+    // Stats em tempo real quando rodando
+    const stats = isRunning ? botManager.getBotStats(walletPubkey!) : null;
 
     return {
       exists: true,
