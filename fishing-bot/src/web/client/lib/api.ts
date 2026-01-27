@@ -262,7 +262,8 @@ export async function upsertBot(params: {
   sessionSecretKey: string;
   sessionPublicKey: string;
   encryptionSignature: string;
-  delay?: number;
+  delayMin?: number;
+  delayMax?: number;
   proxy?: string;
 }) {
   return apiRequest<{ success: boolean; error?: string }>("/bot", {
@@ -275,7 +276,8 @@ export async function upsertBot(params: {
  * Atualiza configurações do bot
  */
 export async function updateBotConfig(params: {
-  delay?: number;
+  delayMin?: number;
+  delayMax?: number;
   proxy?: string;
   autoRepair?: boolean;
   autoRepairMin?: number;

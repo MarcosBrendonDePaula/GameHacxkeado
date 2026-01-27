@@ -260,7 +260,8 @@ const protectedApi = new Elysia({ prefix: "/api" })
       exists: true,
       bot: {
         sessionPubkey: bot.sessionPubkey,
-        delay: bot.delay,
+        delayMin: bot.delayMin,
+        delayMax: bot.delayMax,
         proxy: bot.proxy,
         autoRepair: bot.autoRepair,
         autoRepairMin: bot.autoRepairMin,
@@ -276,9 +277,9 @@ const protectedApi = new Elysia({ prefix: "/api" })
   })
 
   // Cria ou atualiza bot
-  // Body: { sessionSecretKey, sessionPublicKey, encryptionSignature, delay?, proxy? }
+  // Body: { sessionSecretKey, sessionPublicKey, encryptionSignature, delayMin?, delayMax?, proxy? }
   .post("/bot", async ({ walletPubkey, body }) => {
-    const { sessionSecretKey, sessionPublicKey, encryptionSignature, delay, proxy } =
+    const { sessionSecretKey, sessionPublicKey, encryptionSignature, delayMin, delayMax, proxy } =
       body as any;
 
     if (!sessionSecretKey || !sessionPublicKey || !encryptionSignature) {
@@ -293,7 +294,8 @@ const protectedApi = new Elysia({ prefix: "/api" })
       sessionSecretKey,
       sessionPublicKey,
       encryptionSignature,
-      delay,
+      delayMin,
+      delayMax,
       proxy,
     });
 
@@ -302,10 +304,11 @@ const protectedApi = new Elysia({ prefix: "/api" })
 
   // Atualiza configurações do bot
   .patch("/bot", async ({ walletPubkey, body }) => {
-    const { delay, proxy, autoRepair, autoRepairMin, autoRepairMax, autoRestartMinutes } = body as any;
+    const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoRestartMinutes } = body as any;
 
     const result = await botManager.updateBotConfig(walletPubkey!, {
-      delay,
+      delayMin,
+      delayMax,
       proxy,
       autoRepair,
       autoRepairMin,

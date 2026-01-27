@@ -9,7 +9,8 @@ interface BotStats {
   catches: number
   misses: number
   totalFish: number
-  delay: number
+  delayMin: number
+  delayMax: number
   uptime: string
   pendingCasts?: number
   sessionPubkey?: string
@@ -23,7 +24,8 @@ interface BotStats {
 
 interface BotInfo {
   sessionPubkey: string | null
-  delay: number | null
+  delayMin: number | null
+  delayMax: number | null
   proxy: string | null
   enabled: boolean | null
   createdAt: Date | null
@@ -214,7 +216,8 @@ export default function BotInfo() {
   const catches = botStats?.catches || 0
   const misses = botStats?.misses || 0
   const totalFish = botStats?.totalFish || 0
-  const delay = botStats?.delay || botInfo?.delay || 500
+  const delayMin = botStats?.delayMin || botInfo?.delayMin || 1500
+  const delayMax = botStats?.delayMax || botInfo?.delayMax || 3000
   const uptime = botStats?.uptime || '-'
 
   const totalCasts = catches + misses
@@ -382,7 +385,7 @@ export default function BotInfo() {
         <StatCard
           icon={<ZapIcon />}
           label="Delay"
-          value={`${delay}ms`}
+          value={`${delayMin}-${delayMax}ms`}
           color="var(--text-secondary)"
         />
         <StatCard

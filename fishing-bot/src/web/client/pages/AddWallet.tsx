@@ -27,7 +27,8 @@ export default function AddWallet() {
 
   // Configuracoes do bot
   const [proxy, setProxy] = useState('')
-  const [delay, setDelay] = useState(2000)
+  const [delayMin, setDelayMin] = useState(1500)
+  const [delayMax, setDelayMax] = useState(3000)
   const [autoRepair, setAutoRepair] = useState(true)
   const [autoRepairMin, setAutoRepairMin] = useState(15)
   const [autoRepairMax, setAutoRepairMax] = useState(25)
@@ -51,7 +52,8 @@ export default function AddWallet() {
           setHasConfiguredBot(true)
           localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
           if (data.bot.proxy) setProxy(data.bot.proxy)
-          if (data.bot.delay) setDelay(data.bot.delay)
+          if (data.bot.delayMin) setDelayMin(data.bot.delayMin)
+          if (data.bot.delayMax) setDelayMax(data.bot.delayMax)
           if (data.bot.autoRepair !== undefined) setAutoRepair(data.bot.autoRepair)
           if (data.bot.autoRepairMin !== undefined) setAutoRepairMin(data.bot.autoRepairMin)
           if (data.bot.autoRepairMax !== undefined) setAutoRepairMax(data.bot.autoRepairMax)
@@ -71,9 +73,10 @@ export default function AddWallet() {
       if (walletPubkey) {
         localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
       }
-      console.log('[AddWallet] Setting proxy:', bot.proxy, 'delay:', bot.delay)
+      console.log('[AddWallet] Setting proxy:', bot.proxy, 'delayMin:', bot.delayMin, 'delayMax:', bot.delayMax)
       if (bot.proxy) setProxy(bot.proxy)
-      if (bot.delay) setDelay(bot.delay)
+      if (bot.delayMin) setDelayMin(bot.delayMin)
+      if (bot.delayMax) setDelayMax(bot.delayMax)
       if (bot.autoRepair !== undefined) setAutoRepair(bot.autoRepair)
       if (bot.autoRepairMin !== undefined) setAutoRepairMin(bot.autoRepairMin)
       if (bot.autoRepairMax !== undefined) setAutoRepairMax(bot.autoRepairMax)
@@ -107,7 +110,8 @@ export default function AddWallet() {
     try {
       const result = await updateBotConfig({
         proxy: proxy.trim(),
-        delay,
+        delayMin,
+        delayMax,
         autoRepair,
         autoRepairMin,
         autoRepairMax,
@@ -127,7 +131,7 @@ export default function AddWallet() {
       setStatus('error')
       setError(err.message || 'Erro desconhecido')
     }
-  }, [proxy, delay, refreshAccount])
+  }, [proxy, delayMin, delayMax, autoRepair, autoRepairMin, autoRepairMax, autoRestartMinutes, refreshAccount])
 
   // Cria/recria a sessao do bot
   const handleCreateSession = useCallback(async () => {
@@ -221,7 +225,8 @@ export default function AddWallet() {
         sessionPublicKey,
         encryptionSignature,
         proxy: proxy.trim(),
-        delay,
+        delayMin,
+        delayMax,
       })
 
       if (apiResult.success) {
@@ -241,7 +246,7 @@ export default function AddWallet() {
       setStatus('error')
       setError(err.message || 'Erro desconhecido')
     }
-  }, [sessionState, refreshAccount, proxy, delay])
+  }, [sessionState, refreshAccount, proxy, delayMin, delayMax])
 
   // Funcao auxiliar para converter bytes para Base58
   function encodeBase58(bytes: Uint8Array): string {
@@ -416,22 +421,40 @@ export default function AddWallet() {
             <TimerIcon />
             Delay entre Casts (ms)
           </label>
-          <input
-            type="number"
-            value={delay}
-            onChange={(e) => { setDelay(Math.max(100, parseInt(e.target.value) || 500)); setStatus('idle'); }}
-            min={100}
-            max={5000}
-            step={100}
-            disabled={isLoading}
-            style={{
-              width: '200px',
-              opacity: isLoading ? 0.6 : 1,
-            }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Entre</span>
+            <input
+              type="number"
+              value={delayMin}
+              onChange={(e) => { setDelayMin(Math.max(100, parseInt(e.target.value) || 1500)); setStatus('idle'); }}
+              min={100}
+              max={10000}
+              step={100}
+              disabled={isLoading}
+              style={{
+                width: '100px',
+                opacity: isLoading ? 0.6 : 1,
+              }}
+            />
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>e</span>
+            <input
+              type="number"
+              value={delayMax}
+              onChange={(e) => { setDelayMax(Math.max(100, parseInt(e.target.value) || 3000)); setStatus('idle'); }}
+              min={100}
+              max={10000}
+              step={100}
+              disabled={isLoading}
+              style={{
+                width: '100px',
+                opacity: isLoading ? 0.6 : 1,
+              }}
+            />
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>ms</span>
+          </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <InfoIcon />
-            Tempo de espera entre cada cast. Minimo: 100ms. Padrao: 2000ms
+            Delay randomizado entre a range para parecer humano. Padrao: 1500-3000ms
           </p>
         </div>
 

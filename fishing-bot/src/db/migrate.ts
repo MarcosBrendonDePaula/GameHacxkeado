@@ -113,6 +113,29 @@ try {
   }
 }
 
+// Migração: delay -> delay_min/delay_max
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN delay_min INTEGER DEFAULT 1500;`);
+  console.log("  ✓ Coluna 'delay_min' adicionada à tabela bots");
+  // Migra valor do delay antigo para delay_min
+  sqlite.exec(`UPDATE bots SET delay_min = delay WHERE delay IS NOT NULL;`);
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna delay_min:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN delay_max INTEGER DEFAULT 3000;`);
+  console.log("  ✓ Coluna 'delay_max' adicionada à tabela bots");
+  // Define delay_max como delay_min + 1000 para bots existentes
+  sqlite.exec(`UPDATE bots SET delay_max = delay_min + 1000 WHERE delay_max IS NULL AND delay_min IS NOT NULL;`);
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna delay_max:", e.message);
+  }
+}
+
 sqlite.close();
 
 console.log(`✅ Migração concluída com sucesso!`);

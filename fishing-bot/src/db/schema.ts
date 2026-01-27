@@ -18,7 +18,8 @@ export const bots = sqliteTable("bots", {
   encryptedSessionKey: blob("encrypted_session_key", { mode: "buffer" }), // AES-GCM encrypted
   sessionKeyIv: blob("session_key_iv", { mode: "buffer" }), // IV para decriptar
   sessionPubkey: text("session_pubkey"), // Public key da session
-  delay: integer("delay").default(500),
+  delayMin: integer("delay_min").default(1500), // Delay minimo entre casts (ms)
+  delayMax: integer("delay_max").default(3000), // Delay maximo entre casts (ms)
   proxy: text("proxy"),
   autoRepair: integer("auto_repair", { mode: "boolean" }).default(true), // Auto-reparo habilitado
   autoRepairMin: integer("auto_repair_min").default(15), // Durabilidade minima da range (%)

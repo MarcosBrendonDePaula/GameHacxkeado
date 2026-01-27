@@ -18,7 +18,8 @@ export interface BotStats {
   catches: number;
   misses: number;
   totalFish: number;
-  delay: number;
+  delayMin: number;
+  delayMax: number;
   uptime: string;
   startedAt?: Date;
   pendingCasts?: number;
@@ -52,7 +53,8 @@ class BotInstance {
   constructor(
     public walletPubkey: string,
     public keypair: Keypair,
-    public delay: number,
+    public delayMin: number,
+    public delayMax: number,
     public proxy?: string,
     public autoRepair: boolean = true,
     public autoRepairMin: number = 15,
@@ -68,10 +70,20 @@ class BotInstance {
       catches: 0,
       misses: 0,
       totalFish: 0,
-      delay,
+      delayMin,
+      delayMax,
       uptime: "0m",
       sessionPubkey: keypair.publicKey.toBase58(),
     };
+  }
+
+  /**
+   * Gera um delay aleatório dentro da range configurada
+   */
+  private randomDelay(): number {
+    const min = Math.min(this.delayMin, this.delayMax);
+    const max = Math.max(this.delayMin, this.delayMax);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
   /**
@@ -289,10 +301,12 @@ class BotInstance {
           await this.addLog("info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`);
         }
 
-        await Bun.sleep(this.delay);
+        const currentDelay = this.randomDelay();
+        await Bun.sleep(currentDelay);
       } catch (error: any) {
         await this.addLog("error", `❌ Erro no cast: ${error.message}`);
-        await Bun.sleep(this.delay * 2);
+        const errorDelay = this.randomDelay() * 2;
+        await Bun.sleep(errorDelay);
       }
     }
   }
@@ -398,7 +412,8 @@ export class BotManager {
     sessionSecretKey: string; // Base64 encoded (32 bytes)
     sessionPublicKey: string; // Base58
     encryptionSignature: string; // Assinatura para criptografar
-    delay?: number;
+    delayMin?: number;
+    delayMax?: number;
     proxy?: string;
   }): Promise<{ success: boolean; error?: string }> {
     try {
@@ -413,7 +428,8 @@ export class BotManager {
         encryptedSessionKey: encrypted.encrypted,
         sessionKeyIv: encrypted.iv,
         sessionPubkey: params.sessionPublicKey,
-        delay: params.delay || BOT_CONFIG.autocast_delay,
+        delayMin: params.delayMin ?? 1500,
+        delayMax: params.delayMax ?? 3000,
         proxy: params.proxy,
         enabled: true,
         updatedAt: new Date(),
@@ -492,7 +508,8 @@ export class BotManager {
       const instance = new BotInstance(
         walletPubkey,
         keypair,
-        bot.delay || BOT_CONFIG.autocast_delay,
+        bot.delayMin ?? 1500,
+        bot.delayMax ?? 3000,
         bot.proxy || undefined,
         bot.autoRepair ?? true,
         bot.autoRepairMin ?? 15,
@@ -700,12 +717,13 @@ export class BotManager {
    */
   async updateBotConfig(
     walletPubkey: string,
-    config: { delay?: number; proxy?: string; autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number; autoRestartMinutes?: number }
+    config: { delayMin?: number; delayMax?: number; proxy?: string; autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number; autoRestartMinutes?: number }
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // Só inclui campos que foram definidos (evita sobrescrever com undefined)
       const updateData: Record<string, any> = { updatedAt: new Date() };
-      if (config.delay !== undefined) updateData.delay = config.delay;
+      if (config.delayMin !== undefined) updateData.delayMin = config.delayMin;
+      if (config.delayMax !== undefined) updateData.delayMax = config.delayMax;
       if (config.proxy !== undefined) updateData.proxy = config.proxy;
       if (config.autoRepair !== undefined) updateData.autoRepair = config.autoRepair;
       if (config.autoRepairMin !== undefined) updateData.autoRepairMin = config.autoRepairMin;
@@ -720,7 +738,14 @@ export class BotManager {
       // Se o bot está rodando, atualiza as configs em memória
       const instance = this.runningBots.get(walletPubkey);
       if (instance) {
-        instance.stats.delay = config.delay || instance.stats.delay;
+        if (config.delayMin !== undefined) {
+          instance.delayMin = config.delayMin;
+          instance.stats.delayMin = config.delayMin;
+        }
+        if (config.delayMax !== undefined) {
+          instance.delayMax = config.delayMax;
+          instance.stats.delayMax = config.delayMax;
+        }
         if (config.autoRepair !== undefined) {
           instance.autoRepair = config.autoRepair;
         }
