@@ -28,6 +28,7 @@ export default function AddWallet() {
   // Configuracoes do bot
   const [proxy, setProxy] = useState('')
   const [delay, setDelay] = useState(2000)
+  const [autoRestartMinutes, setAutoRestartMinutes] = useState(240)
 
   // Verifica se ja configurou o bot (localStorage ou estado do backend)
   const [hasConfiguredBot, setHasConfiguredBot] = useState(false)
@@ -48,6 +49,7 @@ export default function AddWallet() {
           localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
           if (data.bot.proxy) setProxy(data.bot.proxy)
           if (data.bot.delay) setDelay(data.bot.delay)
+          if (data.bot.autoRestartMinutes !== undefined) setAutoRestartMinutes(data.bot.autoRestartMinutes)
         }
       }).catch(err => {
         console.error('[AddWallet] Erro ao buscar bot:', err)
@@ -66,6 +68,7 @@ export default function AddWallet() {
       console.log('[AddWallet] Setting proxy:', bot.proxy, 'delay:', bot.delay)
       if (bot.proxy) setProxy(bot.proxy)
       if (bot.delay) setDelay(bot.delay)
+      if (bot.autoRestartMinutes !== undefined) setAutoRestartMinutes(bot.autoRestartMinutes)
     }
   }, [bot, walletPubkey])
 
@@ -96,6 +99,7 @@ export default function AddWallet() {
       const result = await updateBotConfig({
         proxy: proxy.trim(),
         delay,
+        autoRestartMinutes,
       })
 
       if (result.success) {
@@ -419,6 +423,39 @@ export default function AddWallet() {
           </p>
         </div>
 
+        {/* Auto Restart */}
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            marginBottom: '12px',
+            color: 'var(--text-primary)',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+          }}>
+            <RestartIcon />
+            Auto Restart (minutos)
+          </label>
+          <input
+            type="number"
+            value={autoRestartMinutes}
+            onChange={(e) => { setAutoRestartMinutes(Math.max(0, parseInt(e.target.value) || 0)); setStatus('idle'); }}
+            min={0}
+            max={1440}
+            step={30}
+            disabled={isLoading}
+            style={{
+              width: '200px',
+              opacity: isLoading ? 0.6 : 1,
+            }}
+          />
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <InfoIcon />
+            Reinicia o bot automaticamente. 0 = desabilitado. Padrao: 240 (4 horas)
+          </p>
+        </div>
+
         {/* Erro */}
         {error && (
           <div style={{
@@ -695,6 +732,15 @@ function InfoCircleIcon() {
       <circle cx="12" cy="12" r="10"/>
       <line x1="12" y1="16" x2="12" y2="12"/>
       <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+  )
+}
+
+function RestartIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 4v6h6"/>
+      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
     </svg>
   )
 }

@@ -45,13 +45,16 @@ class BotInstance {
   private pendingCount = 0;
   private lastFishCaught = "0";
   private isRepairing = false;
+  private autoRestartTimer?: NodeJS.Timeout;
+  private restartCallback?: () => Promise<void>;
 
   constructor(
     public walletPubkey: string,
     public keypair: Keypair,
     public delay: number,
     public proxy?: string,
-    public autoRepair: boolean = true
+    public autoRepair: boolean = true,
+    public autoRestartMinutes: number = 240
   ) {
     this.stats = {
       walletPubkey,
@@ -133,6 +136,35 @@ class BotInstance {
     // Inicia loops em paralelo
     this.castLoop();
     this.stateUpdateLoop();
+
+    // Configura auto-restart se habilitado
+    if (this.autoRestartMinutes > 0) {
+      this.startAutoRestartTimer();
+    }
+  }
+
+  /**
+   * Define callback para restart (chamado pelo BotManager)
+   */
+  setRestartCallback(callback: () => Promise<void>) {
+    this.restartCallback = callback;
+  }
+
+  private startAutoRestartTimer() {
+    if (this.autoRestartTimer) {
+      clearTimeout(this.autoRestartTimer);
+    }
+
+    const intervalMs = this.autoRestartMinutes * 60 * 1000;
+    this.autoRestartTimer = setTimeout(async () => {
+      if (!this.isRunning) return;
+
+      await this.addLog("info", `🔄 Auto-restart programado (${this.autoRestartMinutes} min)`);
+
+      if (this.restartCallback) {
+        await this.restartCallback();
+      }
+    }, intervalMs);
   }
 
   private async stateUpdateLoop() {
@@ -186,6 +218,11 @@ class BotInstance {
     this.isRunning = false;
     this.stats.status = "offline";
     this.pendingCount = 0;
+
+    if (this.autoRestartTimer) {
+      clearTimeout(this.autoRestartTimer);
+      this.autoRestartTimer = undefined;
+    }
 
     if (this.logMonitor) {
       this.logMonitor.close();
@@ -439,8 +476,14 @@ export class BotManager {
         keypair,
         bot.delay || BOT_CONFIG.autocast_delay,
         bot.proxy || undefined,
-        bot.autoRepair ?? true
+        bot.autoRepair ?? true,
+        bot.autoRestartMinutes ?? 240
       );
+
+      // Configura callback de restart
+      instance.setRestartCallback(async () => {
+        await this.restartBot(walletPubkey, encryptionSignature);
+      });
 
       // Inicia
       await instance.start();
@@ -480,6 +523,26 @@ export class BotManager {
       .where(eq(bots.walletPubkey, walletPubkey));
 
     return { success: true };
+  }
+
+  /**
+   * Reinicia o bot (para e inicia novamente)
+   */
+  async restartBot(walletPubkey: string, encryptionSignature: string): Promise<{ success: boolean; error?: string }> {
+    console.log(`🔄 Reiniciando bot ${walletPubkey.slice(0, 8)}...`);
+
+    // Para o bot atual (sem mudar enabled no banco)
+    const instance = this.runningBots.get(walletPubkey);
+    if (instance) {
+      await instance.stop();
+      this.runningBots.delete(walletPubkey);
+    }
+
+    // Aguarda um pouco antes de reiniciar
+    await Bun.sleep(2000);
+
+    // Inicia novamente
+    return this.startBot(walletPubkey, encryptionSignature);
   }
 
   /**
@@ -617,7 +680,7 @@ export class BotManager {
    */
   async updateBotConfig(
     walletPubkey: string,
-    config: { delay?: number; proxy?: string; autoRepair?: boolean }
+    config: { delay?: number; proxy?: string; autoRepair?: boolean; autoRestartMinutes?: number }
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await db
@@ -626,6 +689,7 @@ export class BotManager {
           delay: config.delay,
           proxy: config.proxy,
           autoRepair: config.autoRepair,
+          autoRestartMinutes: config.autoRestartMinutes,
           updatedAt: new Date(),
         })
         .where(eq(bots.walletPubkey, walletPubkey));
@@ -637,7 +701,10 @@ export class BotManager {
         if (config.autoRepair !== undefined) {
           instance.autoRepair = config.autoRepair;
         }
-        // Nota: proxy requer reiniciar o bot
+        if (config.autoRestartMinutes !== undefined) {
+          instance.autoRestartMinutes = config.autoRestartMinutes;
+        }
+        // Nota: proxy e autoRestartMinutes requerem reiniciar o bot para aplicar totalmente
       }
 
       return { success: true };

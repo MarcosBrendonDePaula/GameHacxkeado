@@ -21,6 +21,7 @@ export const bots = sqliteTable("bots", {
   delay: integer("delay").default(500),
   proxy: text("proxy"),
   autoRepair: integer("auto_repair", { mode: "boolean" }).default(true), // Auto-reparo quando durabilidade <= 20%
+  autoRestartMinutes: integer("auto_restart_minutes").default(240), // Auto-restart a cada X minutos (0 = desabilitado)
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

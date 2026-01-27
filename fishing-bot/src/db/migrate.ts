@@ -81,9 +81,17 @@ try {
   sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_repair INTEGER DEFAULT 1;`);
   console.log("  ✓ Coluna 'auto_repair' adicionada à tabela bots");
 } catch (e: any) {
-  // Ignora erro se coluna já existe
   if (!e.message?.includes("duplicate column name")) {
     console.error("  ⚠️ Erro ao adicionar coluna auto_repair:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_restart_minutes INTEGER DEFAULT 240;`);
+  console.log("  ✓ Coluna 'auto_restart_minutes' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_restart_minutes:", e.message);
   }
 }
 
