@@ -1,5 +1,5 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { FishingService } from "../services/fishing";
 import { CastLogMonitor } from "../services/log-monitor";
 import { getPlayerStatePDA } from "../utils/pda";
@@ -668,17 +668,29 @@ export class BotManager {
     const limit = options.limit || 50;
     const offset = options.offset || 0;
 
-    let query = db
+    // Constrói condições de filtro
+    const conditions = [eq(logs.walletPubkey, walletPubkey)];
+    if (options.level) {
+      conditions.push(eq(logs.level, options.level as any));
+    }
+
+    const result = await db
       .select()
       .from(logs)
-      .where(eq(logs.walletPubkey, walletPubkey))
+      .where(and(...conditions))
       .orderBy(desc(logs.timestamp))
       .limit(limit)
       .offset(offset);
 
-    const result = await query;
+    // Conta total com mesmo filtro
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(logs)
+      .where(and(...conditions));
 
-    return { logs: result, total: result.length };
+    const total = countResult[0]?.count || result.length;
+
+    return { logs: result, total };
   }
 
   /**
