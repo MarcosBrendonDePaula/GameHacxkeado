@@ -504,7 +504,7 @@ export default function BotInfo() {
                   </span>
                 </div>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontFamily: 'monospace' }}>
-                  {new Date(r.timestamp).toLocaleTimeString()}
+                  {formatDateTime(new Date(r.timestamp))}
                 </span>
               </div>
             ))}
@@ -530,6 +530,15 @@ export default function BotInfo() {
       </div>
     </div>
   )
+}
+
+// Funções auxiliares
+
+function formatDateTime(date: Date): string {
+  const day = date.getDate().toString().padStart(2, '0')
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const time = date.toLocaleTimeString()
+  return `${day}/${month} ${time}`
 }
 
 // Componentes auxiliares
