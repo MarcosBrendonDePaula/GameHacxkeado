@@ -703,17 +703,18 @@ export class BotManager {
     config: { delay?: number; proxy?: string; autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number; autoRestartMinutes?: number }
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      // Só inclui campos que foram definidos (evita sobrescrever com undefined)
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (config.delay !== undefined) updateData.delay = config.delay;
+      if (config.proxy !== undefined) updateData.proxy = config.proxy;
+      if (config.autoRepair !== undefined) updateData.autoRepair = config.autoRepair;
+      if (config.autoRepairMin !== undefined) updateData.autoRepairMin = config.autoRepairMin;
+      if (config.autoRepairMax !== undefined) updateData.autoRepairMax = config.autoRepairMax;
+      if (config.autoRestartMinutes !== undefined) updateData.autoRestartMinutes = config.autoRestartMinutes;
+
       await db
         .update(bots)
-        .set({
-          delay: config.delay,
-          proxy: config.proxy,
-          autoRepair: config.autoRepair,
-          autoRepairMin: config.autoRepairMin,
-          autoRepairMax: config.autoRepairMax,
-          autoRestartMinutes: config.autoRestartMinutes,
-          updatedAt: new Date(),
-        })
+        .set(updateData)
         .where(eq(bots.walletPubkey, walletPubkey));
 
       // Se o bot está rodando, atualiza as configs em memória
