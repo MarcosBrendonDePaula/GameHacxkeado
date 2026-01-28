@@ -1,4 +1,4 @@
-import WebSocket, { type ClientOptions, type RawData } from "ws";
+import WebSocket, { type ClientOptions } from "ws";
 import { randomBytes } from "crypto";
 import { BOT_CONFIG, CUSTOM_HEADERS } from "../config/constants";
 import { Logger } from "../utils/helpers";
@@ -59,6 +59,8 @@ export class CastLogMonitor {
   private nextRequestId = 1;
   private disposed = false;
   private isSubscribed = false;
+  private reconnectAttempts = 0;
+  private maxReconnectDelay = 30000; // 30 segundos máximo
 
   constructor(rpcEndpoint: string, proxyUrl?: string, label?: string, playerAccount?: string) {
     this.wsEndpoint = deriveWsEndpoint(rpcEndpoint);
@@ -124,6 +126,26 @@ export class CastLogMonitor {
     return Promise.resolve(null);
   }
 
+  /**
+   * Verifica se o WebSocket está saudável (conectado ou tentando reconectar)
+   */
+  isHealthy(): boolean {
+    if (this.disposed) return false;
+
+    // Se está conectado ou conectando, está saudável
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return true;
+    }
+
+    // Se tem um timer de reconexão agendado, ainda está saudável (vai tentar reconectar)
+    if (this.reconnectTimer) {
+      return true;
+    }
+
+    // Caso contrário, está morto
+    return false;
+  }
+
   close() {
     this.disposed = true;
     this.stopPingLoop();
@@ -172,16 +194,18 @@ export class CastLogMonitor {
     this.isSubscribed = false;
 
     this.ws.on("open", () => {
+      this.reconnectAttempts = 0; // Reseta contador ao conectar com sucesso
       this.logger.debug("Websocket conectado");
       this.startPingLoop();
       this.subscribeToAccount();
     });
 
-    this.ws.on("message", (data: RawData) => this.handleMessage(data));
+    this.ws.on("message", (data: any) => this.handleMessage(data));
 
     this.ws.on("close", (code, reason) => {
+      this.reconnectAttempts++;
       this.logger.warn(
-        `Websocket fechado (${code})${reason && reason.length ? ` razão: ${reason.toString()}` : ""}. Reconectando...`
+        `Websocket fechado (${code})${reason && reason.length ? ` razão: ${reason.toString()}` : ""}. Tentativa de reconexão #${this.reconnectAttempts}...`
       );
       this.stopPingLoop();
       this.isSubscribed = false;
@@ -196,7 +220,17 @@ export class CastLogMonitor {
 
   private scheduleReconnect() {
     if (this.disposed || this.reconnectTimer) return;
-    const delay = BOT_CONFIG.ws_reconnect_ms || 1000;
+
+    // Backoff exponencial: aumenta delay a cada falha, mas com limite
+    const baseDelay = BOT_CONFIG.ws_reconnect_ms || 1000;
+    const exponentialDelay = Math.min(
+      baseDelay * Math.pow(1.5, this.reconnectAttempts - 1),
+      this.maxReconnectDelay
+    );
+    const delay = Math.floor(exponentialDelay);
+
+    this.logger.debug(`Reconectando em ${(delay / 1000).toFixed(1)}s...`);
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.connect();
@@ -241,7 +275,7 @@ export class CastLogMonitor {
     }
   }
 
-  private handleMessage(data: RawData) {
+  private handleMessage(data: any) {
     let parsed: any;
     try {
       parsed = JSON.parse(data.toString());

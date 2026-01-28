@@ -196,13 +196,23 @@ class BotInstance {
 
   private async stateUpdateLoop() {
     const updateInterval = 2000;
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 10; // Mais tolerante que o cast loop
 
     while (this.isRunning) {
       try {
-        if (!this.service) break;
+        if (!this.service) {
+          await this.addLog("error", `❌ Service não disponível no stateUpdateLoop, encerrando...`);
+          break;
+        }
 
         const playerState = await this.service.fetchPlayerState();
         if (playerState) {
+          // Reset contador de erros em caso de sucesso
+          if (consecutiveErrors > 0) {
+            consecutiveErrors = 0;
+          }
+
           this.lastFishCaught = playerState.fishCaughtAllTime;
           this.stats.rodLevel = playerState.rodLevel;
           const durabilityPercent = playerState.maxDurability > 0
@@ -235,10 +245,28 @@ class BotInstance {
 
             this.isRepairing = false;
           }
+        } else {
+          // Não conseguiu buscar playerState
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            await this.addLog("error", `❌ Falha ao buscar playerState ${MAX_CONSECUTIVE_ERRORS} vezes, reiniciando bot...`);
+            if (this.restartCallback) {
+              await this.restartCallback();
+            }
+            break;
+          }
         }
 
         await Bun.sleep(updateInterval);
-      } catch {
+      } catch (error: any) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          await this.addLog("error", `❌ Muitos erros no stateUpdateLoop (${MAX_CONSECUTIVE_ERRORS}), reiniciando bot...`);
+          if (this.restartCallback) {
+            await this.restartCallback();
+          }
+          break;
+        }
         await Bun.sleep(updateInterval * 2);
       }
     }
@@ -262,6 +290,9 @@ class BotInstance {
 
   private async castLoop() {
     const botName = `BOT [${this.walletPubkey.slice(0, 8)}...]`;
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
+    const RECOVERY_WAIT_MS = 5000; // 5 segundos para dar chance de reconectar
 
     try {
       const initialState = await this.service?.fetchPlayerState();
@@ -286,7 +317,43 @@ class BotInstance {
 
     while (this.isRunning) {
       try {
-        if (!this.service || !this.logMonitor) break;
+        // Verifica se service existe
+        if (!this.service) {
+          await this.addLog("error", `❌ Service não disponível, encerrando...`);
+          break;
+        }
+
+        // Verifica se logMonitor existe e está saudável
+        if (!this.logMonitor) {
+          await this.addLog("error", `❌ LogMonitor não disponível, encerrando...`);
+          break;
+        }
+
+        if (!this.logMonitor.isHealthy()) {
+          consecutiveErrors++;
+          await this.addLog("warn", `⚠️ WebSocket não está saudável (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}), aguardando reconexão...`);
+
+          // Aguarda um tempo para dar chance de reconectar
+          await Bun.sleep(RECOVERY_WAIT_MS);
+
+          // Se atingiu o máximo de erros, tenta reiniciar o bot
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            await this.addLog("error", `❌ WebSocket falhou ${MAX_CONSECUTIVE_ERRORS} vezes, reiniciando bot...`);
+
+            // Chama callback de restart se disponível
+            if (this.restartCallback) {
+              await this.restartCallback();
+            }
+            break;
+          }
+          continue;
+        }
+
+        // Se chegou aqui, está tudo ok - reseta contador de erros
+        if (consecutiveErrors > 0) {
+          await this.addLog("success", `✅ WebSocket recuperado!`);
+          consecutiveErrors = 0;
+        }
 
         if (this.pendingCount >= 20) {
           await Bun.sleep(200);
@@ -299,12 +366,33 @@ class BotInstance {
           this.logMonitor.registerCast(signature, this.lastFishCaught);
           this.pendingCount++;
           await this.addLog("info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`);
+        } else {
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            await this.addLog("error", `❌ Falha ao enviar cast ${MAX_CONSECUTIVE_ERRORS} vezes, reiniciando bot...`);
+
+            if (this.restartCallback) {
+              await this.restartCallback();
+            }
+            break;
+          }
         }
 
         const currentDelay = this.randomDelay();
         await Bun.sleep(currentDelay);
       } catch (error: any) {
-        await this.addLog("error", `❌ Erro no cast: ${error.message}`);
+        consecutiveErrors++;
+        await this.addLog("error", `❌ Erro no cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${error.message}`);
+
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          await this.addLog("error", `❌ Muitos erros consecutivos, reiniciando bot...`);
+
+          if (this.restartCallback) {
+            await this.restartCallback();
+          }
+          break;
+        }
+
         const errorDelay = this.randomDelay() * 2;
         await Bun.sleep(errorDelay);
       }
