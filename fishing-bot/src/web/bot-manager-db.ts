@@ -30,6 +30,12 @@ export interface BotStats {
     max: number;
     percent: number;
   };
+  websocket?: {
+    status: "connected" | "connecting" | "disconnected" | "reconnecting";
+    reconnectAttempts: number;
+    lastError?: string;
+    lastConnectedAt?: Date;
+  };
 }
 
 /**
@@ -147,11 +153,11 @@ class BotInstance {
         // Salva resultado no banco
         await this.saveResult("catch", fishAmount);
 
-        await this.addLog("success", `🐟 CATCH via WS! +${fishAmount.toFixed(3)} fish`);
+        await this.addLog("success", `🐟 CATCH via WS! +${fishAmount.toFixed(3)} fish`, "websocket");
       } else {
         this.stats.misses++;
         await this.saveResult("miss");
-        await this.addLog("warn", `🔴 MISS via WS`);
+        await this.addLog("warn", `🔴 MISS via WS`, "websocket");
       }
 
       this.updateUptime();
@@ -238,12 +244,12 @@ class BotInstance {
                 // Sorteia novo threshold para próximo reparo
                 const oldThreshold = this.currentRepairThreshold;
                 this.currentRepairThreshold = this.randomThreshold();
-                await this.addLog("success", `🔧 Reparo OK! Próximo em ~${this.currentRepairThreshold}%`);
+                await this.addLog("success", `🔧 Reparo OK! Próximo em ~${this.currentRepairThreshold}%`, "repair");
               } else {
-                await this.addLog("error", `🔧 Falha no reparo automático`);
+                await this.addLog("error", `🔧 Falha no reparo automático`, "repair");
               }
             } catch (error: any) {
-              await this.addLog("error", `🔧 Erro no reparo: ${error.message}`);
+              await this.addLog("error", `🔧 Erro no reparo: ${error.message}`, "repair");
             }
 
             this.isRepairing = false;
@@ -340,11 +346,11 @@ class BotInstance {
 
           this.logMonitor.registerCast(signature, this.lastFishCaught);
           this.pendingCount++;
-          await this.addLog("info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`);
+          await this.addLog("info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`, "cast");
         } else {
           // Cast falhou
           consecutiveErrors++;
-          await this.addLog("warn", `⚠️ Falha ao enviar cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+          await this.addLog("warn", `⚠️ Falha ao enviar cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`, "cast");
 
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
             await this.addLog("error", `❌ Falha ao enviar cast ${MAX_CONSECUTIVE_ERRORS} vezes consecutivas, reiniciando bot...`);
@@ -389,7 +395,7 @@ class BotInstance {
     }
   }
 
-  private async addLog(level: "info" | "success" | "warn" | "error", message: string) {
+  private async addLog(level: "info" | "success" | "warn" | "error", message: string, category: "general" | "websocket" | "cast" | "repair" = "general") {
     // Imprime no console também
     const botName = `BOT [${this.walletPubkey.slice(0, 8)}...]`;
     const levelEmoji = level === "success" ? "✅" : level === "warn" ? "⚠️" : level === "error" ? "❌" : "ℹ️";
@@ -399,6 +405,7 @@ class BotInstance {
       await db.insert(logs).values({
         walletPubkey: this.walletPubkey,
         level,
+        category,
         message,
       });
     } catch (error) {
@@ -443,6 +450,13 @@ class BotInstance {
 
   getPendingCount(): number {
     return this.logMonitor?.getPendingCount() || this.pendingCount;
+  }
+
+  getWebSocketStatus() {
+    if (!this.logMonitor) {
+      return { status: "disconnected" as const, reconnectAttempts: 0 };
+    }
+    return this.logMonitor.getStatus();
   }
 }
 
@@ -673,6 +687,15 @@ export class BotManager {
     }
 
     instance.stats.pendingCasts = instance.getPendingCount();
+
+    // Adiciona informações do WebSocket
+    const wsStatus = instance.getWebSocketStatus();
+    instance.stats.websocket = {
+      status: wsStatus.status,
+      reconnectAttempts: wsStatus.reconnectAttempts,
+      lastError: wsStatus.lastError,
+    };
+
     return instance.stats;
   }
 

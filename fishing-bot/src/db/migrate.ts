@@ -63,6 +63,7 @@ sqlite.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     wallet_pubkey TEXT REFERENCES accounts(wallet_pubkey) ON DELETE CASCADE,
     level TEXT NOT NULL CHECK (level IN ('info', 'success', 'warn', 'error')),
+    category TEXT DEFAULT 'general' CHECK (category IN ('general', 'websocket', 'cast', 'repair')),
     message TEXT NOT NULL,
     timestamp INTEGER NOT NULL DEFAULT (unixepoch())
   );
@@ -74,6 +75,7 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_bot_history_timestamp ON bot_history(timestamp);
   CREATE INDEX IF NOT EXISTS idx_logs_wallet ON logs(wallet_pubkey);
   CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_logs_category ON logs(category);
 `);
 
 // Migrações incrementais (para bancos existentes)
@@ -145,6 +147,16 @@ try {
   console.log("  ✓ Valores de delay_min/delay_max atualizados");
 } catch (e: any) {
   console.error("  ⚠️ Erro ao atualizar valores de delay:", e.message);
+}
+
+// Migração: adicionar coluna category na tabela logs
+try {
+  sqlite.exec(`ALTER TABLE logs ADD COLUMN category TEXT DEFAULT 'general' CHECK (category IN ('general', 'websocket', 'cast', 'repair'));`);
+  console.log("  ✓ Coluna 'category' adicionada à tabela logs");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna category:", e.message);
+  }
 }
 
 sqlite.close();

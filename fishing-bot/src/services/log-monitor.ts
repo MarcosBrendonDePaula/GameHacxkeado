@@ -160,6 +160,37 @@ export class CastLogMonitor {
     return false;
   }
 
+  /**
+   * Retorna informações sobre o estado do WebSocket
+   */
+  getStatus(): {
+    status: "connected" | "connecting" | "disconnected" | "reconnecting";
+    reconnectAttempts: number;
+    lastError?: string;
+  } {
+    if (this.disposed) {
+      return { status: "disconnected", reconnectAttempts: this.reconnectAttempts };
+    }
+
+    if (this.ws) {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        return { status: "connected", reconnectAttempts: 0 };
+      }
+      if (this.ws.readyState === WebSocket.CONNECTING) {
+        return {
+          status: this.reconnectAttempts > 0 ? "reconnecting" : "connecting",
+          reconnectAttempts: this.reconnectAttempts
+        };
+      }
+    }
+
+    if (this.reconnectTimer) {
+      return { status: "reconnecting", reconnectAttempts: this.reconnectAttempts };
+    }
+
+    return { status: "disconnected", reconnectAttempts: this.reconnectAttempts };
+  }
+
   close() {
     this.disposed = true;
     this.stopPingLoop();

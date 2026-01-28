@@ -70,6 +70,7 @@ export const logs = sqliteTable("logs", {
     onDelete: "cascade",
   }),
   level: text("level", { enum: ["info", "success", "warn", "error"] }).notNull(),
+  category: text("category", { enum: ["general", "websocket", "cast", "repair"] }).default("general"),
   message: text("message").notNull(),
   timestamp: integer("timestamp", { mode: "timestamp" })
     .notNull()
