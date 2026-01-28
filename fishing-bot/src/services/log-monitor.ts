@@ -130,17 +130,31 @@ export class CastLogMonitor {
    * Verifica se o WebSocket está saudável (conectado ou tentando reconectar)
    */
   isHealthy(): boolean {
-    if (this.disposed) return false;
+    if (this.disposed) {
+      this.logger.debug(`isHealthy: disposed = true`);
+      return false;
+    }
 
-    // Se está conectado ou conectando, está saudável
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    // Se está conectado, está saudável
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       return true;
     }
 
-    // Se tem um timer de reconexão agendado, ainda está saudável (vai tentar reconectar)
-    if (this.reconnectTimer) {
+    // Se está conectando E é a primeira tentativa, aguarda
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING && this.reconnectAttempts === 0) {
+      this.logger.debug(`isHealthy: Primeira conexão em andamento...`);
       return true;
     }
+
+    // Se tem um timer de reconexão agendado E não passou de muitas tentativas
+    if (this.reconnectTimer && this.reconnectAttempts < 10) {
+      this.logger.debug(`isHealthy: Aguardando reconexão (tentativa ${this.reconnectAttempts})...`);
+      return true;
+    }
+
+    // Log do estado atual
+    const wsState = this.ws ? ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][this.ws.readyState] : 'null';
+    this.logger.debug(`isHealthy: FALSE - ws=${wsState}, reconnectTimer=${!!this.reconnectTimer}, attempts=${this.reconnectAttempts}`);
 
     // Caso contrário, está morto
     return false;
@@ -189,13 +203,14 @@ export class CastLogMonitor {
       options.agent = this.proxyAgent;
     }
 
-    this.logger.debug(`Conectando websocket em ${this.wsEndpoint}...`);
+    const attemptInfo = this.reconnectAttempts > 0 ? ` (tentativa #${this.reconnectAttempts})` : "";
+    this.logger.info(`🔌 Conectando websocket${attemptInfo}...`);
     this.ws = new WebSocket(this.wsEndpoint, options);
     this.isSubscribed = false;
 
     this.ws.on("open", () => {
       this.reconnectAttempts = 0; // Reseta contador ao conectar com sucesso
-      this.logger.debug("Websocket conectado");
+      this.logger.success("✅ Websocket conectado com sucesso!");
       this.startPingLoop();
       this.subscribeToAccount();
     });
@@ -214,7 +229,14 @@ export class CastLogMonitor {
     });
 
     this.ws.on("error", (error) => {
-      this.logger.warn(`Erro no websocket: ${(error as Error).message}`);
+      this.logger.error(`❌ Erro no websocket: ${(error as Error).message}`);
+      // Log mais detalhado
+      if ((error as any).code) {
+        this.logger.error(`   Código: ${(error as any).code}`);
+      }
+      if ((error as any).syscall) {
+        this.logger.error(`   Syscall: ${(error as any).syscall}`);
+      }
     });
   }
 

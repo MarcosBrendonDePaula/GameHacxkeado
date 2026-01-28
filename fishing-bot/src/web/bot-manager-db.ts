@@ -132,6 +132,9 @@ class BotInstance {
       playerStatePDA.toBase58()
     );
 
+    // Força início da conexão WebSocket (registra um cast dummy)
+    this.logMonitor.registerCast("dummy", "0");
+
     // Configura callback para resultados do WebSocket
     this.logMonitor.onResult(async (result) => {
       this.pendingCount = Math.max(0, this.pendingCount - 1);
@@ -291,8 +294,7 @@ class BotInstance {
   private async castLoop() {
     const botName = `BOT [${this.walletPubkey.slice(0, 8)}...]`;
     let consecutiveErrors = 0;
-    const MAX_CONSECUTIVE_ERRORS = 5;
-    const RECOVERY_WAIT_MS = 5000; // 5 segundos para dar chance de reconectar
+    const MAX_CONSECUTIVE_ERRORS = 10; // Mais tolerante, WebSocket reconecta em background
 
     try {
       const initialState = await this.service?.fetchPlayerState();
@@ -317,42 +319,10 @@ class BotInstance {
 
     while (this.isRunning) {
       try {
-        // Verifica se service existe
-        if (!this.service) {
-          await this.addLog("error", `❌ Service não disponível, encerrando...`);
+        // Verifica apenas se service e logMonitor existem (não verifica se estão conectados)
+        if (!this.service || !this.logMonitor) {
+          await this.addLog("error", `❌ Service ou LogMonitor não disponível, encerrando...`);
           break;
-        }
-
-        // Verifica se logMonitor existe e está saudável
-        if (!this.logMonitor) {
-          await this.addLog("error", `❌ LogMonitor não disponível, encerrando...`);
-          break;
-        }
-
-        if (!this.logMonitor.isHealthy()) {
-          consecutiveErrors++;
-          await this.addLog("warn", `⚠️ WebSocket não está saudável (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}), aguardando reconexão...`);
-
-          // Aguarda um tempo para dar chance de reconectar
-          await Bun.sleep(RECOVERY_WAIT_MS);
-
-          // Se atingiu o máximo de erros, tenta reiniciar o bot
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            await this.addLog("error", `❌ WebSocket falhou ${MAX_CONSECUTIVE_ERRORS} vezes, reiniciando bot...`);
-
-            // Chama callback de restart se disponível
-            if (this.restartCallback) {
-              await this.restartCallback();
-            }
-            break;
-          }
-          continue;
-        }
-
-        // Se chegou aqui, está tudo ok - reseta contador de erros
-        if (consecutiveErrors > 0) {
-          await this.addLog("success", `✅ WebSocket recuperado!`);
-          consecutiveErrors = 0;
         }
 
         if (this.pendingCount >= 20) {
@@ -363,13 +333,21 @@ class BotInstance {
         const signature = await this.service.castLine(false);
 
         if (signature) {
+          // Cast bem-sucedido - reseta contador de erros
+          if (consecutiveErrors > 0) {
+            consecutiveErrors = 0;
+          }
+
           this.logMonitor.registerCast(signature, this.lastFishCaught);
           this.pendingCount++;
           await this.addLog("info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`);
         } else {
+          // Cast falhou
           consecutiveErrors++;
+          await this.addLog("warn", `⚠️ Falha ao enviar cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`);
+
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            await this.addLog("error", `❌ Falha ao enviar cast ${MAX_CONSECUTIVE_ERRORS} vezes, reiniciando bot...`);
+            await this.addLog("error", `❌ Falha ao enviar cast ${MAX_CONSECUTIVE_ERRORS} vezes consecutivas, reiniciando bot...`);
 
             if (this.restartCallback) {
               await this.restartCallback();
