@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSession, isEstablished, SessionStateType } from "@fogo/sessions-sdk-react";
-import { setWallet, getMe, getEncryptionSignature } from "../lib/api";
+import { setWallet, getMe } from "../lib/api";
 
 interface AuthContextType {
   // Estado da wallet/sessão
@@ -16,7 +16,6 @@ interface AuthContextType {
 
   // Ações
   refreshAccount: () => Promise<void>;
-  getEncryptionSignature: () => Promise<string>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -152,7 +151,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isLoading,
     error,
     refreshAccount,
-    getEncryptionSignature,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

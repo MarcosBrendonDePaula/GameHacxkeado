@@ -1,13 +1,87 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, lt } from "drizzle-orm";
 import { FishingService } from "../services/fishing";
 import { CastLogMonitor } from "../services/log-monitor";
 import { getPlayerStatePDA } from "../utils/pda";
 import { BOT_CONFIG } from "../config/constants";
 import { db, bots, castResults, botHistory, logs, accounts } from "../db";
 import type { Bot, NewBot, NewCastResult, NewBotHistory, NewLog } from "../db";
-import { decryptSessionKey, encryptSessionKey, sessionKeyFromBase64 } from "../crypto";
 import * as path from "path";
+
+// Requisitos de casts por nível para upgrade (L2-L60)
+const UPGRADE_CAST_REQUIREMENTS = [
+  0, 0, 3750, 3869, 3998, 4139, 4291, 4457, 4636, 4831, 5042, 5271, 5520, 5789, 6082, 6400, 6746, 7122, 7531,
+  7976, 8461, 8991, 9569, 10200, 10891, 11647, 12476, 13384, 14382, 15480, 16687, 18017, 19484, 21104, 22895,
+  24876, 27073, 29509, 32215, 35225, 38576, 42312, 46482, 51144, 56360, 62205, 68762, 76129, 84416, 93749, 104275,
+  116162, 129602, 144820, 162073, 181659, 203924, 229267, 258152, 291119, 328795
+];
+
+// ============================================================
+// DB Write Batcher - acumula INSERTs e grava em lote
+// Reduz de ~500 INSERTs/sec para ~5 batch INSERTs/sec
+// ============================================================
+class DbWriteBatcher {
+  private logBuffer: NewLog[] = [];
+  private resultBuffer: { walletPubkey: string; type: "catch" | "miss"; fishAmount?: number }[] = [];
+  private historyBuffer: NewBotHistory[] = [];
+  private flushTimer: ReturnType<typeof setInterval>;
+  private static readonly FLUSH_INTERVAL = 2000; // flush a cada 2s
+  private static readonly BUFFER_LIMIT = 100; // flush se buffer > 100
+
+  constructor() {
+    this.flushTimer = setInterval(() => this.flush(), DbWriteBatcher.FLUSH_INTERVAL);
+  }
+
+  addLog(entry: NewLog) {
+    this.logBuffer.push(entry);
+    if (this.logBuffer.length >= DbWriteBatcher.BUFFER_LIMIT) this.flushLogs();
+  }
+
+  addResult(walletPubkey: string, type: "catch" | "miss", fishAmount?: number) {
+    this.resultBuffer.push({ walletPubkey, type, fishAmount });
+    if (this.resultBuffer.length >= DbWriteBatcher.BUFFER_LIMIT) this.flushResults();
+  }
+
+  addHistory(entry: NewBotHistory) {
+    this.historyBuffer.push(entry);
+  }
+
+  private flushLogs() {
+    if (this.logBuffer.length === 0) return;
+    const batch = this.logBuffer.splice(0);
+    db.insert(logs).values(batch).catch((e) => console.error("Batch log error:", e));
+  }
+
+  private flushResults() {
+    if (this.resultBuffer.length === 0) return;
+    const batch = this.resultBuffer.splice(0);
+    db.insert(castResults).values(batch.map(r => ({
+      walletPubkey: r.walletPubkey,
+      type: r.type,
+      fishAmount: r.fishAmount,
+    }))).catch((e) => console.error("Batch result error:", e));
+  }
+
+  private flushHistory() {
+    if (this.historyBuffer.length === 0) return;
+    const batch = this.historyBuffer.splice(0);
+    db.insert(botHistory).values(batch).catch((e) => console.error("Batch history error:", e));
+  }
+
+  flush() {
+    this.flushLogs();
+    this.flushResults();
+    this.flushHistory();
+  }
+
+  stop() {
+    clearInterval(this.flushTimer);
+    this.flush();
+  }
+}
+
+// Singleton do batcher
+const dbBatcher = new DbWriteBatcher();
 
 /**
  * Stats do bot para exibição
@@ -29,6 +103,15 @@ export interface BotStats {
     current: number;
     max: number;
     percent: number;
+  };
+  upgrade?: {
+    inProgress: boolean;
+    targetLevel: number;
+    castsRequired: number;
+    castsDone: number;
+    castsRemaining: number;
+    percent: number;
+    estimatedSeconds: number;
   };
   websocket?: {
     status: "connected" | "connecting" | "disconnected" | "reconnecting";
@@ -52,6 +135,9 @@ class BotInstance {
   private pendingCount = 0;
   private lastFishCaught = "0";
   private isRepairing = false;
+  private isFinishingUpgrade = false;
+  private upgradeRetryCount = 0;
+  private upgradeNextRetryTime = 0;
   private autoRestartTimer?: NodeJS.Timeout;
   private restartCallback?: () => Promise<void>;
   private currentRepairThreshold: number = 20; // Threshold atual (randomizado)
@@ -65,6 +151,7 @@ class BotInstance {
     public autoRepair: boolean = true,
     public autoRepairMin: number = 15,
     public autoRepairMax: number = 25,
+    public autoUpgrade: boolean = false,
     public autoRestartMinutes: number = 240
   ) {
     // Sorteia threshold inicial dentro da range
@@ -139,7 +226,7 @@ class BotInstance {
     );
 
     // Força início da conexão WebSocket (registra um cast dummy)
-    this.logMonitor.registerCast("dummy", "0");
+    this.logMonitor.registerCast("dummy");
 
     // Configura callback para resultados do WebSocket
     this.logMonitor.onResult(async (result) => {
@@ -151,13 +238,13 @@ class BotInstance {
         this.stats.totalFish += fishAmount;
 
         // Salva resultado no banco
-        await this.saveResult("catch", fishAmount);
+        this.saveResult("catch", fishAmount);
 
-        await this.addLog("success", `🐟 CATCH via WS! +${fishAmount.toFixed(3)} fish`, "websocket");
+        this.addLog("success", `🐟 CATCH via WS! +${fishAmount.toFixed(3)} fish`, "websocket");
       } else {
         this.stats.misses++;
-        await this.saveResult("miss");
-        await this.addLog("warn", `🔴 MISS via WS`, "websocket");
+        this.saveResult("miss");
+        this.addLog("warn", `🔴 MISS via WS`, "websocket");
       }
 
       this.updateUptime();
@@ -165,7 +252,7 @@ class BotInstance {
       // Registra ponto no histórico a cada 5 resultados
       this.iterationCount++;
       if (this.iterationCount % 5 === 0) {
-        await this.recordHistoryPoint();
+        this.recordHistoryPoint();
       }
     });
 
@@ -195,7 +282,7 @@ class BotInstance {
     this.autoRestartTimer = setTimeout(async () => {
       if (!this.isRunning) return;
 
-      await this.addLog("info", `🔄 Auto-restart programado (${this.autoRestartMinutes} min)`);
+      this.addLog("info", `🔄 Auto-restart programado (${this.autoRestartMinutes} min)`);
 
       if (this.restartCallback) {
         await this.restartCallback();
@@ -211,7 +298,7 @@ class BotInstance {
     while (this.isRunning) {
       try {
         if (!this.service) {
-          await this.addLog("error", `❌ Service não disponível no stateUpdateLoop, encerrando...`);
+          this.addLog("error", `❌ Service não disponível no stateUpdateLoop, encerrando...`);
           break;
         }
 
@@ -236,7 +323,7 @@ class BotInstance {
           // Auto-reparo quando durabilidade <= threshold (randomizado)
           if (this.autoRepair && durabilityPercent <= this.currentRepairThreshold && !this.isRepairing) {
             this.isRepairing = true;
-            await this.addLog("info", `🔧 Durabilidade ${durabilityPercent}% (threshold: ${this.currentRepairThreshold}%), reparando...`);
+            this.addLog("info", `🔧 Durabilidade ${durabilityPercent}% (threshold: ${this.currentRepairThreshold}%), reparando...`);
 
             try {
               const signature = await this.service.repairRod();
@@ -244,21 +331,109 @@ class BotInstance {
                 // Sorteia novo threshold para próximo reparo
                 const oldThreshold = this.currentRepairThreshold;
                 this.currentRepairThreshold = this.randomThreshold();
-                await this.addLog("success", `🔧 Reparo OK! Próximo em ~${this.currentRepairThreshold}%`, "repair");
+                this.addLog("success", `🔧 Reparo OK! Próximo em ~${this.currentRepairThreshold}%`, "repair");
               } else {
-                await this.addLog("error", `🔧 Falha no reparo automático`, "repair");
+                this.addLog("error", `🔧 Falha no reparo automático`, "repair");
               }
             } catch (error: any) {
-              await this.addLog("error", `🔧 Erro no reparo: ${error.message}`, "repair");
+              this.addLog("error", `🔧 Erro no reparo: ${error.message}`, "repair");
             }
 
             this.isRepairing = false;
+          }
+
+          // Calcula progresso do upgrade para stats
+          if (playerState.upgradeInProgress) {
+            const targetLevel = playerState.upgradeTargetLevel;
+            const castsRequired = UPGRADE_CAST_REQUIREMENTS[targetLevel] || 0;
+            const castsDone = parseInt(playerState.castCount) - parseInt(playerState.upgradeCastsAtStart);
+            const castsRemaining = Math.max(0, castsRequired - castsDone);
+            const percent = castsRequired > 0 ? Math.min(100, Math.round((castsDone / castsRequired) * 100)) : 0;
+
+            // Estima tempo: delay médio + ~500ms overhead por cast
+            const avgDelay = (this.delayMin + this.delayMax) / 2;
+            const msPerCast = avgDelay + 500;
+            const estimatedSeconds = Math.round((castsRemaining * msPerCast) / 1000);
+
+            this.stats.upgrade = {
+              inProgress: true,
+              targetLevel,
+              castsRequired,
+              castsDone,
+              castsRemaining,
+              percent,
+              estimatedSeconds,
+            };
+          } else {
+            this.stats.upgrade = undefined;
+          }
+
+          // Auto-finish upgrade quando requisito de casts atingido
+          if (playerState.upgradeInProgress && !this.isFinishingUpgrade) {
+            const targetLevel = playerState.upgradeTargetLevel;
+            const castsRequired = UPGRADE_CAST_REQUIREMENTS[targetLevel] || 0;
+            const castsDone = parseInt(playerState.castCount) - parseInt(playerState.upgradeCastsAtStart);
+
+            const MAX_UPGRADE_RETRIES = 5;
+            if (castsDone >= castsRequired && castsRequired > 0 && Date.now() >= this.upgradeNextRetryTime && this.upgradeRetryCount < MAX_UPGRADE_RETRIES) {
+              this.isFinishingUpgrade = true;
+              this.addLog("info", `🔨 Upgrade para level ${targetLevel} pronto! Finalizando automaticamente... (tentativa ${this.upgradeRetryCount + 1}/${MAX_UPGRADE_RETRIES})`);
+
+              try {
+                const result = await this.finishUpgrade();
+                if (result.success) {
+                  this.addLog("success", `🔨 Upgrade para level ${targetLevel} finalizado com sucesso!`);
+                  this.upgradeRetryCount = 0;
+                  this.upgradeNextRetryTime = 0;
+                } else {
+                  this.upgradeRetryCount++;
+                  const backoffMs = Math.min(300_000, 30_000 * Math.pow(2, this.upgradeRetryCount - 1));
+                  this.upgradeNextRetryTime = Date.now() + backoffMs;
+                  this.addLog("error", `🔨 Falha ao finalizar upgrade: ${result.error} (retry em ${Math.round(backoffMs / 1000)}s)`);
+                }
+              } catch (error: any) {
+                this.upgradeRetryCount++;
+                const backoffMs = Math.min(300_000, 30_000 * Math.pow(2, this.upgradeRetryCount - 1));
+                this.upgradeNextRetryTime = Date.now() + backoffMs;
+                this.addLog("error", `🔨 Erro ao finalizar upgrade: ${error.message} (retry em ${Math.round(backoffMs / 1000)}s)`);
+              }
+
+              this.isFinishingUpgrade = false;
+            } else if (this.upgradeRetryCount >= MAX_UPGRADE_RETRIES && castsDone >= castsRequired) {
+              // Log only once when max retries exceeded
+              if (this.upgradeRetryCount === MAX_UPGRADE_RETRIES) {
+                this.addLog("error", `🔨 Auto-finish upgrade desativado após ${MAX_UPGRADE_RETRIES} falhas. Finalize manualmente pelo dashboard.`);
+                this.upgradeRetryCount++; // prevent re-logging
+              }
+            }
+          } else if (!playerState.upgradeInProgress && this.upgradeRetryCount > 0) {
+            // Reset retry state when upgrade is no longer in progress
+            this.upgradeRetryCount = 0;
+            this.upgradeNextRetryTime = 0;
+          }
+
+          // Auto-start upgrade quando não tem upgrade em progresso e autoUpgrade está ligado
+          if (this.autoUpgrade && !playerState.upgradeInProgress && !this.isFinishingUpgrade) {
+            const nextLevel = playerState.rodLevel + 1;
+            if (nextLevel <= 60) {
+              this.addLog("info", `🔨 Auto-upgrade: iniciando upgrade para level ${nextLevel}...`);
+              try {
+                const result = await this.startUpgrade(nextLevel);
+                if (result.success) {
+                  this.addLog("success", `🔨 Auto-upgrade para level ${nextLevel} iniciado!`);
+                } else {
+                  this.addLog("error", `🔨 Falha no auto-upgrade: ${result.error}`);
+                }
+              } catch (error: any) {
+                this.addLog("error", `🔨 Erro no auto-upgrade: ${error.message}`);
+              }
+            }
           }
         } else {
           // Não conseguiu buscar playerState
           consecutiveErrors++;
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            await this.addLog("error", `❌ Falha ao buscar playerState ${MAX_CONSECUTIVE_ERRORS} vezes, reiniciando bot...`);
+            this.addLog("error", `❌ Falha ao buscar playerState ${MAX_CONSECUTIVE_ERRORS} vezes, reiniciando bot...`);
             if (this.restartCallback) {
               await this.restartCallback();
             }
@@ -270,7 +445,7 @@ class BotInstance {
       } catch (error: any) {
         consecutiveErrors++;
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-          await this.addLog("error", `❌ Muitos erros no stateUpdateLoop (${MAX_CONSECUTIVE_ERRORS}), reiniciando bot...`);
+          this.addLog("error", `❌ Muitos erros no stateUpdateLoop (${MAX_CONSECUTIVE_ERRORS}), reiniciando bot...`);
           if (this.restartCallback) {
             await this.restartCallback();
           }
@@ -315,19 +490,19 @@ class BotInstance {
           max: initialState.maxDurability,
           percent: durabilityPercent,
         };
-        await this.addLog("info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish | 🎣 Rod Level: ${initialState.rodLevel} | 🔧 Durabilidade: ${durabilityPercent}%`);
+        this.addLog("info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish | 🎣 Rod Level: ${initialState.rodLevel} | 🔧 Durabilidade: ${durabilityPercent}%`);
       } else {
-        await this.addLog("info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish`);
+        this.addLog("info", `📊 Estado inicial: ${(parseInt(this.lastFishCaught) / 1_000_000).toFixed(2)} fish`);
       }
     } catch {
-      await this.addLog("warn", `⚠️ Não foi possível buscar estado inicial`);
+      this.addLog("warn", `⚠️ Não foi possível buscar estado inicial`);
     }
 
     while (this.isRunning) {
       try {
         // Verifica apenas se service e logMonitor existem (não verifica se estão conectados)
         if (!this.service || !this.logMonitor) {
-          await this.addLog("error", `❌ Service ou LogMonitor não disponível, encerrando...`);
+          this.addLog("error", `❌ Service ou LogMonitor não disponível, encerrando...`);
           break;
         }
 
@@ -344,16 +519,16 @@ class BotInstance {
             consecutiveErrors = 0;
           }
 
-          this.logMonitor.registerCast(signature, this.lastFishCaught);
+          this.logMonitor.registerCast(signature);
           this.pendingCount++;
-          await this.addLog("info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`, "cast");
+          this.addLog("info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`, "cast");
         } else {
           // Cast falhou
           consecutiveErrors++;
-          await this.addLog("warn", `⚠️ Falha ao enviar cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`, "cast");
+          this.addLog("warn", `⚠️ Falha ao enviar cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`, "cast");
 
           if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            await this.addLog("error", `❌ Falha ao enviar cast ${MAX_CONSECUTIVE_ERRORS} vezes consecutivas, reiniciando bot...`);
+            this.addLog("error", `❌ Falha ao enviar cast ${MAX_CONSECUTIVE_ERRORS} vezes consecutivas, reiniciando bot...`);
 
             if (this.restartCallback) {
               await this.restartCallback();
@@ -366,10 +541,10 @@ class BotInstance {
         await Bun.sleep(currentDelay);
       } catch (error: any) {
         consecutiveErrors++;
-        await this.addLog("error", `❌ Erro no cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${error.message}`);
+        this.addLog("error", `❌ Erro no cast (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${error.message}`);
 
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-          await this.addLog("error", `❌ Muitos erros consecutivos, reiniciando bot...`);
+          this.addLog("error", `❌ Muitos erros consecutivos, reiniciando bot...`);
 
           if (this.restartCallback) {
             await this.restartCallback();
@@ -383,60 +558,34 @@ class BotInstance {
     }
   }
 
-  private async saveResult(type: "catch" | "miss", fishAmount?: number) {
-    try {
-      await db.insert(castResults).values({
-        walletPubkey: this.walletPubkey,
-        type,
-        fishAmount,
-      });
-    } catch (error) {
-      console.error("Erro ao salvar resultado:", error);
-    }
+  private saveResult(type: "catch" | "miss", fishAmount?: number) {
+    dbBatcher.addResult(this.walletPubkey, type, fishAmount);
   }
 
-  private async addLog(level: "info" | "success" | "warn" | "error", message: string, category: "general" | "websocket" | "cast" | "repair" = "general") {
-    // Imprime no console também
+  private addLog(level: "info" | "success" | "warn" | "error", message: string, category: "general" | "websocket" | "cast" | "repair" = "general") {
     const botName = `BOT [${this.walletPubkey.slice(0, 8)}...]`;
     const levelEmoji = level === "success" ? "✅" : level === "warn" ? "⚠️" : level === "error" ? "❌" : "ℹ️";
     console.log(`${botName} ${levelEmoji} ${message}`);
 
-    try {
-      await db.insert(logs).values({
-        walletPubkey: this.walletPubkey,
-        level,
-        category,
-        message,
-      });
-    } catch (error) {
-      console.error("Erro ao salvar log:", error);
-    }
+    dbBatcher.addLog({
+      walletPubkey: this.walletPubkey,
+      level,
+      category,
+      message,
+    });
   }
 
-  private async recordHistoryPoint() {
-    let durabilityPercent: number | undefined;
-    try {
-      const playerState = await this.service?.fetchPlayerState();
-      if (playerState) {
-        const current = playerState.currentDurability;
-        const max = playerState.maxDurability;
-        durabilityPercent = max > 0 ? (current / max) * 100 : 0;
-      }
-    } catch {
-      // Ignora erro
-    }
+  private recordHistoryPoint() {
+    // Usa durabilidade ja em memoria (do stateUpdateLoop) em vez de RPC extra
+    const durabilityPercent = this.stats.durability?.percent;
 
-    try {
-      await db.insert(botHistory).values({
-        walletPubkey: this.walletPubkey,
-        catches: this.stats.catches,
-        misses: this.stats.misses,
-        totalFish: this.stats.totalFish,
-        durability: durabilityPercent,
-      });
-    } catch (error) {
-      console.error("Erro ao salvar histórico:", error);
-    }
+    dbBatcher.addHistory({
+      walletPubkey: this.walletPubkey,
+      catches: this.stats.catches,
+      misses: this.stats.misses,
+      totalFish: this.stats.totalFish,
+      durability: durabilityPercent,
+    });
   }
 
   private updateUptime() {
@@ -457,6 +606,38 @@ class BotInstance {
       return { status: "disconnected" as const, reconnectAttempts: 0 };
     }
     return this.logMonitor.getStatus();
+  }
+
+  async startUpgrade(targetLevel: number): Promise<{ success: boolean; error?: string }> {
+    if (!this.service) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    try {
+      const signature = await this.service.startUpgrade(targetLevel);
+      if (signature) {
+        this.addLog("success", `🔨 Upgrade para level ${targetLevel} iniciado!`, "general");
+        return { success: true };
+      }
+      return { success: false, error: "Falha ao enviar transação de upgrade" };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async finishUpgrade(): Promise<{ success: boolean; error?: string }> {
+    if (!this.service) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    try {
+      const signature = await this.service.finishUpgrade();
+      if (signature) {
+        this.addLog("success", `🔨 Upgrade finalizado com sucesso!`, "general");
+        return { success: true };
+      }
+      return { success: false, error: "Falha ao enviar transação de finish upgrade" };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
   }
 }
 
@@ -485,28 +666,20 @@ export class BotManager {
 
   /**
    * Cria ou atualiza o bot de uma wallet
-   * A session key é criptografada usando a assinatura fornecida
+   * Session key armazenada em plaintext (Base64)
    */
   async upsertBot(params: {
     walletPubkey: string;
     sessionSecretKey: string; // Base64 encoded (32 bytes)
     sessionPublicKey: string; // Base58
-    encryptionSignature: string; // Assinatura para criptografar
     delayMin?: number;
     delayMax?: number;
     proxy?: string;
   }): Promise<{ success: boolean; error?: string }> {
     try {
-      // Decodifica a session key
-      const sessionKeyBytes = sessionKeyFromBase64(params.sessionSecretKey);
-
-      // Criptografa a session key
-      const encrypted = await encryptSessionKey(sessionKeyBytes, params.encryptionSignature);
-
       const botData: Partial<NewBot> = {
         walletPubkey: params.walletPubkey,
-        encryptedSessionKey: encrypted.encrypted,
-        sessionKeyIv: encrypted.iv,
+        sessionSecretKey: params.sessionSecretKey,
         sessionPubkey: params.sessionPublicKey,
         delayMin: params.delayMin ?? 1500,
         delayMax: params.delayMax ?? 3000,
@@ -519,13 +692,11 @@ export class BotManager {
       const existing = await this.getBot(params.walletPubkey);
 
       if (existing) {
-        // Atualiza
         await db
           .update(bots)
           .set(botData)
           .where(eq(bots.walletPubkey, params.walletPubkey));
       } else {
-        // Cria
         await db.insert(bots).values(botData as NewBot);
       }
 
@@ -538,11 +709,10 @@ export class BotManager {
 
   /**
    * Inicia o bot de uma wallet
-   * Requer a assinatura de criptografia para descriptografar a session key
+   * Session key lida diretamente do DB (plaintext Base64)
    */
   async startBot(
-    walletPubkey: string,
-    encryptionSignature: string
+    walletPubkey: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // Verifica se já está rodando
@@ -556,25 +726,14 @@ export class BotManager {
         return { success: false, error: "Bot não encontrado" };
       }
 
-      if (!bot.encryptedSessionKey || !bot.sessionKeyIv) {
+      if (!bot.sessionSecretKey) {
         return { success: false, error: "Session key não configurada" };
       }
 
-      // Descriptografa a session key
-      let sessionKeyBytes: Uint8Array;
-      try {
-        sessionKeyBytes = await decryptSessionKey(
-          bot.encryptedSessionKey,
-          bot.sessionKeyIv,
-          encryptionSignature
-        );
-      } catch {
-        return { success: false, error: "Falha ao descriptografar session key - assinatura inválida" };
-      }
+      // Decodifica session key do Base64
+      const sessionKeyBytes = new Uint8Array(Buffer.from(bot.sessionSecretKey, "base64"));
 
-      // Reconstrói o keypair
-      // sessionKeyBytes são 32 bytes (só a parte privada)
-      // Precisamos combinar com a public key
+      // Reconstrói o keypair (32 bytes secret + 32 bytes public = 64 bytes)
       const publicKey = new PublicKey(bot.sessionPubkey!);
       const publicKeyBytes = publicKey.toBytes();
 
@@ -594,12 +753,13 @@ export class BotManager {
         bot.autoRepair ?? true,
         bot.autoRepairMin ?? 15,
         bot.autoRepairMax ?? 25,
+        bot.autoUpgrade ?? false,
         bot.autoRestartMinutes ?? 240
       );
 
       // Configura callback de restart
       instance.setRestartCallback(async () => {
-        await this.restartBot(walletPubkey, encryptionSignature);
+        await this.restartBot(walletPubkey);
       });
 
       // Inicia
@@ -645,7 +805,7 @@ export class BotManager {
   /**
    * Reinicia o bot (para e inicia novamente)
    */
-  async restartBot(walletPubkey: string, encryptionSignature: string): Promise<{ success: boolean; error?: string }> {
+  async restartBot(walletPubkey: string): Promise<{ success: boolean; error?: string }> {
     console.log(`🔄 Reiniciando bot ${walletPubkey.slice(0, 8)}...`);
 
     // Para o bot atual (sem mudar enabled no banco)
@@ -659,7 +819,7 @@ export class BotManager {
     await Bun.sleep(2000);
 
     // Inicia novamente
-    return this.startBot(walletPubkey, encryptionSignature);
+    return this.startBot(walletPubkey);
   }
 
   /**
@@ -752,7 +912,7 @@ export class BotManager {
    */
   async getLogs(
     walletPubkey: string,
-    options: { limit?: number; offset?: number; level?: string } = {}
+    options: { limit?: number; offset?: number; level?: string; category?: string } = {}
   ): Promise<{ logs: any[]; total: number }> {
     const limit = options.limit || 50;
     const offset = options.offset || 0;
@@ -761,6 +921,9 @@ export class BotManager {
     const conditions = [eq(logs.walletPubkey, walletPubkey)];
     if (options.level) {
       conditions.push(eq(logs.level, options.level as any));
+    }
+    if (options.category && options.category !== 'all') {
+      conditions.push(eq(logs.category, options.category as any));
     }
 
     const result = await db
@@ -792,7 +955,9 @@ export class BotManager {
     totalMisses: number;
     totalFish: number;
   }> {
-    const allBots = await db.select().from(bots);
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(bots);
 
     let totalCatches = 0;
     let totalMisses = 0;
@@ -805,7 +970,7 @@ export class BotManager {
     }
 
     return {
-      totalBots: allBots.length,
+      totalBots: countResult[0]?.count || 0,
       activeBots: this.runningBots.size,
       totalCatches,
       totalMisses,
@@ -814,11 +979,109 @@ export class BotManager {
   }
 
   /**
+   * Auto-inicia bots que estavam enabled=true no banco
+   * Chamado ao iniciar o servidor para restaurar estado anterior
+   */
+  async autoStartBots(): Promise<number> {
+    console.log(`🔄 Auto-start: verificando bots habilitados no banco...`);
+
+    try {
+      // Pequeno delay para garantir que tudo está inicializado
+      await Bun.sleep(1000);
+
+      const enabledBots = await db
+        .select()
+        .from(bots)
+        .where(eq(bots.enabled, true));
+
+      if (enabledBots.length === 0) {
+        console.log(`🔄 Auto-start: nenhum bot habilitado encontrado`);
+        return 0;
+      }
+
+      console.log(`🔄 Restaurando ${enabledBots.length} bot(s) do banco...`);
+
+      let started = 0;
+      for (const bot of enabledBots) {
+        if (!bot.sessionSecretKey) {
+          console.log(`  ⚠️ ${bot.walletPubkey.slice(0, 8)}... sem session key, pulando`);
+          continue;
+        }
+
+        try {
+          const result = await this.startBot(bot.walletPubkey);
+          if (result.success) {
+            console.log(`  ✅ ${bot.walletPubkey.slice(0, 8)}... restaurado`);
+            started++;
+          } else {
+            console.log(`  ❌ ${bot.walletPubkey.slice(0, 8)}... falhou: ${result.error}`);
+          }
+        } catch (botError: any) {
+          console.error(`  ❌ ${bot.walletPubkey.slice(0, 8)}... erro: ${botError.message}`);
+        }
+
+        // Pequeno delay entre bots para não sobrecarregar
+        await Bun.sleep(500);
+      }
+
+      console.log(`🔄 ${started}/${enabledBots.length} bot(s) restaurados`);
+      return started;
+    } catch (error: any) {
+      console.error(`❌ Erro no auto-start:`, error.message);
+      return 0;
+    }
+  }
+
+  /**
+   * Limpeza periódica de dados antigos
+   * Remove logs, castResults e botHistory com mais de maxAgeDays dias
+   */
+  async cleanupOldData(maxAgeDays: number = 3): Promise<{ logsDeleted: number; resultsDeleted: number; historyDeleted: number }> {
+    const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+
+    const logsResult = await db.delete(logs).where(lt(logs.timestamp, cutoff));
+    const resultsResult = await db.delete(castResults).where(lt(castResults.timestamp, cutoff));
+    const historyResult = await db.delete(botHistory).where(lt(botHistory.timestamp, cutoff));
+
+    const logsDeleted = logsResult.changes;
+    const resultsDeleted = resultsResult.changes;
+    const historyDeleted = historyResult.changes;
+
+    if (logsDeleted > 0 || resultsDeleted > 0 || historyDeleted > 0) {
+      console.log(`🧹 Cleanup: ${logsDeleted} logs, ${resultsDeleted} results, ${historyDeleted} history (>${maxAgeDays} dias)`);
+    }
+
+    return { logsDeleted, resultsDeleted, historyDeleted };
+  }
+
+  /**
+   * Inicia upgrade da vara do bot
+   */
+  async startUpgrade(walletPubkey: string, targetLevel: number): Promise<{ success: boolean; error?: string }> {
+    const instance = this.runningBots.get(walletPubkey);
+    if (!instance) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    return instance.startUpgrade(targetLevel);
+  }
+
+  /**
+   * Finaliza upgrade da vara do bot
+   */
+  async finishUpgrade(walletPubkey: string): Promise<{ success: boolean; error?: string }> {
+    const instance = this.runningBots.get(walletPubkey);
+    if (!instance) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    return instance.finishUpgrade();
+  }
+
+  /**
    * Atualiza configurações do bot
    */
   async updateBotConfig(
     walletPubkey: string,
-    config: { delayMin?: number; delayMax?: number; proxy?: string; autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number; autoRestartMinutes?: number }
+    config: { delayMin?: number; delayMax?: number; proxy?: string; autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number; autoUpgrade?: boolean; autoRestartMinutes?: number }
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // Só inclui campos que foram definidos (evita sobrescrever com undefined)
@@ -829,6 +1092,7 @@ export class BotManager {
       if (config.autoRepair !== undefined) updateData.autoRepair = config.autoRepair;
       if (config.autoRepairMin !== undefined) updateData.autoRepairMin = config.autoRepairMin;
       if (config.autoRepairMax !== undefined) updateData.autoRepairMax = config.autoRepairMax;
+      if (config.autoUpgrade !== undefined) updateData.autoUpgrade = config.autoUpgrade;
       if (config.autoRestartMinutes !== undefined) updateData.autoRestartMinutes = config.autoRestartMinutes;
 
       await db
@@ -855,6 +1119,9 @@ export class BotManager {
         }
         if (config.autoRepairMax !== undefined) {
           instance.autoRepairMax = config.autoRepairMax;
+        }
+        if (config.autoUpgrade !== undefined) {
+          instance.autoUpgrade = config.autoUpgrade;
         }
         if (config.autoRestartMinutes !== undefined) {
           instance.autoRestartMinutes = config.autoRestartMinutes;

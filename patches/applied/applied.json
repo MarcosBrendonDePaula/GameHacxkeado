@@ -1,11 +1,11 @@
 {
   "patches": [
-    "config-system",
     "auto-cast-speed",
-    "config-menu",
-    "render-toggle",
     "boat-manual-control",
-    "game-bridge"
+    "config-menu",
+    "config-system",
+    "game-bridge",
+    "render-toggle"
   ],
-  "lastUpdate": "2026-01-08T04:02:27.926Z"
+  "lastUpdate": "2026-03-06T22:41:54.816Z"
 }

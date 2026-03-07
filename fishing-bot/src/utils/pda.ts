@@ -5,6 +5,8 @@ import {
   PLAYER_STATE_SEED,
   RATE_STATE_SEED,
   CONFIG_SEED,
+  RIVER_FISH_CONFIG_SEED,
+  RIVER_FISH_STATE_SEED,
 } from "../config/constants";
 
 /**
@@ -53,6 +55,26 @@ export function getConfigPDA(): [PublicKey, number] {
 export function getProgramSignerPDA(): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("fogo_session_program_signer")],
+    PROGRAM_ID
+  );
+}
+
+/**
+ * Calcula o PDA do River Fish Config (Season 2)
+ */
+export function getRiverFishConfigPDA(): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(RIVER_FISH_CONFIG_SEED)],
+    PROGRAM_ID
+  );
+}
+
+/**
+ * Calcula o PDA do River Fish State (Season 2, per-player)
+ */
+export function getRiverFishStatePDA(walletPublicKey: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(RIVER_FISH_STATE_SEED), walletPublicKey.toBuffer()],
     PROGRAM_ID
   );
 }

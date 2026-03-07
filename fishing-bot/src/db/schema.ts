@@ -15,8 +15,7 @@ export const bots = sqliteTable("bots", {
   walletPubkey: text("wallet_pubkey")
     .primaryKey()
     .references(() => accounts.walletPubkey, { onDelete: "cascade" }),
-  encryptedSessionKey: blob("encrypted_session_key", { mode: "buffer" }), // AES-GCM encrypted
-  sessionKeyIv: blob("session_key_iv", { mode: "buffer" }), // IV para decriptar
+  sessionSecretKey: text("session_secret_key"), // Base64 encoded (32 bytes) - plaintext
   sessionPubkey: text("session_pubkey"), // Public key da session
   delayMin: integer("delay_min").default(1500), // Delay minimo entre casts (ms)
   delayMax: integer("delay_max").default(3000), // Delay maximo entre casts (ms)
@@ -24,6 +23,7 @@ export const bots = sqliteTable("bots", {
   autoRepair: integer("auto_repair", { mode: "boolean" }).default(true), // Auto-reparo habilitado
   autoRepairMin: integer("auto_repair_min").default(15), // Durabilidade minima da range (%)
   autoRepairMax: integer("auto_repair_max").default(25), // Durabilidade maxima da range (%)
+  autoUpgrade: integer("auto_upgrade", { mode: "boolean" }).default(false), // Auto-upgrade da vara
   autoRestartMinutes: integer("auto_restart_minutes").default(240), // Auto-restart a cada X minutos (0 = desabilitado)
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })

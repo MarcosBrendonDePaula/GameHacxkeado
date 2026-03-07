@@ -44,67 +44,95 @@ export function generateRandomNonce(): Uint8Array {
 }
 
 /**
- * Logger com timestamp e suporte a arquivo
+ * Logger com timestamp e suporte a arquivo (async com buffer)
  */
 export class Logger {
   private prefix: string;
   private logFile?: string;
-  private fs?: any;
+  private fileHandle?: any;
+  private buffer: string[] = [];
+  private flushTimer?: ReturnType<typeof setTimeout>;
+  private static readonly FLUSH_INTERVAL = 3000; // flush a cada 3s
+  private static readonly BUFFER_LIMIT = 50; // flush se buffer > 50 linhas
 
   constructor(prefix: string = "🎣", logFile?: string) {
     this.prefix = prefix;
     this.logFile = logFile;
 
-    // Importa fs apenas se precisar gravar em arquivo
     if (logFile) {
-      this.fs = require("fs");
-      // Cria diretório de logs se não existir
-      const logDir = require("path").dirname(logFile);
-      if (!this.fs.existsSync(logDir)) {
-        this.fs.mkdirSync(logDir, { recursive: true });
+      const fs = require("fs");
+      const path = require("path");
+      const logDir = path.dirname(logFile);
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
       }
+      // Abre file handle para append async
+      this.fileHandle = Bun.file(logFile).writer();
+      this.startFlushTimer();
     }
   }
 
-  private writeToFile(level: string, message: string, ...args: any[]) {
-    if (!this.logFile || !this.fs) return;
+  private startFlushTimer() {
+    this.flushTimer = setInterval(() => this.flush(), Logger.FLUSH_INTERVAL);
+  }
+
+  private enqueue(level: string, message: string, ...args: any[]) {
+    if (!this.fileHandle) return;
 
     const timestamp = new Date().toISOString();
     const argsStr = args.length > 0 ? " " + args.map(a =>
       typeof a === "object" ? JSON.stringify(a) : String(a)
     ).join(" ") : "";
 
-    const logLine = `[${timestamp}] ${level.toUpperCase()} ${this.prefix} ${message}${argsStr}\n`;
+    this.buffer.push(`[${timestamp}] ${level.toUpperCase()} ${this.prefix} ${message}${argsStr}\n`);
 
+    if (this.buffer.length >= Logger.BUFFER_LIMIT) {
+      this.flush();
+    }
+  }
+
+  flush() {
+    if (!this.fileHandle || this.buffer.length === 0) return;
     try {
-      this.fs.appendFileSync(this.logFile, logLine);
-    } catch (error) {
-      // Se falhar ao escrever, não faz nada (evita loop infinito)
+      const data = this.buffer.join("");
+      this.buffer.length = 0;
+      this.fileHandle.write(data);
+      this.fileHandle.flush();
+    } catch {
+      this.buffer.length = 0;
+    }
+  }
+
+  close() {
+    this.flush();
+    if (this.flushTimer) clearInterval(this.flushTimer);
+    if (this.fileHandle) {
+      try { this.fileHandle.end(); } catch {}
     }
   }
 
   info(message: string, ...args: any[]) {
     console.log(`${this.prefix} [${new Date().toISOString()}] ${message}`, ...args);
-    this.writeToFile("info", message, ...args);
+    this.enqueue("info", message, ...args);
   }
 
   error(message: string, ...args: any[]) {
-    console.error(`${this.prefix} ❌ [${new Date().toISOString()}] ${message}`, ...args);
-    this.writeToFile("error", message, ...args);
+    console.error(`${this.prefix} [${new Date().toISOString()}] ${message}`, ...args);
+    this.enqueue("error", message, ...args);
   }
 
   warn(message: string, ...args: any[]) {
-    console.warn(`${this.prefix} ⚠️  [${new Date().toISOString()}] ${message}`, ...args);
-    this.writeToFile("warn", message, ...args);
+    console.warn(`${this.prefix} [${new Date().toISOString()}] ${message}`, ...args);
+    this.enqueue("warn", message, ...args);
   }
 
   success(message: string, ...args: any[]) {
-    console.log(`${this.prefix} ✅ [${new Date().toISOString()}] ${message}`, ...args);
-    this.writeToFile("success", message, ...args);
+    console.log(`${this.prefix} [${new Date().toISOString()}] ${message}`, ...args);
+    this.enqueue("success", message, ...args);
   }
 
   debug(message: string, ...args: any[]) {
-    console.log(`${this.prefix} 🔍 [${new Date().toISOString()}] ${message}`, ...args);
-    this.writeToFile("debug", message, ...args);
+    console.log(`${this.prefix} [${new Date().toISOString()}] ${message}`, ...args);
+    this.enqueue("debug", message, ...args);
   }
 }

@@ -19,7 +19,6 @@ export interface CastStats {
 
 interface PendingCast {
   signature: string;
-  fishCaughtBefore: string;
   timestamp: number;
 }
 
@@ -48,7 +47,9 @@ export class CastLogMonitor {
 
   // Lista de casts pendentes
   private pendingCasts: PendingCast[] = [];
-  private lastKnownFishCaught: string = "0";
+  private lastKnownFishCaught: bigint = BigInt(0);
+  private lastKnownCastCount: bigint = BigInt(0);
+  private stateInitialized = false;
 
   // Callback para atualizar estatísticas
   private onResultCallback: StatsCallback | null = null;
@@ -79,19 +80,13 @@ export class CastLogMonitor {
   /**
    * Registra um cast pendente (não bloqueia)
    */
-  registerCast(signature: string, fishCaughtBefore: string) {
+  registerCast(signature: string) {
     this.ensureConnection();
 
     this.pendingCasts.push({
       signature,
-      fishCaughtBefore,
       timestamp: Date.now()
     });
-
-    // Atualiza o último valor conhecido se for maior
-    if (BigInt(fishCaughtBefore) > BigInt(this.lastKnownFishCaught)) {
-      this.lastKnownFishCaught = fishCaughtBefore;
-    }
   }
 
   /**
@@ -240,7 +235,13 @@ export class CastLogMonitor {
     this.isSubscribed = false;
 
     this.ws.on("open", () => {
-      this.reconnectAttempts = 0; // Reseta contador ao conectar com sucesso
+      // Ao reconectar, descarta pendentes antigos (resultados já se perderam)
+      if (this.reconnectAttempts > 0 && this.pendingCasts.length > 0) {
+        this.logger.info(`🧹 Reconexão: descartando ${this.pendingCasts.length} cast(s) pendentes`);
+        this.pendingCasts = [];
+      }
+      this.reconnectAttempts = 0;
+      this.stateInitialized = false; // Re-inicializa baseline do estado on-chain
       this.logger.success("✅ Websocket conectado com sucesso!");
       this.startPingLoop();
       this.subscribeToAccount();
@@ -357,9 +358,7 @@ export class CastLogMonitor {
   }
 
   private handleAccountChange(result: any) {
-    if (this.pendingCasts.length === 0) return;
-
-    // Decodifica para extrair fishCaughtAllTime
+    // Decodifica PlayerState para extrair cast_count e fish_caught_all_time
     try {
       const accountData = result?.value?.data;
       if (!accountData || !Array.isArray(accountData) || accountData.length < 1) {
@@ -369,66 +368,71 @@ export class CastLogMonitor {
       const base64Data = accountData[0];
       const buffer = Buffer.from(base64Data, "base64");
 
-      // Estrutura PlayerState (Anchor/Borsh - sem padding):
+      // Estrutura PlayerState (Anchor/Borsh):
       // discriminator: 8 bytes
       // owner: 32 bytes
       // rod_level: 1 byte
       // boat_tier: 1 byte
       // bump: 1 byte
-      // cast_count: 8 bytes
-      // fish_caught_all_time: 8 bytes
-      // Offset = 8 + 32 + 1 + 1 + 1 + 8 = 51
+      // cast_count: 8 bytes (u64 LE)  → offset 43
+      // fish_caught_all_time: 8 bytes (u64 LE)  → offset 51
+      const CAST_COUNT_OFFSET = 43;
       const FISH_CAUGHT_OFFSET = 51;
 
-      if (buffer.length >= FISH_CAUGHT_OFFSET + 8) {
-        const fishCaughtNow = buffer.readBigUInt64LE(FISH_CAUGHT_OFFSET);
-        const fishCaughtNowStr = fishCaughtNow.toString();
+      if (buffer.length < FISH_CAUGHT_OFFSET + 8) return;
 
-        // Processa todos os pendentes que têm fish menor que o atual
-        const toProcess = this.pendingCasts.filter(p =>
-          BigInt(p.fishCaughtBefore) < fishCaughtNow
-        );
+      const castCountNow = buffer.readBigUInt64LE(CAST_COUNT_OFFSET);
+      const fishCaughtNow = buffer.readBigUInt64LE(FISH_CAUGHT_OFFSET);
 
-        if (toProcess.length > 0) {
-          // Calcula diferença baseada no último conhecido
-          const lastKnown = BigInt(this.lastKnownFishCaught);
+      // Inicializa na primeira notificação (baseline)
+      if (!this.stateInitialized) {
+        this.lastKnownCastCount = castCountNow;
+        this.lastKnownFishCaught = fishCaughtNow;
+        this.stateInitialized = true;
+        this.logger.debug(`Estado inicial via WS: castCount=${castCountNow}, fish=${Number(fishCaughtNow) / 1_000_000}`);
+        return;
+      }
 
-          if (fishCaughtNow > lastKnown) {
-            const diff = fishCaughtNow - lastKnown;
-            const fishAmount = Number(diff) / 1_000_000;
+      // Calcula deltas
+      const castsDelta = Number(castCountNow - this.lastKnownCastCount);
+      const fishDelta = fishCaughtNow - this.lastKnownFishCaught;
 
-            this.logger.debug(`🐟 CATCH via WS! +${fishAmount.toFixed(3)} fish (${toProcess.length} cast(s))`);
+      // Se não houve novos casts, ignora (pode ser mudança de durability, etc.)
+      if (castsDelta <= 0) {
+        this.lastKnownFishCaught = fishCaughtNow;
+        return;
+      }
 
-            // Notifica cada cast como CATCH
-            for (const cast of toProcess) {
-              if (this.onResultCallback) {
-                this.onResultCallback({
-                  isCatch: true,
-                  fishAmount: fishAmount / toProcess.length, // Divide entre os casts
-                  confirmed: true
-                });
-              }
-            }
-          }
+      // Quantos casts podemos processar da fila
+      const castsToProcess = Math.min(castsDelta, this.pendingCasts.length);
+      const fishAmount = Number(fishDelta) / 1_000_000;
 
-          // Remove os processados
-          this.pendingCasts = this.pendingCasts.filter(p => !toProcess.includes(p));
-          this.lastKnownFishCaught = fishCaughtNowStr;
-        } else {
-          // Conta mudou mas fish não aumentou em relação aos pendentes = MISS
-          const oldestPending = this.pendingCasts[0];
-          if (oldestPending && BigInt(oldestPending.fishCaughtBefore) >= fishCaughtNow) {
-            this.logger.debug(`🔴 MISS via WS`);
+      if (fishDelta > BigInt(0)) {
+        this.logger.debug(`🐟 CATCH via WS! +${fishAmount.toFixed(3)} fish (${castsDelta} cast(s) processados)`);
+      } else {
+        this.logger.debug(`🔴 MISS via WS (${castsDelta} cast(s) processados)`);
+      }
 
-            if (this.onResultCallback) {
-              this.onResultCallback({ isCatch: false, confirmed: true });
-            }
-
-            // Remove o mais antigo
-            this.pendingCasts.shift();
+      // Processa os casts: 1 CATCH com o total + restante como MISS
+      let catchReported = false;
+      for (let i = 0; i < castsToProcess; i++) {
+        if (this.onResultCallback) {
+          if (fishDelta > BigInt(0) && !catchReported) {
+            this.onResultCallback({ isCatch: true, fishAmount, confirmed: true });
+            catchReported = true;
+          } else {
+            this.onResultCallback({ isCatch: false, confirmed: true });
           }
         }
       }
+
+      // Remove casts processados (mais antigos primeiro)
+      this.pendingCasts.splice(0, castsToProcess);
+
+      // Atualiza estado
+      this.lastKnownCastCount = castCountNow;
+      this.lastKnownFishCaught = fishCaughtNow;
+
     } catch (error) {
       this.logger.debug(`Erro ao decodificar: ${error}`);
     }

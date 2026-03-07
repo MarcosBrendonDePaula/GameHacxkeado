@@ -1,8 +1,9 @@
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import { Keypair } from "@solana/web3.js";
-import { PROGRAM_ID, BOT_CONFIG, CUSTOM_HEADERS } from "../config/constants";
-import { getPlayerStatePDA } from "../utils/pda";
+import { PROGRAM_ID, BOT_CONFIG, CUSTOM_HEADERS, FISH_MINT, FOGO_MINT } from "../config/constants";
+import { getPlayerStatePDA, getConfigPDA, getGlobalStatePDA } from "../utils/pda";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { FOGO_FISHING_IDL } from "../config/idl";
 import { PlayerState } from "../types";
 
@@ -89,6 +90,103 @@ export class PlayerReader {
         return null;
       }
       console.error("Erro ao buscar player state:", error);
+      return null;
+    }
+  }
+  /**
+   * Busca as configurações do programa (Config PDA)
+   */
+  async fetchConfig(): Promise<any | null> {
+    try {
+      const [configPDA] = getConfigPDA();
+      const config = await this.program.account.config.fetch(configPDA);
+      return {
+        authority: config.authority.toBase58(),
+        issuerPubkey: config.issuerPubkey.toBase58(),
+        requireCapabilityForCatch: config.requireCapabilityForCatch,
+        requireCapabilityForSpend: config.requireCapabilityForSpend,
+        requireFeeForInit: config.requireFeeForInit,
+        softGateMode: config.softGateMode,
+        basicCooldownMs: config.basicCooldownMs,
+      };
+    } catch (error: any) {
+      console.error("Erro ao buscar config:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Busca o estado global do jogo (GlobalState PDA)
+   */
+  async fetchGlobalState(): Promise<any | null> {
+    try {
+      const [globalStatePDA] = getGlobalStatePDA();
+      const gs = await this.program.account.globalState.fetch(globalStatePDA);
+      return {
+        authority: gs.authority.toBase58(),
+        fishMint: gs.fishMint.toBase58(),
+        fogoMint: gs.fogoMint.toBase58(),
+        fogoTreasury: gs.fogoTreasury.toBase58(),
+        fishBurnVault: gs.fishBurnVault.toBase58(),
+        currentDifficulty: gs.currentDifficulty.toString(),
+        totalNetworkPower: gs.totalNetworkPower.toString(),
+        lastDifficultyAdjustment: gs.lastDifficultyAdjustment.toString(),
+        baseEmissionRate: gs.baseEmissionRate.toString(),
+        emissionDecayRate: gs.emissionDecayRate.toString(),
+        dailyTargetEmission: gs.dailyTargetEmission.toString(),
+        totalFogoCollected: gs.totalFogoCollected.toString(),
+        totalFishMinted: gs.totalFishMinted.toString(),
+        totalUnprocessedFish: gs.totalUnprocessedFish?.toString() || "0",
+        accumulatedProcessingFees: gs.accumulatedProcessingFees?.toString() || "0",
+        feesPerUnprocessedFish: gs.feesPerUnprocessedFish?.toString() || "0",
+        halvingCount: Number(gs.halvingCount ?? 0),
+        yieldGateActive: Number(gs.yieldGateActive ?? 0),
+        gamePaused: Number(gs.gamePaused ?? 0),
+      };
+    } catch (error: any) {
+      console.error("Erro ao buscar global state:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Busca balances da wallet (FOGO nativo, FISH, USDC)
+   * Na Fogo chain: getBalance() retorna FOGO (token nativo), FOGO_MINT é na verdade USDC
+   */
+  async fetchWalletBalances(walletPubkey: string): Promise<{ fogo: number; fish: number; usdc: number } | null> {
+    try {
+      const walletPublicKey = new PublicKey(walletPubkey);
+
+      // FOGO balance (token nativo da chain - equivalente ao SOL na Solana)
+      const fogoBalance = await this.connection.getBalance(walletPublicKey);
+
+      // FISH token balance
+      let fishBalance = 0;
+      try {
+        const fishAta = getAssociatedTokenAddressSync(FISH_MINT, walletPublicKey);
+        const fishAccount = await this.connection.getTokenAccountBalance(fishAta);
+        fishBalance = fishAccount.value.uiAmount || 0;
+      } catch {
+        // Token account doesn't exist
+      }
+
+      // USDC token balance (FOGO_MINT é na verdade USDC)
+      let usdcBalance = 0;
+      try {
+        const usdcAta = getAssociatedTokenAddressSync(FOGO_MINT, walletPublicKey);
+        const usdcAccount = await this.connection.getTokenAccountBalance(usdcAta);
+        usdcBalance = usdcAccount.value.uiAmount || 0;
+      } catch {
+        // Token account doesn't exist
+      }
+
+      return {
+        fogo: fogoBalance / LAMPORTS_PER_SOL,
+        fish: fishBalance,
+        usdc: usdcBalance,
+      };
+    } catch (error: any) {
+      console.error("Erro ao buscar balances:", error);
       return null;
     }
   }

@@ -8,56 +8,89 @@
 const replacements = [
     {
         description: "Add manual boat constants/helpers",
-        find: `const percentToProgress = (b) => b / 100;
-const RENDER_TOGGLE_EVENT = "fishing-render-toggle-change";
-const getRenderToggleState = () => {
-    if (typeof window == "undefined") return !0;
-    if (typeof window.__cfg == "function") return window.__cfg("render_enabled", !0);
-    if (typeof window.__fishingRenderEnabled == "boolean") return window.__fishingRenderEnabled;
-    return !0;
-};
-`,
-        replace: `const percentToProgress = (b) => b / 100;
-const RENDER_TOGGLE_EVENT = "fishing-render-toggle-change";
-const MANUAL_BOAT_EVENT = "manual-boat-control-change";
-const getRenderToggleState = () => {
-    if (typeof window == "undefined") return !0;
-    if (typeof window.__cfg == "function") return window.__cfg("render_enabled", !0);
-    if (typeof window.__fishingRenderEnabled == "boolean") return window.__fishingRenderEnabled;
-    return !0;
-};
-const getManualBoatControlState = () => {
-    if (typeof window == "undefined") return !1;
-    if (typeof window.__cfg == "function") return window.__cfg("manual_boat_control", !1);
-    if (typeof window.__manualBoatControlEnabled == "boolean") return window.__manualBoatControlEnabled;
-    return !1;
-};
-`,
+        // This replacement is handled specially in apply() below
+        find: null,
+        replace: null,
+        customApply: function(source, eol) {
+            // Already applied?
+            if (source.includes("MANUAL_BOAT_EVENT")) return source;
+
+            const manualBoatConstants = [
+                'const MANUAL_BOAT_EVENT = "manual-boat-control-change";',
+            ].join(eol);
+
+            const manualBoatHelper = [
+                'const getManualBoatControlState = () => {',
+                '    if (typeof window == "undefined") return !1;',
+                '    if (typeof window.__cfg == "function") return window.__cfg("manual_boat_control", !1);',
+                '    if (typeof window.__manualBoatControlEnabled == "boolean") return window.__manualBoatControlEnabled;',
+                '    return !1;',
+                '};',
+            ].join(eol);
+
+            // Case 1: render-toggle already applied (getRenderToggleState exists)
+            const renderToggleEnd = 'const getRenderToggleState = () => {' + eol +
+                '    if (typeof window == "undefined") return !0;' + eol +
+                '    if (typeof window.__cfg == "function") return window.__cfg("render_enabled", !0);' + eol +
+                '    if (typeof window.__fishingRenderEnabled == "boolean") return window.__fishingRenderEnabled;' + eol +
+                '    return !0;' + eol +
+                '};';
+
+            if (source.includes(renderToggleEnd)) {
+                // Insert MANUAL_BOAT_EVENT after RENDER_TOGGLE_EVENT line
+                const rtEventLine = 'const RENDER_TOGGLE_EVENT = "fishing-render-toggle-change";';
+                source = source.replace(rtEventLine, rtEventLine + eol + manualBoatConstants);
+                // Insert helper after getRenderToggleState
+                source = source.replace(renderToggleEnd, renderToggleEnd + eol + manualBoatHelper);
+                return source;
+            }
+
+            // Case 2: render-toggle NOT applied - insert everything after percentToProgress
+            const anchor = 'const percentToProgress = (b) => b / 100;';
+            if (!source.includes(anchor)) throw new Error("[boat-manual-control] percentToProgress anchor not found");
+            const insertBlock = eol + manualBoatConstants + eol + manualBoatHelper;
+            return source.replace(anchor, anchor + insertBlock);
+        },
+        customRemove: function(source, eol) {
+            // Remove MANUAL_BOAT_EVENT constant
+            source = source.replace(eol + 'const MANUAL_BOAT_EVENT = "manual-boat-control-change";', '');
+            // Remove getManualBoatControlState helper
+            const helper = eol + [
+                'const getManualBoatControlState = () => {',
+                '    if (typeof window == "undefined") return !1;',
+                '    if (typeof window.__cfg == "function") return window.__cfg("manual_boat_control", !1);',
+                '    if (typeof window.__manualBoatControlEnabled == "boolean") return window.__manualBoatControlEnabled;',
+                '    return !1;',
+                '};',
+            ].join(eol);
+            source = source.replace(helper, '');
+            return source;
+        },
     },
     {
         description: "Inject manual boat instance state",
-        find: `        or(this, "boatPulseDownAmount", 0.15);
-        or(this, "boatPulseSplashTriggered", !1);
-        or(this, "lastCatchRarity", 1);
-        or(this, "fishingLine", null);
+        find: `        ur(this, "boatPulseDownAmount", 0.15);
+        ur(this, "boatPulseSplashTriggered", !1);
+        ur(this, "lastCatchRarity", 1);
+        ur(this, "fishingLine", null);
 `,
-        replace: `        or(this, "boatPulseDownAmount", 0.15);
-        or(this, "boatPulseSplashTriggered", !1);
-        or(this, "lastCatchRarity", 1);
-        or(this, "manualBoatControlDesired", !1);
-        or(this, "manualBoatControlActive", !1);
-        or(this, "manualBoatState", { posX: 0, posZ: 0, velX: 0, velZ: 0 });
-        or(this, "manualBoatKeys", { forward: !1, backward: !1, left: !1, right: !1 });
-        or(this, "manualBoatSpeed", 5);
-        or(this, "manualBoatAcceleration", 14);
-        or(this, "manualBoatFriction", 6);
-        or(this, "manualBoatLastTileId", null);
-        or(this, "manualBoatLastCatchAt", 0);
-        or(this, "manualBoatCatchCooldown", 800);
-        or(this, "handleManualBoatKeyDownBound");
-        or(this, "handleManualBoatKeyUpBound");
-        or(this, "manualBoatControlEventBound");
-        or(this, "fishingLine", null);
+        replace: `        ur(this, "boatPulseDownAmount", 0.15);
+        ur(this, "boatPulseSplashTriggered", !1);
+        ur(this, "lastCatchRarity", 1);
+        ur(this, "manualBoatControlDesired", !1);
+        ur(this, "manualBoatControlActive", !1);
+        ur(this, "manualBoatState", { posX: 0, posZ: 0, velX: 0, velZ: 0 });
+        ur(this, "manualBoatKeys", { forward: !1, backward: !1, left: !1, right: !1 });
+        ur(this, "manualBoatSpeed", 5);
+        ur(this, "manualBoatAcceleration", 14);
+        ur(this, "manualBoatFriction", 6);
+        ur(this, "manualBoatLastTileId", null);
+        ur(this, "manualBoatLastCatchAt", 0);
+        ur(this, "manualBoatCatchCooldown", 800);
+        ur(this, "handleManualBoatKeyDownBound");
+        ur(this, "handleManualBoatKeyUpBound");
+        ur(this, "manualBoatControlEventBound");
+        ur(this, "fishingLine", null);
 `,
     },
     {
@@ -99,11 +132,11 @@ const getManualBoatControlState = () => {
     },
     {
         description: "Insert manual boat methods before updateBoatTransform",
-        find: `        return U;
+        find: `        return z;
     }
     updateBoatTransform() {
 `,
-        replace: `        return U;
+        replace: `        return z;
     }
     shouldUseManualBoatControl() {
         return !!this.manualBoatControlDesired;
@@ -233,19 +266,15 @@ const getManualBoatControlState = () => {
     },
     {
         description: "Tie camera to manual boat when active",
-        find: `(this.camera.position.set(x + this.currentCameraOffsetX, A, O),
-            this.camera.lookAt(U + this.currentCameraOffsetX, z, X));`,
-        replace: `        let camPosX = x + this.currentCameraOffsetX,
-            camPosZ = O,
-            lookPosX = U + this.currentCameraOffsetX,
-            lookPosZ = X;
+        find: `(this.camera.position.set(J + ue * Math.sin(_e), A + Je, ee + ue * Math.cos(_e)), this.camera.lookAt(J, U, ee));`,
+        replace: `        let manualCamJ = J,
+            manualCamEe = ee;
         if (this.manualBoatControlActive) {
-            const worldGroupZ = this.worldGroup ? this.worldGroup.position.z : 0,
-                boatX = this.manualBoatState.posX,
-                boatZ = this.manualBoatState.posZ + worldGroupZ;
-            (camPosX = boatX), (camPosZ = boatZ + O), (lookPosX = boatX), (lookPosZ = boatZ);
+            const worldGroupZ = this.worldGroup ? this.worldGroup.position.z : 0;
+            manualCamJ = this.manualBoatState.posX;
+            manualCamEe = this.manualBoatState.posZ + worldGroupZ;
         }
-        (this.camera.position.set(camPosX, A, camPosZ), this.camera.lookAt(lookPosX, z, lookPosZ));`,
+        (this.camera.position.set(manualCamJ + ue * Math.sin(_e), A + Je, manualCamEe + ue * Math.cos(_e)), this.camera.lookAt(manualCamJ, U, manualCamEe));`,
     },
     {
         description: "Use manual coordinates when active",
@@ -324,12 +353,17 @@ function normalize(str, eol) {
 module.exports = {
     name: "Boat Manual Control",
     description: "Adiciona controle manual do barco com WASD e pesca automática",
-    version: "1.0.0",
+    version: "2.0.0",
 
     apply(sourceCode) {
         const eol = sourceCode.includes("\r\n") ? "\r\n" : "\n";
         let modified = sourceCode;
-        for (const { description, find, replace } of replacements) {
+        for (const r of replacements) {
+            if (r.customApply) {
+                modified = r.customApply(modified, eol);
+                continue;
+            }
+            const { description, find, replace } = r;
             const findText = normalize(find, eol);
             const replaceText = normalize(replace, eol);
             if (modified.includes(replaceText)) continue;
@@ -344,7 +378,12 @@ module.exports = {
     remove(sourceCode) {
         const eol = sourceCode.includes("\r\n") ? "\r\n" : "\n";
         let modified = sourceCode;
-        for (const { find, replace } of replacements.slice().reverse()) {
+        for (const r of replacements.slice().reverse()) {
+            if (r.customRemove) {
+                modified = r.customRemove(modified, eol);
+                continue;
+            }
+            const { find, replace } = r;
             const findText = normalize(find, eol);
             const replaceText = normalize(replace, eol);
             if (modified.includes(replaceText)) modified = modified.replace(replaceText, findText);

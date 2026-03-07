@@ -17,6 +17,7 @@ import {
   CU_LIMITS,
   BOT_CONFIG,
   CUSTOM_HEADERS,
+  FISH_MINT,
   FOGO_MINT,
   BUYBACK_TREASURY,
   LIQUIDITY_TREASURY,
@@ -28,8 +29,10 @@ import {
   getRateStatePDA,
   getConfigPDA,
   getProgramSignerPDA,
+  getRiverFishConfigPDA,
+  getRiverFishStatePDA,
 } from "../utils/pda";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { generateRandomNonce, Logger, sleep } from "../utils/helpers";
 import { createCapabilityInstruction } from "../utils/capability";
 import { sendTransactionViaPaymaster, getSponsor } from "../utils/paymaster";
@@ -46,6 +49,9 @@ export class FishingService {
   private walletPublicKey: PublicKey; // Wallet original (para PDAs e conta do jogador)
   private signerPublicKey: PublicKey; // Quem assina (session key ou wallet)
   private logMonitor: CastLogMonitor;
+  // Mints dinâmicos carregados do GlobalState on-chain
+  private dynamicFishMint: PublicKey | null = null;
+  private dynamicFogoMint: PublicKey | null = null;
 
   constructor(
     walletKeypair: Keypair,
@@ -134,6 +140,41 @@ export class FishingService {
         }
       });
     }
+  }
+
+  /**
+   * Carrega fishMint e fogoMint do GlobalState on-chain (cache após primeira chamada)
+   */
+  private async loadMintsFromGlobalState(): Promise<{ fishMint: PublicKey; fogoMint: PublicKey }> {
+    if (this.dynamicFishMint && this.dynamicFogoMint) {
+      return { fishMint: this.dynamicFishMint, fogoMint: this.dynamicFogoMint };
+    }
+
+    try {
+      const [globalStatePDA] = getGlobalStatePDA();
+      const gs = await this.program.account.globalState.fetch(globalStatePDA);
+      this.dynamicFishMint = gs.fishMint as PublicKey;
+      this.dynamicFogoMint = gs.fogoMint as PublicKey;
+      this.logger.info(`🔗 Mints carregados do GlobalState: FISH=${this.dynamicFishMint.toBase58().slice(0, 8)}... FOGO=${this.dynamicFogoMint.toBase58().slice(0, 8)}...`);
+      return { fishMint: this.dynamicFishMint, fogoMint: this.dynamicFogoMint };
+    } catch (error) {
+      this.logger.warn("⚠️ Falha ao ler mints do GlobalState, usando constantes hardcoded");
+      return { fishMint: FISH_MINT, fogoMint: FOGO_MINT };
+    }
+  }
+
+  /**
+   * Retorna o FISH mint (dinâmico se já carregado, senão constante)
+   */
+  private get fishMint(): PublicKey {
+    return this.dynamicFishMint ?? FISH_MINT;
+  }
+
+  /**
+   * Retorna o FOGO mint (dinâmico se já carregado, senão constante)
+   */
+  private get fogoMint(): PublicKey {
+    return this.dynamicFogoMint ?? FOGO_MINT;
   }
 
   /**
@@ -275,6 +316,8 @@ export class FishingService {
       const [configPDA] = getConfigPDA();
       const [rateStatePDA] = getRateStatePDA(this.walletPublicKey);
       const [playerStatePDA] = getPlayerStatePDA(this.walletPublicKey);
+      const [riverFishConfigPDA] = getRiverFishConfigPDA();
+      const [riverFishStatePDA] = getRiverFishStatePDA(this.walletPublicKey);
 
       this.logger.debug("Preparando cast...");
       this.logger.debug(`Slot: ${currentSlot}`);
@@ -300,6 +343,8 @@ export class FishingService {
           instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
           slotHashes: SYSVAR_SLOT_HASHES_PUBKEY,
           playerState: playerStatePDA,
+          riverFishConfig: riverFishConfigPDA,
+          riverFishState: riverFishStatePDA,
           systemProgram: SYSTEM_PROGRAM_ID,
         })
         .instruction();
@@ -347,6 +392,9 @@ export class FishingService {
     try {
       this.logger.info("🔧 Iniciando reparo da vara...");
 
+      // Carrega mints do GlobalState (cache após primeira chamada)
+      await this.loadMintsFromGlobalState();
+
       // Calcula PDAs
       const [globalStatePDA] = getGlobalStatePDA();
       const [configPDA] = getConfigPDA();
@@ -354,7 +402,7 @@ export class FishingService {
       const [programSignerPDA] = getProgramSignerPDA();
 
       // Calcula ATA do FOGO token para o owner
-      const ownerFogoAta = getAssociatedTokenAddressSync(FOGO_MINT, this.walletPublicKey);
+      const ownerFogoAta = getAssociatedTokenAddressSync(this.fogoMint, this.walletPublicKey);
 
       // Cria a instrução de capability (autenticação)
       const capabilityIx = await createCapabilityInstruction(this.walletPublicKey, this.logger);
@@ -368,7 +416,7 @@ export class FishingService {
           globalState: globalStatePDA,
           config: configPDA,
           playerState: playerStatePDA,
-          fogoMint: FOGO_MINT,
+          fogoMint: this.fogoMint,
           ownerFogoAta: ownerFogoAta,
           buybackTreasury: BUYBACK_TREASURY,
           liquidityTreasury: LIQUIDITY_TREASURY,
@@ -425,6 +473,200 @@ export class FishingService {
   }
 
   /**
+   * Garante que a FOGO ATA existe para o owner wallet.
+   * Se não existir, cria usando SOL da session key.
+   */
+  private async ensureFogoAtaExists(): Promise<boolean> {
+    const ownerFogoAta = getAssociatedTokenAddressSync(this.fogoMint, this.walletPublicKey);
+
+    try {
+      const ataInfo = await this.connection.getAccountInfo(ownerFogoAta);
+      if (ataInfo) {
+        return true; // ATA já existe
+      }
+    } catch {
+      // Erro ao verificar, tenta criar
+    }
+
+    this.logger.warn("⚠️ FOGO ATA não existe. Criando...");
+
+    // Verifica se a session key tem SOL para pagar rent (~0.002 SOL)
+    const sessionBalance = await this.connection.getBalance(this.signerPublicKey);
+    const RENT_COST = 2_039_280; // lamports (~0.00204 SOL)
+    const TX_FEE = 5_000; // lamports
+
+    if (sessionBalance < RENT_COST + TX_FEE) {
+      this.logger.error(
+        `❌ Session key não tem SOL suficiente para criar FOGO ATA. ` +
+        `Precisa de ~0.003 SOL. Balance: ${sessionBalance / 1e9} SOL. ` +
+        `Envie SOL para a session key: ${this.signerPublicKey.toBase58()}`
+      );
+      return false;
+    }
+
+    try {
+      const createAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+        this.signerPublicKey, // payer (session key paga o rent)
+        ownerFogoAta,         // ATA a criar
+        this.walletPublicKey, // owner da ATA
+        this.fogoMint,        // mint (dinâmico do GlobalState)
+      );
+
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      const Transaction = require("@solana/web3.js").Transaction;
+      const tx = new Transaction();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = this.signerPublicKey; // session key paga
+      tx.add(createAtaIx);
+      tx.sign(this.wallet.payer);
+
+      const sig = await this.connection.sendRawTransaction(tx.serialize());
+      await this.connection.confirmTransaction(sig, "confirmed");
+
+      this.logger.success(`✅ FOGO ATA criada! Sig: ${sig.slice(0, 12)}...`);
+      return true;
+    } catch (error: any) {
+      this.logger.error("❌ Erro ao criar FOGO ATA:", error.message || error);
+      return false;
+    }
+  }
+
+  async startUpgrade(targetLevel: number): Promise<string | null> {
+    try {
+      this.logger.info(`🔨 Iniciando upgrade para level ${targetLevel}...`);
+
+      // Garante que a FOGO ATA existe (criada durante initialize_player, mas pode não existir)
+      const fogoAtaReady = await this.ensureFogoAtaExists();
+      if (!fogoAtaReady) {
+        this.logger.error("❌ Não foi possível garantir a FOGO ATA. Upgrade cancelado.");
+        return null;
+      }
+
+      // Calcula PDAs
+      const [globalStatePDA] = getGlobalStatePDA();
+      const [configPDA] = getConfigPDA();
+      const [playerStatePDA] = getPlayerStatePDA(this.walletPublicKey);
+      const [programSignerPDA] = getProgramSignerPDA();
+
+      // Carrega mints dinâmicos do GlobalState on-chain
+      await this.loadMintsFromGlobalState();
+
+      // Calcula ATAs do owner para FISH e FOGO (usando mints dinâmicos)
+      const ownerFishAta = getAssociatedTokenAddressSync(this.fishMint, this.walletPublicKey);
+      const ownerFogoAta = getAssociatedTokenAddressSync(this.fogoMint, this.walletPublicKey);
+
+      // Cria a instrução de capability (autenticação)
+      const capabilityIx = await createCapabilityInstruction(this.walletPublicKey, this.logger);
+
+      // Cria a instrução de start_upgrade
+      // @ts-ignore
+      const upgradeIx = await this.program.methods
+        .startUpgrade(this.walletPublicKey, targetLevel)
+        .accounts({
+          signer: this.signerPublicKey,
+          globalState: globalStatePDA,
+          config: configPDA,
+          playerState: playerStatePDA,
+          fishMint: this.fishMint,
+          ownerFishAta: ownerFishAta,
+          fogoMint: this.fogoMint,
+          ownerFogoAta: ownerFogoAta,
+          buybackTreasury: BUYBACK_TREASURY,
+          liquidityTreasury: LIQUIDITY_TREASURY,
+          opsTreasury: OPS_TREASURY,
+          programSigner: programSignerPDA,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        })
+        .instruction();
+
+      // Adiciona compute unit limit
+      const computeUnitIx = ComputeBudgetProgram.setComputeUnitLimit({
+        units: CU_LIMITS.START_UPGRADE,
+      });
+
+      // Busca o sponsor
+      const sponsor = await getSponsor(this.logger);
+
+      // Monta a transação: [CU, Capability, StartUpgrade] (mesmo padrão do jogo)
+      const { blockhash } = await this.connection.getLatestBlockhash();
+
+      const Transaction = require("@solana/web3.js").Transaction;
+      const tx = new Transaction();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = sponsor;
+
+      tx.add(computeUnitIx);
+      tx.add(capabilityIx);
+      tx.add(upgradeIx);
+
+      tx.sign(this.wallet.payer);
+
+      const signature = await sendTransactionViaPaymaster(tx, sponsor, this.logger);
+
+      this.logger.success(`🔨 Upgrade iniciado! Level ${targetLevel} | Sig: ${signature.slice(0, 12)}...`);
+      return signature;
+    } catch (error: any) {
+      this.logger.error("Erro ao iniciar upgrade:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Finaliza upgrade da vara (após requisito de casts atingido)
+   */
+  async finishUpgrade(): Promise<string | null> {
+    try {
+      this.logger.info("🔨 Finalizando upgrade...");
+
+      // Calcula PDAs
+      const [globalStatePDA] = getGlobalStatePDA();
+      const [playerStatePDA] = getPlayerStatePDA(this.walletPublicKey);
+
+      // Cria a instrução de finish_upgrade
+      // NOTA: finish_upgrade NÃO usa capability instruction (diferente de cast/start_upgrade)
+      // @ts-ignore
+      const finishIx = await this.program.methods
+        .finishUpgrade(this.walletPublicKey)
+        .accounts({
+          signer: this.signerPublicKey,
+          globalState: globalStatePDA,
+          playerState: playerStatePDA,
+        })
+        .instruction();
+
+      // Adiciona compute unit limit
+      const computeUnitIx = ComputeBudgetProgram.setComputeUnitLimit({
+        units: CU_LIMITS.FINISH_UPGRADE,
+      });
+
+      // Busca o sponsor
+      const sponsor = await getSponsor(this.logger);
+
+      // Monta a transação
+      const { blockhash } = await this.connection.getLatestBlockhash();
+
+      const Transaction = require("@solana/web3.js").Transaction;
+      const tx = new Transaction();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = sponsor;
+
+      tx.add(computeUnitIx);
+      tx.add(finishIx);
+
+      tx.sign(this.wallet.payer);
+
+      const signature = await sendTransactionViaPaymaster(tx, sponsor, this.logger);
+
+      this.logger.success(`🔨 Upgrade finalizado! Sig: ${signature.slice(0, 12)}...`);
+      return signature;
+    } catch (error: any) {
+      this.logger.error("Erro ao finalizar upgrade:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
    * Loop principal do bot (não-bloqueante)
    * Resultados são atualizados via WebSocket callback
    */
@@ -475,9 +717,6 @@ export class FishingService {
       );
     });
 
-    // Busca estado inicial para o monitor
-    let lastFishCaught = playerState.fishCaughtAllTime;
-
     while (true) {
       try {
         castCount++;
@@ -488,7 +727,7 @@ export class FishingService {
           successCount++;
 
           // Registra o cast como pendente (não bloqueia)
-          this.logMonitor.registerCast(signature, lastFishCaught);
+          this.logMonitor.registerCast(signature);
 
           this.logger.debug(`Cast #${castCount} enviado, ${this.logMonitor.getPendingCount()} pendentes`);
         } else {

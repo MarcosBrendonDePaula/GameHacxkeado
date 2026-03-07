@@ -7,7 +7,6 @@ import {
   stopBot,
   getResults,
   getHistory,
-  getEncryptionSignature
 } from '../lib/api'
 
 interface GlobalStats {
@@ -33,6 +32,15 @@ interface BotStats {
     current: number
     max: number
     percent: number
+  }
+  upgrade?: {
+    inProgress: boolean
+    targetLevel: number
+    castsRequired: number
+    castsDone: number
+    castsRemaining: number
+    percent: number
+    estimatedSeconds: number
   }
 }
 
@@ -145,8 +153,7 @@ export default function Dashboard() {
     setActionLoading(true)
     setError(null)
     try {
-      const encSig = await getEncryptionSignature()
-      const result = await startBot(encSig)
+      const result = await startBot()
       if (!result.success) {
         setError(result.error || 'Erro ao iniciar bot')
       } else {
@@ -184,6 +191,17 @@ export default function Dashboard() {
       ? ((botStats.catches / (botStats.catches + botStats.misses)) * 100).toFixed(1)
       : '0.0'
     : '0.0'
+
+  // Formata tempo estimado
+  const formatTime = (totalSeconds: number): string => {
+    if (totalSeconds <= 0) return 'Pronto!'
+    const days = Math.floor(totalSeconds / 86400)
+    const hours = Math.floor((totalSeconds % 86400) / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`
+    if (hours > 0) return `${hours}h ${minutes}m`
+    return `${minutes}m`
+  }
 
   return (
     <div className="dashboard">
@@ -297,7 +315,66 @@ export default function Dashboard() {
                 <h4>Pendentes</h4>
                 <span className="stat-value">{botStats?.pendingCasts || 0}</span>
               </div>
+              <div className="stat-card small">
+                <h4>🌐 WebSocket</h4>
+                <span
+                  className="stat-value"
+                  style={{
+                    fontSize: '0.9rem',
+                    color:
+                      botStats?.websocket?.status === 'connected' ? '#4ade80' :
+                      botStats?.websocket?.status === 'connecting' ? '#fbbf24' :
+                      botStats?.websocket?.status === 'reconnecting' ? '#fb923c' :
+                      '#f85149'
+                  }}
+                >
+                  {botStats?.websocket?.status === 'connected' && '🟢 Conectado'}
+                  {botStats?.websocket?.status === 'connecting' && '🟡 Conectando...'}
+                  {botStats?.websocket?.status === 'reconnecting' && `🟠 Reconect. (${botStats?.websocket?.reconnectAttempts})`}
+                  {botStats?.websocket?.status === 'disconnected' && '🔴 Desconectado'}
+                  {!botStats?.websocket && '-'}
+                </span>
+              </div>
             </div>
+
+            {/* Progresso do Upgrade */}
+            {botStats?.upgrade?.inProgress && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '1rem',
+                background: '#1e1e3a',
+                borderRadius: '8px',
+                border: '1px solid #444'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontWeight: 'bold' }}>
+                    Upgrade para Level {botStats.upgrade.targetLevel}
+                  </span>
+                  <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>
+                    {formatTime(botStats.upgrade.estimatedSeconds)}
+                  </span>
+                </div>
+                <div style={{
+                  width: '100%',
+                  height: '8px',
+                  background: '#333',
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    width: `${botStats.upgrade.percent}%`,
+                    height: '100%',
+                    background: botStats.upgrade.percent >= 100 ? '#4ade80' : '#3b82f6',
+                    borderRadius: '4px',
+                    transition: 'width 0.5s ease',
+                  }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.3rem', fontSize: '0.8rem', color: '#888' }}>
+                  <span>{botStats.upgrade.castsDone.toLocaleString()} / {botStats.upgrade.castsRequired.toLocaleString()} casts</span>
+                  <span>{botStats.upgrade.percent}%</span>
+                </div>
+              </div>
+            )}
 
             <div style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#888' }}>
               <p>Wallet: {walletPubkey?.slice(0, 12)}...{walletPubkey?.slice(-12)}</p>

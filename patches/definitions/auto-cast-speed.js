@@ -3,40 +3,46 @@
  *
  * Modifica os delays do auto cast usando o sistema central de configuração.
  * Usa window.__cfg() para obter delay configurável dinamicamente.
+ *
+ * Atualizado para source index-CCCcPKhO.js
  */
 
 module.exports = {
     name: "Auto Cast Speed",
     description: "Modifica delays do auto cast usando sistema de configuração dinâmico",
-    version: "2.0.0",
+    version: "3.0.0",
     author: "GameHacxkeado",
 
-    // Padrões para encontrar delays de auto cast
-    patterns: {
-        // Padrão principal: const varname = DELAY, outraVar = 50
-        autocastConstant: /const\s+(\w+)\s*=\s*(\d+(?:e\d+)?)(?:\s*,?\s*\/\/[^\n]*)?[\s\n]*(\w+)\s*=\s*50/g,
+    // Substituições diretas no código
+    replacements: [
+        {
+            description: "Autocast main delay (2s -> dynamic)",
+            find: `if (!mt || !it.current) {
+                fe(0);
+                return;
+            }
+            const Sr = 2e3,
+                jr = 50;`,
+            replace: `if (!mt || !it.current) {
+                fe(0);
+                return;
+            }
+            const Sr = window.__cfg ? window.__cfg('autocast_delay', 2e3) : 2e3,
+                jr = 50;`,
+        },
+    ],
 
-        // Padrão de contexto específico do auto cast
-        autocastContext: /if\s*\(!ft\s*\|\|\s*!xe\.current\)[\s\S]*?const\s+(\w+)\s*=\s*(\d+(?:e\d+)?)/g,
-
-        // Padrão setInterval com delay
-        intervalDelay: /const\s+(\w+)\s*=\s*(\d+(?:e\d+)?),[\s\S]{1,200}?setInterval\([^,]*?,\s*\1\)/g
-    },
-
-    // Função principal de aplicação
     apply: (sourceCode) => {
         console.log('Aplicando Auto Cast Speed com sistema de configuração...');
 
         let modifiedCode = sourceCode;
         let modificationsCount = 0;
 
-        // Código a ser injetado para modificar delays dinamicamente
         const delayModificationCode = `
 // ===== AUTO CAST DELAY MODIFIER =====
 (function() {
     'use strict';
 
-    // Aguardar sistema de configuração estar disponível
     function waitForConfig(callback) {
         if (typeof window.__cfg === 'function') {
             callback();
@@ -45,50 +51,46 @@ module.exports = {
         }
     }
 
-    // Função para pegar delay das configurações
     function getAutocastDelay() {
-        // Configuração padrão: 500ms (velocidade normal)
-        return window.__cfg('autocast_delay', 500);
+        return window.__cfg('autocast_delay', 2000);
     }
 
-    // Intercepta e modifica os delays no código
     waitForConfig(() => {
         console.log('[AutoCast] Sistema iniciado');
-
-        // Configurações padrão
-        window.__cfg('autocast_delay', 500);
-
+        window.__cfg('autocast_delay', 2000);
         console.log(\`[AutoCast] Delay atual: \${getAutocastDelay()}ms\`);
         console.log('[AutoCast] Para alterar: window.__cfg.set("autocast_delay", NOVO_VALOR)');
+        console.log('[AutoCast] Valores sugeridos: 50 (instant), 200 (ultra), 500 (rápido), 1000 (médio), 2000 (normal)');
     });
 
 })();
 // ===== FIM AUTO CAST DELAY MODIFIER =====
 `;
 
-        // Procura pelos padrões de delay e substitui
-        Object.entries(module.exports.patterns).forEach(([patternName, pattern]) => {
-            const matches = [...modifiedCode.matchAll(pattern)];
+        const eol = modifiedCode.includes('\r\n') ? '\r\n' : '\n';
 
-            matches.forEach(match => {
-                const originalDelay = Number(match[2]);
+        for (const { description, find, replace } of module.exports.replacements) {
+            const findText = find.replace(/\n/g, eol);
+            const replaceText = replace.replace(/\n/g, eol);
 
-                // Verifica se é um delay de auto cast (50ms - 3000ms)
-                if (originalDelay >= 50 && originalDelay <= 3000) {
-                    const replacement = module.exports.createReplacement(match, patternName);
-                    modifiedCode = modifiedCode.replace(match[0], replacement);
-                    modificationsCount++;
+            if (modifiedCode.includes(replaceText)) {
+                console.log(`[auto-cast-speed] ${description}: já aplicado`);
+                continue;
+            }
 
-                    console.log(`[auto-cast-speed] ${patternName}: ${originalDelay}ms → dinâmico`);
-                }
-            });
-        });
+            if (modifiedCode.includes(findText)) {
+                modifiedCode = modifiedCode.replace(findText, replaceText);
+                modificationsCount++;
+                console.log(`[auto-cast-speed] ${description}: aplicado`);
+            } else {
+                console.warn(`[auto-cast-speed] ${description}: padrão não encontrado`);
+            }
+        }
 
-        // Insere o código de modificação de delay no final (mais seguro)
         modifiedCode = modifiedCode + '\n' + delayModificationCode;
 
         if (modificationsCount === 0) {
-            console.log('[auto-cast-speed] Nenhum delay encontrado - injetando sistema dinâmico');
+            console.log('[auto-cast-speed] Nenhum delay encontrado via substituição direta');
         } else {
             console.log(`[auto-cast-speed] ${modificationsCount} delays modificados para sistema dinâmico`);
         }
@@ -97,40 +99,14 @@ module.exports = {
         return modifiedCode;
     },
 
-    // Cria replacement baseado no padrão
-    createReplacement(match, patternName) {
-        const fullMatch = match[0];
-        const varName = match[1];
-        const originalDelay = match[2];
-
-        switch (patternName) {
-            case 'autocastConstant':
-                // Substitui o delay por uma chamada dinâmica
-                return fullMatch.replace(
-                    `${varName} = ${originalDelay}`,
-                    `${varName} = window.__cfg ? window.__cfg('autocast_delay', 500) : 500 // Dynamic autocast delay`
-                );
-
-            case 'autocastContext':
-            case 'intervalDelay':
-            default:
-                // Para outros padrões, substitui o número diretamente
-                return fullMatch.replace(
-                    originalDelay,
-                    `(window.__cfg ? window.__cfg('autocast_delay', 500) : 500)`
-                );
-        }
-    },
-
-    // Função de remoção
     remove: (sourceCode) => {
         console.log('Removendo Auto Cast Speed...');
 
-        // Remove o bloco do modificador de delay
         const startMarker = '// ===== AUTO CAST DELAY MODIFIER =====';
         const endMarker = '// ===== FIM AUTO CAST DELAY MODIFIER =====';
 
         let modifiedCode = sourceCode;
+        const eol = modifiedCode.includes('\r\n') ? '\r\n' : '\n';
 
         const startIndex = modifiedCode.indexOf(startMarker);
         const endIndex = modifiedCode.indexOf(endMarker);
@@ -141,16 +117,13 @@ module.exports = {
             modifiedCode = beforeCode + afterCode.replace(/^\n+/, '');
         }
 
-        // Remove comentários e substitui chamadas dinâmicas por valor padrão
-        modifiedCode = modifiedCode.replace(/ \/\/ Dynamic autocast delay/g, '');
-        modifiedCode = modifiedCode.replace(
-            /\(window\.__cfg \? window\.__cfg\('autocast_delay', (\d+)\) : (\d+)\)/g,
-            '$1' // Usa o valor padrão
-        );
-        modifiedCode = modifiedCode.replace(
-            /= window\.__cfg \? window\.__cfg\('autocast_delay', (\d+)\) : (\d+)/g,
-            '= $1' // Usa o valor padrão
-        );
+        for (const { find, replace } of module.exports.replacements.slice().reverse()) {
+            const findText = find.replace(/\n/g, eol);
+            const replaceText = replace.replace(/\n/g, eol);
+            if (modifiedCode.includes(replaceText)) {
+                modifiedCode = modifiedCode.replace(replaceText, findText);
+            }
+        }
 
         console.log('✅ Auto Cast Speed removido!');
         return modifiedCode;

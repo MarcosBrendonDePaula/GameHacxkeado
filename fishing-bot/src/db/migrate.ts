@@ -1,9 +1,21 @@
 import { Database } from "bun:sqlite";
-import { resolve } from "path";
+import { resolve, dirname, basename } from "path";
+import { mkdirSync, existsSync } from "fs";
 
-// Caminho do banco de dados
-const appDir = process.env.APP_DIR || resolve(import.meta.dir, "../..");
-const DB_PATH = resolve(appDir, "data/fishing-bot.db");
+// Detecta se está rodando como executável compilado
+const exeName = basename(Bun.argv[0]).toLowerCase();
+const isExecutable =
+  import.meta.path.includes("~BUN") ||
+  (exeName.endsWith(".exe") && !exeName.includes("bun")) ||
+  process.env.FISHING_BOT_PROD === "1";
+
+// Em dev: relativo ao source. Em prod: relativo ao executável
+const appDir = process.env.APP_DIR || (isExecutable ? dirname(Bun.argv[0]) : resolve(import.meta.dir, "../.."));
+const dataDir = resolve(appDir, "data");
+if (!existsSync(dataDir)) {
+  mkdirSync(dataDir, { recursive: true });
+}
+const DB_PATH = resolve(dataDir, "fishing-bot.db");
 
 console.log(`📦 Migrando banco de dados: ${DB_PATH}`);
 
@@ -75,7 +87,6 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_bot_history_timestamp ON bot_history(timestamp);
   CREATE INDEX IF NOT EXISTS idx_logs_wallet ON logs(wallet_pubkey);
   CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
-  CREATE INDEX IF NOT EXISTS idx_logs_category ON logs(category);
 `);
 
 // Migrações incrementais (para bancos existentes)
@@ -156,6 +167,36 @@ try {
 } catch (e: any) {
   if (!e.message?.includes("duplicate column name")) {
     console.error("  ⚠️ Erro ao adicionar coluna category:", e.message);
+  }
+}
+
+// Criar índice para category (após adicionar a coluna)
+try {
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_logs_category ON logs(category);`);
+  console.log("  ✓ Índice 'idx_logs_category' criado");
+} catch (e: any) {
+  if (!e.message?.includes("already exists")) {
+    console.error("  ⚠️ Erro ao criar índice category:", e.message);
+  }
+}
+
+// Migração: adicionar session_secret_key (plaintext, sem criptografia)
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN session_secret_key TEXT;`);
+  console.log("  ✓ Coluna 'session_secret_key' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna session_secret_key:", e.message);
+  }
+}
+
+// Migração: adicionar auto_upgrade (auto-upgrade da vara)
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_upgrade INTEGER DEFAULT 0;`);
+  console.log("  ✓ Coluna 'auto_upgrade' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_upgrade:", e.message);
   }
 }
 

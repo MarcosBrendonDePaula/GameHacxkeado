@@ -50,8 +50,8 @@ function collectIdentifiers(block) {
     const detectedMatch = matchOnce(/,\s*(\w+)\s*=\s*useDetectedWalletPublicKey\(\)/, block, "useDetectedWallet");
     const referrerMatch = matchOnce(/\{\s*referrerPublicKey:\s*(\w+)\s*\}\s*=\s*useReferral\(\)/, block, "useReferral");
     const referralIndex = referrerMatch.index + referrerMatch[0].length;
-    const boolBlockEnd = block.indexOf("const [bt", referralIndex);
-    const boolBlock = block.slice(referralIndex, boolBlockEnd === -1 ? referralIndex + 800 : boolBlockEnd);
+    // Use a larger window (1200 chars) and no hardcoded boundary
+    const boolBlock = block.slice(referralIndex, referralIndex + 1200);
     const modals = captureModalPairs(boolBlock);
     const devHudMatch = matchOnce(/\[([A-Za-z0-9_$]+),\s*([A-Za-z0-9_$]+)\]\s*=\s*reactExports\.useState\(DEV_MODE\)/, block, "dev HUD state");
     const mismatchPairMatch = matchOnce(
@@ -60,7 +60,7 @@ function collectIdentifiers(block) {
         "wallet mismatch state"
     );
     const tailMatch = matchOnce(
-        /\[([A-Za-z0-9_$]+),\s*([A-Za-z0-9_$]+)\]\s*=\s*reactExports\.useState\(!1\),\s*\[([A-Za-z0-9_$]+),\s*([A-Za-z0-9_$]+)\]\s*=\s*reactExports\.useState\(!1\),\s*\[([A-Za-z0-9_$]+),\s*([A-Za-z0-9_$]+)\]\s*=\s*reactExports\.useState\(!1\),\s*xt\s*=/,
+        /\[([A-Za-z0-9_$]+),\s*([A-Za-z0-9_$]+)\]\s*=\s*reactExports\.useState\(!1\),\s*\[([A-Za-z0-9_$]+),\s*([A-Za-z0-9_$]+)\]\s*=\s*reactExports\.useState\(!1\),\s*\[([A-Za-z0-9_$]+),\s*([A-Za-z0-9_$]+)\]\s*=\s*reactExports\.useState\(!1\),\s*(\w+)\s*=/,
         block,
         "flag tail states"
     );
@@ -395,48 +395,90 @@ function buildBridgeBlock(ctx, eol) {
     return lines.join(eol) + eol;
 }
 
-const REPAIR_CONTROLLER_BLOCK = `
+/**
+ * Detecta dinamicamente as variaveis do RepairRodModal e constroi o bloco do controller.
+ */
+function buildRepairControllerBlock(source, eol) {
+    const modalStart = source.indexOf("RepairRodModal = ({");
+    if (modalStart === -1) throw new Error("[game-bridge] RepairRodModal nao encontrado");
+    const modalBlock = source.slice(modalStart, modalStart + 3000);
+
+    const onCloseMatch = modalBlock.match(/onClose:\s*(\w+)/);
+    if (!onCloseMatch) throw new Error("[game-bridge] onClose do RepairRodModal nao encontrado");
+    const closeVar = onCloseMatch[1];
+
+    const processingMatch = modalBlock.match(/const\s*\[(\w+),\s*(\w+)\]\s*=\s*reactExports\.useState\(!1\)/);
+    if (!processingMatch) throw new Error("[game-bridge] isProcessing do RepairRodModal nao encontrado");
+    const isProcessingVar = processingMatch[1];
+
+    const errorMatch = modalBlock.match(/\[(\w+),\s*(\w+)\]\s*=\s*reactExports\.useState\(null\)/);
+    if (!errorMatch) throw new Error("[game-bridge] error state do RepairRodModal nao encontrado");
+    const errorVar = errorMatch[1];
+    const setErrorVar = errorMatch[2];
+
+    const aliasMatch = modalBlock.match(/if\s*\(!\w+\)\s*return[^;]*;\s*const\s+(\w+)\s*=\s*\w+;/);
+    if (!aliasMatch) throw new Error("[game-bridge] playerState alias do RepairRodModal nao encontrado");
+    const playerStateVar = aliasMatch[1];
+
+    const canRepairMatch = modalBlock.match(/(\w+)\s*=\s*\w+\s*&&\s*\w+\.currentDurability\s*<=\s*\w+/);
+    if (!canRepairMatch) throw new Error("[game-bridge] canRepair do RepairRodModal nao encontrado");
+    const canRepairVar = canRepairMatch[1];
+
+    const canRepairIndex = modalBlock.indexOf(canRepairMatch[0]);
+    const afterCanRepair = modalBlock.slice(canRepairIndex);
+    const repairFnMatch = afterCanRepair.match(/(\w+)\s*=\s*async\s*\(\)\s*=>\s*\{/);
+    if (!repairFnMatch) throw new Error("[game-bridge] repairNow function do RepairRodModal nao encontrada");
+    const repairNowVar = repairFnMatch[1];
+
+    console.log(`[game-bridge] RepairRodModal vars: close=${closeVar}, processing=${isProcessingVar}, error=${errorVar}, setError=${setErrorVar}, playerState=${playerStateVar}, canRepair=${canRepairVar}, repairNow=${repairNowVar}`);
+
+    return `
         // ===== REPAIR MODAL CONTROLLER =====
         reactExports.useEffect(() => {
             if (typeof window == "undefined") return;
             const controller = {
                 version: "repair-modal/v1",
-                repairNow: () => mt(),
-                close: () => J(),
-                setError: (message) => ue(message),
+                repairNow: () => ${repairNowVar}(),
+                close: () => ${closeVar}(),
+                setError: (message) => ${setErrorVar}(message),
                 state: () => ({
-                    canRepair: ct,
-                    isProcessing: ee,
-                    error: ae,
-                    playerState: ft,
+                    canRepair: ${canRepairVar},
+                    isProcessing: ${isProcessingVar},
+                    error: ${errorVar},
+                    playerState: ${playerStateVar},
                 }),
             };
             window.__repairModal = controller;
             return () => {
                 if (window.__repairModal === controller) delete window.__repairModal;
             };
-        }, [ct, ee, ae, ft, mt, J, ue]);
+        }, [${canRepairVar}, ${isProcessingVar}, ${errorVar}, ${playerStateVar}, ${repairNowVar}, ${closeVar}, ${setErrorVar}]);
         // ===== END REPAIR MODAL CONTROLLER =====
 `;
+}
 
 function injectRepairController(source, eol) {
     if (source.includes(REPAIR_CONTROLLER_MARKER)) {
-        console.log("[game-bridge] Controller do RepairRodModal já presente.");
+        console.log("[game-bridge] Controller do RepairRodModal ja presente.");
         return source;
     }
-    const anchorRegex = /\sit\s*=\s*\(ft\.currentDurability\s*\/\s*ft\.maxDurability\)\s*\*\s*100;/;
+    // Generic anchor: <var> = (<var>.currentDurability / <var>.maxDurability) * 100;
+    const anchorRegex = /\s(\w+)\s*=\s*\(\w+\.currentDurability\s*\/\s*\w+\.maxDurability\)\s*\*\s*100;/;
     const match = anchorRegex.exec(source);
-    if (!match) throw new Error("[game-bridge] Não encontrei o anchor do RepairRodModal.");
+    if (!match) throw new Error("[game-bridge] Nao encontrei o anchor do RepairRodModal.");
     const insertIndex = match.index + match[0].length;
     console.log("[game-bridge] Expondo controller global do RepairRodModal.");
-    const block = `${eol}${REPAIR_CONTROLLER_BLOCK.replace(/\n/g, eol)}`;
+    const controllerBlock = buildRepairControllerBlock(source, eol);
+    const block = `${eol}${controllerBlock.replace(/\n/g, eol)}`;
     return source.slice(0, insertIndex) + block + source.slice(insertIndex);
 }
+
+
 
 module.exports = {
     name: "Game External Bridge",
     description: "Exibe dados do jogo e ações de controle via window.__game",
-    version: "2.0.0",
+    version: "3.0.0",
 
     apply(sourceCode) {
         const eol = sourceCode.includes("\r\n") ? "\r\n" : "\n";

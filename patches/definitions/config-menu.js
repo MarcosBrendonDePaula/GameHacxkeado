@@ -2,12 +2,12 @@
  * Config Menu Patch
  *
  * Adiciona menu visual no jogo para configurar opções dinamicamente.
- * Hotkey: Ctrl+Shift+C para abrir/fechar
+ * Hotkey: F2 para abrir/fechar
  */
 
 module.exports = {
     name: "Config Menu",
-    description: "Menu visual de configurações no jogo (Ctrl+Shift+C)",
+    description: "Menu visual de configurações no jogo (F2)",
     version: "1.0.0",
     author: "GameHacxkeado",
 
@@ -212,7 +212,7 @@ module.exports = {
                 <h2>⚙️ Configurações do Jogo</h2>
 
                 <div class="config-info">
-                    Pressione <strong>Ctrl+Shift+C</strong> para abrir/fechar este menu
+                    Pressione <strong>F2</strong> para abrir/fechar este menu
                 </div>
 
 
@@ -543,16 +543,16 @@ module.exports = {
             }
         }
 
-        // Hotkey listener (Ctrl+Shift+C)
+        // Hotkey listener (F2)
         document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.shiftKey && e.code === 'KeyF') {
+            if (e.key === 'F2') {
                 e.preventDefault();
                 toggleMenu();
             }
         });
 
         console.log('[ConfigMenu] Sistema inicializado');
-        console.log('[ConfigMenu] Pressione Ctrl+Shift+C para abrir o menu');
+        console.log('[ConfigMenu] Pressione F2 para abrir o menu');
     });
 
 })();

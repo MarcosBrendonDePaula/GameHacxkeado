@@ -1,72 +1,18 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import { SessionButton, useSession, isEstablished } from '@fogo/sessions-sdk-react'
+import { SessionButton } from '@fogo/sessions-sdk-react'
 import { WalletProvider } from './providers/WalletProvider'
-import { AuthProvider, useAuth } from './providers/AuthProvider'
+import { AuthProvider } from './providers/AuthProvider'
 import BotInfo from './pages/BotInfo'
 import Logs from './pages/Logs'
 import AddWallet from './pages/AddWallet'
+import GameConfig from './pages/GameConfig'
 
 function WalletStatus() {
-  const sessionState = useSession()
-  const { isConnected, walletPubkey } = useAuth()
-
-  if (isConnected && walletPubkey) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '8px 14px',
-          background: 'rgba(63, 185, 80, 0.1)',
-          border: '1px solid rgba(63, 185, 80, 0.3)',
-          borderRadius: '10px',
-        }}>
-          <div style={{
-            width: '8px',
-            height: '8px',
-            background: 'var(--success)',
-            borderRadius: '50%',
-            boxShadow: '0 0 10px var(--success)',
-            animation: 'pulse 2s ease infinite',
-          }} />
-          <span style={{ color: 'var(--success)', fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 500 }}>
-            {walletPubkey.slice(0, 4)}...{walletPubkey.slice(-4)}
-          </span>
-        </div>
-        <button
-          onClick={() => {
-            indexedDB.deleteDatabase('sessionsdb')
-            window.location.reload()
-          }}
-          style={{
-            padding: '8px 16px',
-            fontSize: '0.85rem',
-            background: 'linear-gradient(135deg, var(--danger) 0%, #ef4444 100%)',
-            border: 'none',
-            borderRadius: '8px',
-            color: 'white',
-            cursor: 'pointer',
-            fontWeight: 600,
-            transition: 'all 0.2s ease',
-            boxShadow: '0 2px 8px var(--danger-glow)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)'
-            e.currentTarget.style.boxShadow = '0 4px 12px var(--danger-glow)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = '0 2px 8px var(--danger-glow)'
-          }}
-        >
-          Sair
-        </button>
-      </div>
-    )
-  }
-
-  return <SessionButton />
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <SessionButton />
+    </div>
+  )
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
@@ -75,6 +21,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
     { path: '/logs', label: 'Logs', icon: <LogsIcon /> },
+    { path: '/game', label: 'On-Chain', icon: <ChainIcon /> },
     { path: '/config', label: 'Configurar', icon: <ConfigIcon />, accent: true },
   ]
 
@@ -82,7 +29,7 @@ function Layout({ children }: { children: React.ReactNode }) {
     <div className="app" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <nav className="navbar">
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem' }}>
+          <div className="nav-left" style={{ display: 'flex', alignItems: 'center', gap: '2.5rem' }}>
             {/* Logo */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div style={{
@@ -170,6 +117,7 @@ function App() {
             <Routes>
               <Route path="/" element={<BotInfo />} />
               <Route path="/logs" element={<Logs />} />
+              <Route path="/game" element={<GameConfig />} />
               <Route path="/config" element={<AddWallet />} />
             </Routes>
           </Layout>
@@ -212,6 +160,15 @@ function LogsIcon() {
       <line x1="16" y1="13" x2="8" y2="13"/>
       <line x1="16" y1="17" x2="8" y2="17"/>
       <polyline points="10,9 9,9 8,9"/>
+    </svg>
+  )
+}
+
+function ChainIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
     </svg>
   )
 }

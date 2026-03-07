@@ -1,10 +1,23 @@
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import * as schema from "./schema";
-import { resolve } from "path";
+import { resolve, dirname, basename } from "path";
+import { mkdirSync, existsSync } from "fs";
 
-// Caminho do banco de dados
-const DB_PATH = resolve(import.meta.dir, "../../data/fishing-bot.db");
+// Detecta se está rodando como executável compilado
+const exeName = basename(Bun.argv[0]).toLowerCase();
+const isExecutable =
+  import.meta.path.includes("~BUN") ||
+  (exeName.endsWith(".exe") && !exeName.includes("bun")) ||
+  process.env.FISHING_BOT_PROD === "1";
+
+// Em dev: relativo ao source. Em prod: relativo ao executável
+const appDir = process.env.APP_DIR || (isExecutable ? dirname(Bun.argv[0]) : resolve(import.meta.dir, "../.."));
+const dataDir = resolve(appDir, "data");
+if (!existsSync(dataDir)) {
+  mkdirSync(dataDir, { recursive: true });
+}
+const DB_PATH = resolve(dataDir, "fishing-bot.db");
 
 // Criar conexão SQLite
 const sqlite = new Database(DB_PATH, { create: true });

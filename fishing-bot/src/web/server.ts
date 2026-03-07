@@ -123,6 +123,37 @@ const publicApi = new Elysia({ prefix: "/api" })
     }
   })
 
+  // Busca Config e GlobalState do programa on-chain (público)
+  .get("/game-config", async () => {
+    try {
+      const reader = getPlayerReader();
+      const [config, globalState] = await Promise.all([
+        reader.fetchConfig(),
+        reader.fetchGlobalState(),
+      ]);
+
+      return { config, globalState };
+    } catch (error: any) {
+      console.error("Erro ao buscar game config:", error);
+      return { error: error.message };
+    }
+  })
+
+  // Busca balances da wallet (FOGO, FISH, USDC) - público
+  .get("/wallet/:wallet/balances", async ({ params }) => {
+    try {
+      const playerReader = getPlayerReader();
+      const balances = await playerReader.fetchWalletBalances(params.wallet);
+      if (!balances) {
+        return { error: "Não foi possível buscar balances" };
+      }
+      return balances;
+    } catch (error: any) {
+      console.error("Erro ao buscar balances:", error);
+      return { error: error.message };
+    }
+  })
+
   // Busca dados do player diretamente da blockchain (público)
   .get("/player/:wallet", async ({ params }) => {
     try {
@@ -148,6 +179,7 @@ const publicApi = new Elysia({ prefix: "/api" })
           supercastRemainingCasts: playerState.supercastRemainingCasts,
           upgradeInProgress: playerState.upgradeInProgress,
           upgradeTargetLevel: playerState.upgradeTargetLevel,
+          upgradeCastsAtStart: playerState.upgradeCastsAtStart,
         },
       };
     } catch (error: any) {
@@ -236,9 +268,8 @@ const protectedApi = new Elysia({ prefix: "/api" })
       bot: bot
         ? {
             ...bot,
-            // Não expor session key criptografada
-            encryptedSessionKey: undefined,
-            sessionKeyIv: undefined,
+            // Não expor session key na API
+            sessionSecretKey: undefined,
             isRunning,
           }
         : null,
@@ -266,6 +297,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
         autoRepair: bot.autoRepair,
         autoRepairMin: bot.autoRepairMin,
         autoRepairMax: bot.autoRepairMax,
+        autoUpgrade: bot.autoUpgrade,
         autoRestartMinutes: bot.autoRestartMinutes,
         enabled: bot.enabled,
         createdAt: bot.createdAt,
@@ -277,15 +309,15 @@ const protectedApi = new Elysia({ prefix: "/api" })
   })
 
   // Cria ou atualiza bot
-  // Body: { sessionSecretKey, sessionPublicKey, encryptionSignature, delayMin?, delayMax?, proxy? }
+  // Body: { sessionSecretKey, sessionPublicKey, delayMin?, delayMax?, proxy? }
   .post("/bot", async ({ walletPubkey, body }) => {
-    const { sessionSecretKey, sessionPublicKey, encryptionSignature, delayMin, delayMax, proxy } =
+    const { sessionSecretKey, sessionPublicKey, delayMin, delayMax, proxy } =
       body as any;
 
-    if (!sessionSecretKey || !sessionPublicKey || !encryptionSignature) {
+    if (!sessionSecretKey || !sessionPublicKey) {
       return {
         success: false,
-        error: "Campos obrigatórios: sessionSecretKey, sessionPublicKey, encryptionSignature",
+        error: "Campos obrigatórios: sessionSecretKey, sessionPublicKey",
       };
     }
 
@@ -293,7 +325,6 @@ const protectedApi = new Elysia({ prefix: "/api" })
       walletPubkey: walletPubkey!,
       sessionSecretKey,
       sessionPublicKey,
-      encryptionSignature,
       delayMin,
       delayMax,
       proxy,
@@ -304,7 +335,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
 
   // Atualiza configurações do bot
   .patch("/bot", async ({ walletPubkey, body }) => {
-    const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoRestartMinutes } = body as any;
+    const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoUpgrade, autoRestartMinutes } = body as any;
 
     const result = await botManager.updateBotConfig(walletPubkey!, {
       delayMin,
@@ -313,6 +344,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
       autoRepair,
       autoRepairMin,
       autoRepairMax,
+      autoUpgrade,
       autoRestartMinutes,
     });
 
@@ -325,20 +357,27 @@ const protectedApi = new Elysia({ prefix: "/api" })
   })
 
   // Inicia bot
-  // Body: { encryptionSignature }
-  .post("/bot/start", async ({ walletPubkey, body }) => {
-    const { encryptionSignature } = body as any;
-
-    if (!encryptionSignature) {
-      return { success: false, error: "encryptionSignature e obrigatorio" };
-    }
-
-    return botManager.startBot(walletPubkey!, encryptionSignature);
+  .post("/bot/start", async ({ walletPubkey }) => {
+    return botManager.startBot(walletPubkey!);
   })
 
   // Para bot
   .post("/bot/stop", async ({ walletPubkey }) => {
     return botManager.stopBot(walletPubkey!);
+  })
+
+  // Inicia upgrade da vara
+  .post("/bot/upgrade/start", async ({ walletPubkey, body }) => {
+    const { targetLevel } = body as any;
+    if (!targetLevel || targetLevel < 2 || targetLevel > 60) {
+      return { success: false, error: "targetLevel inválido (2-60)" };
+    }
+    return botManager.startUpgrade(walletPubkey!, targetLevel);
+  })
+
+  // Finaliza upgrade da vara
+  .post("/bot/upgrade/finish", async ({ walletPubkey }) => {
+    return botManager.finishUpgrade(walletPubkey!);
   })
 
   // Resultados do bot
@@ -362,8 +401,9 @@ const protectedApi = new Elysia({ prefix: "/api" })
     const limit = query.limit ? parseInt(query.limit as string) : 50;
     const offset = query.offset ? parseInt(query.offset as string) : 0;
     const level = query.level as string | undefined;
+    const category = query.category as string | undefined;
 
-    return botManager.getLogs(walletPubkey!, { limit, offset, level });
+    return botManager.getLogs(walletPubkey!, { limit, offset, level, category });
   });
 
 // Combina APIs
@@ -484,6 +524,17 @@ async function startServer() {
     } else {
       console.log(`🎨 Frontend (Vite HMR) integrado no mesmo servidor`);
     }
+
+    // Log rotation: limpa dados com mais de 3 dias a cada 30 minutos
+    const CLEANUP_INTERVAL = 30 * 60 * 1000;
+    botManager.cleanupOldData(3); // cleanup inicial
+    setInterval(() => botManager.cleanupOldData(3), CLEANUP_INTERVAL);
+    console.log(`🧹 Log rotation ativo: dados >3 dias limpos a cada 30min`);
+
+    // Auto-inicia bots que estavam ligados antes do restart
+    botManager.autoStartBots().catch((err) => {
+      console.error(`❌ Erro ao auto-iniciar bots:`, err);
+    });
   });
 }
 

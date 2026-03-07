@@ -261,7 +261,6 @@ export async function getBot() {
 export async function upsertBot(params: {
   sessionSecretKey: string;
   sessionPublicKey: string;
-  encryptionSignature: string;
   delayMin?: number;
   delayMax?: number;
   proxy?: string;
@@ -282,6 +281,7 @@ export async function updateBotConfig(params: {
   autoRepair?: boolean;
   autoRepairMin?: number;
   autoRepairMax?: number;
+  autoUpgrade?: boolean;
   autoRestartMinutes?: number;
 }) {
   return apiRequest<{ success: boolean; error?: string }>("/bot", {
@@ -302,10 +302,9 @@ export async function deleteBot() {
 /**
  * Inicia o bot
  */
-export async function startBot(encryptionSignature: string) {
+export async function startBot() {
   return apiRequest<{ success: boolean; error?: string }>("/bot/start", {
     method: "POST",
-    body: { encryptionSignature },
   });
 }
 
@@ -359,6 +358,75 @@ export async function getLogs(params?: {
 }
 
 /**
+ * Obtém Config e GlobalState do programa on-chain (não requer auth)
+ */
+export async function getGameConfig() {
+  return apiRequest<{
+    config: {
+      authority: string;
+      issuerPubkey: string;
+      requireCapabilityForCatch: boolean;
+      requireCapabilityForSpend: boolean;
+      requireFeeForInit: boolean;
+      softGateMode: boolean;
+      basicCooldownMs: number;
+    } | null;
+    globalState: {
+      authority: string;
+      fishMint: string;
+      fogoMint: string;
+      fogoTreasury: string;
+      fishBurnVault: string;
+      currentDifficulty: string;
+      totalNetworkPower: string;
+      lastDifficultyAdjustment: string;
+      baseEmissionRate: string;
+      emissionDecayRate: string;
+      dailyTargetEmission: string;
+      totalFogoCollected: string;
+      totalFishMinted: string;
+      totalUnprocessedFish: string;
+      accumulatedProcessingFees: string;
+      feesPerUnprocessedFish: string;
+      halvingCount: number;
+      yieldGateActive: number;
+      gamePaused: number;
+    } | null;
+  }>("/game-config", { requiresAuth: false });
+}
+
+/**
+ * Inicia upgrade da vara
+ */
+export async function startUpgrade(targetLevel: number) {
+  return apiRequest<{ success: boolean; error?: string }>("/bot/upgrade/start", {
+    method: "POST",
+    body: { targetLevel },
+  });
+}
+
+/**
+ * Finaliza upgrade da vara
+ */
+export async function finishUpgrade() {
+  return apiRequest<{ success: boolean; error?: string }>("/bot/upgrade/finish", {
+    method: "POST",
+  });
+}
+
+/**
+ * Obtém balances da wallet (FOGO, FISH, USDC) - público
+ */
+export async function getWalletBalances(walletPubkey: string) {
+  return apiRequest<{
+    fogo: number;
+    fish: number;
+    usdc: number;
+    error?: string;
+  }>(`/wallet/${walletPubkey}/balances`, { requiresAuth: false });
+}
+
+/**
  * Obtém dados do player diretamente da blockchain (não requer auth)
  */
 export async function getPlayerState(walletPubkey: string) {
@@ -377,32 +445,9 @@ export async function getPlayerState(walletPubkey: string) {
       supercastRemainingCasts: number;
       upgradeInProgress: boolean;
       upgradeTargetLevel: number;
+      upgradeCastsAtStart: string;
     };
     error?: string;
   }>(`/player/${walletPubkey}`, { requiresAuth: false });
 }
 
-// ============================================
-// Mensagem de criptografia E2E
-// ============================================
-
-/**
- * Mensagem que deve ser assinada para criptografar/descriptografar session keys
- */
-export const ENCRYPTION_MESSAGE = (walletPubkey: string) =>
-  `Fogo Fishing Encryption Key\nWallet: ${walletPubkey}\nV1`;
-
-/**
- * Obtém a assinatura de criptografia da sessão
- */
-export async function getEncryptionSignature(): Promise<string> {
-  if (!currentSession) {
-    throw new Error("Sessão não conectada");
-  }
-
-  const message = ENCRYPTION_MESSAGE(currentSession.walletPubkey.toBase58());
-  const messageBytes = new TextEncoder().encode(message);
-  const signature = await currentSession.signMessage(messageBytes);
-
-  return uint8ArrayToBase64(signature);
-}

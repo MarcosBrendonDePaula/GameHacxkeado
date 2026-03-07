@@ -5,6 +5,7 @@ import { getLogs } from '../lib/api'
 interface Log {
   id: number
   level: 'success' | 'warn' | 'error' | 'info'
+  category?: 'general' | 'websocket' | 'cast' | 'repair'
   message: string
   timestamp: Date
 }
@@ -18,12 +19,14 @@ interface LogsResponse {
 }
 
 type LogLevel = 'all' | 'success' | 'warn' | 'error' | 'info'
+type LogCategory = 'all' | 'general' | 'websocket' | 'cast' | 'repair'
 
 export default function Logs() {
   const { isConnected } = useAuth()
   const [logs, setLogs] = useState<Log[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedLevel, setSelectedLevel] = useState<LogLevel>('all')
+  const [selectedCategory, setSelectedCategory] = useState<LogCategory>('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalLogs, setTotalLogs] = useState(0)
   const [logsPerPage, setLogsPerPage] = useState(50)
@@ -41,13 +44,17 @@ export default function Logs() {
 
     try {
       const offset = (page - 1) * logsPerPage
-      const params: { limit: number; offset: number; level?: string } = {
+      const params: { limit: number; offset: number; level?: string; category?: string } = {
         limit: logsPerPage,
         offset,
       }
 
       if (selectedLevel !== 'all') {
         params.level = selectedLevel
+      }
+
+      if (selectedCategory !== 'all') {
+        params.category = selectedCategory
       }
 
       const data: LogsResponse = await getLogs(params)
@@ -59,12 +66,12 @@ export default function Logs() {
     } finally {
       setLoading(false)
     }
-  }, [isConnected, logsPerPage, selectedLevel])
+  }, [isConnected, logsPerPage, selectedLevel, selectedCategory])
 
   useEffect(() => {
     setCurrentPage(1)
     fetchLogs(1)
-  }, [selectedLevel, logsPerPage])
+  }, [selectedLevel, selectedCategory, logsPerPage])
 
   useEffect(() => {
     fetchLogs(currentPage)
@@ -97,6 +104,14 @@ export default function Logs() {
   ]
 
   const logsPerPageOptions = [25, 50, 100, 200]
+
+  const categoryFilters = [
+    { id: 'all' as LogCategory, label: 'Todas', icon: '📋', color: 'var(--text-secondary)' },
+    { id: 'websocket' as LogCategory, label: 'WebSocket', icon: '🌐', color: '#3b82f6' },
+    { id: 'cast' as LogCategory, label: 'Casts', icon: '🎣', color: '#10b981' },
+    { id: 'repair' as LogCategory, label: 'Reparos', icon: '🔧', color: '#f59e0b' },
+    { id: 'general' as LogCategory, label: 'Geral', icon: '📝', color: 'var(--text-secondary)' },
+  ]
 
   if (!isConnected) {
     return (
@@ -189,6 +204,62 @@ export default function Logs() {
                   <span>{filter.label}</span>
                 </button>
               ))}
+            </div>
+
+            {/* Filtros de Categoria */}
+            <div style={{
+              marginTop: '24px',
+              paddingTop: '20px',
+              borderTop: '1px solid var(--border)',
+            }}>
+              <h3 style={{
+                fontSize: '0.85rem',
+                color: 'var(--text-secondary)',
+                marginBottom: '16px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <FilterIcon />
+                Filtrar por categoria
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {categoryFilters.map(filter => (
+                  <button
+                    key={filter.id}
+                    onClick={() => setSelectedCategory(filter.id)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      border: selectedCategory === filter.id
+                        ? `2px solid ${filter.color}`
+                        : '1px solid var(--border)',
+                      backgroundColor: selectedCategory === filter.id
+                        ? `${filter.color}15`
+                        : 'var(--bg-primary)',
+                      color: selectedCategory === filter.id ? filter.color : 'var(--text-primary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      fontWeight: selectedCategory === filter.id ? 600 : 500,
+                      transition: 'all 0.2s ease',
+                      textAlign: 'left',
+                      fontSize: '0.9rem',
+                    }}
+                  >
+                    <span style={{ opacity: selectedCategory === filter.id ? 1 : 0.7 }}>
+                      {filter.icon}
+                    </span>
+                    <span>{filter.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div style={{

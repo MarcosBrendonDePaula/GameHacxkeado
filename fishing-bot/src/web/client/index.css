@@ -72,9 +72,15 @@ body {
 
 /* Container */
 .container {
-  max-width: 1280px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 24px;
+}
+
+.container-wide {
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 24px 32px;
 }
 
 /* Animations */
@@ -775,20 +781,50 @@ input::placeholder {
   border: 1px solid rgba(88, 166, 255, 0.3);
 }
 
-/* Responsive */
+/* Responsive - Tablet */
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Responsive - Mobile */
 @media (max-width: 768px) {
   .container {
-    padding: 16px;
+    padding: 12px;
+  }
+
+  .navbar {
+    padding: 10px 0;
   }
 
   .navbar .container {
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
+    padding: 8px 12px;
+  }
+
+  .navbar .nav-left {
+    width: 100%;
+    flex-direction: column;
+    gap: 12px !important;
+    align-items: center;
   }
 
   .navbar ul {
     width: 100%;
     justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .navbar button {
+    padding: 8px 12px;
+    font-size: 0.8rem;
   }
 
   .stats-grid {
@@ -797,5 +833,84 @@ input::placeholder {
 
   .bots-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .dashboard-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .dashboard-header .actions {
+    width: 100%;
+    justify-content: space-between !important;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .section-header h2 {
+    font-size: 1.2rem;
+  }
+
+  .footer {
+    margin-top: 30px;
+    padding: 20px 12px;
+  }
+
+  .log-viewer {
+    font-size: 0.75rem;
+    max-height: 400px;
+  }
+
+  .log-line {
+    padding: 6px 8px;
+  }
+}
+
+/* Responsive - Small Mobile */
+@media (max-width: 480px) {
+  .container {
+    padding: 8px;
+  }
+
+  .navbar .container {
+    padding: 6px 8px;
+  }
+
+  .navbar ul {
+    gap: 2px;
+  }
+
+  .navbar button {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+  }
+
+  .stats-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stat-value {
+    font-size: 1.4rem;
+  }
+
+  .card {
+    padding: 12px;
+    border-radius: var(--radius-md);
   }
 }

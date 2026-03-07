@@ -13,7 +13,7 @@ import {
   SessionResultType,
 } from '@fogo/sessions-sdk'
 import { useAuth } from '../providers/AuthProvider'
-import { upsertBot, updateBotConfig, getEncryptionSignature, getBot } from '../lib/api'
+import { upsertBot, updateBotConfig, getBot } from '../lib/api'
 
 // Chave do localStorage para saber se bot ja foi configurado
 const BOT_CONFIGURED_KEY = 'fogo_bot_configured_'
@@ -218,14 +218,10 @@ export default function AddWallet() {
         sessionPublicKey = session.sessionPublicKey.toBase58()
       }
 
-      // Obtem a assinatura de criptografia para proteger a session key
-      const encryptionSignature = await getEncryptionSignature()
-
       // Envia para o backend com proxy e delay
       const apiResult = await upsertBot({
         sessionSecretKey,
         sessionPublicKey,
-        encryptionSignature,
         proxy: proxy.trim(),
         delayMin,
         delayMax,
