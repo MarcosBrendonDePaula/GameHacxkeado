@@ -154,6 +154,36 @@ const publicApi = new Elysia({ prefix: "/api" })
     }
   })
 
+  // Busca configuração de baits on-chain (público)
+  .get("/bait/config", async () => {
+    try {
+      const reader = getPlayerReader();
+      const config = await reader.fetchRiverFishConfig();
+      if (!config) {
+        return { error: "Não foi possível buscar configuração de baits" };
+      }
+      return config;
+    } catch (error: any) {
+      console.error("Erro ao buscar bait config:", error);
+      return { error: error.message };
+    }
+  })
+
+  // Busca inventário de baits do player (público)
+  .get("/bait/inventory/:wallet", async ({ params }) => {
+    try {
+      const reader = getPlayerReader();
+      const state = await reader.fetchRiverFishState(params.wallet);
+      if (!state) {
+        return { exists: false, inventory: null };
+      }
+      return { exists: true, inventory: state };
+    } catch (error: any) {
+      console.error("Erro ao buscar bait inventory:", error);
+      return { error: error.message };
+    }
+  })
+
   // Busca dados do player diretamente da blockchain (público)
   .get("/player/:wallet", async ({ params }) => {
     try {
@@ -299,6 +329,12 @@ const protectedApi = new Elysia({ prefix: "/api" })
         autoRepairMax: bot.autoRepairMax,
         autoUpgrade: bot.autoUpgrade,
         autoRestartMinutes: bot.autoRestartMinutes,
+        autoBuyBait: bot.autoBuyBait,
+        autoBuyBaitIds: bot.autoBuyBaitIds,
+        autoUseBaitId: bot.autoUseBaitId,
+        autoBuyBaitThreshold: bot.autoBuyBaitThreshold,
+        autoUseBaitOrder: bot.autoUseBaitOrder,
+        autoBuyBaitQty: bot.autoBuyBaitQty,
         enabled: bot.enabled,
         createdAt: bot.createdAt,
         updatedAt: bot.updatedAt,
@@ -335,7 +371,8 @@ const protectedApi = new Elysia({ prefix: "/api" })
 
   // Atualiza configurações do bot
   .patch("/bot", async ({ walletPubkey, body }) => {
-    const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoUpgrade, autoRestartMinutes } = body as any;
+    const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoUpgrade, autoRestartMinutes,
+      autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoUseBaitOrder, autoBuyBaitQty } = body as any;
 
     const result = await botManager.updateBotConfig(walletPubkey!, {
       delayMin,
@@ -346,6 +383,12 @@ const protectedApi = new Elysia({ prefix: "/api" })
       autoRepairMax,
       autoUpgrade,
       autoRestartMinutes,
+      autoBuyBait,
+      autoBuyBaitIds,
+      autoUseBaitId,
+      autoBuyBaitThreshold,
+      autoUseBaitOrder,
+      autoBuyBaitQty,
     });
 
     return result;
@@ -378,6 +421,28 @@ const protectedApi = new Elysia({ prefix: "/api" })
   // Finaliza upgrade da vara
   .post("/bot/upgrade/finish", async ({ walletPubkey }) => {
     return botManager.finishUpgrade(walletPubkey!);
+  })
+
+  // Compra bait manualmente
+  .post("/bot/bait/buy", async ({ walletPubkey, body }) => {
+    const { baitType, quantity } = body as any;
+    if (!baitType || baitType < 1 || baitType > 10) {
+      return { success: false, error: "baitType inválido (1-10)" };
+    }
+    const qty = quantity || 1;
+    if (qty < 1 || qty > 100) {
+      return { success: false, error: "quantity inválido (1-100)" };
+    }
+    return botManager.buyBait(walletPubkey!, baitType, qty);
+  })
+
+  // Equipa bait manualmente
+  .post("/bot/bait/equip", async ({ walletPubkey, body }) => {
+    const { baitType } = body as any;
+    if (baitType === undefined || baitType < 0 || baitType > 10) {
+      return { success: false, error: "baitType inválido (0-10, 0=nenhuma)" };
+    }
+    return botManager.equipBait(walletPubkey!, baitType);
   })
 
   // Resultados do bot

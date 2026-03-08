@@ -21,7 +21,7 @@ interface LogsResponse {
 type LogLevel = 'all' | 'success' | 'warn' | 'error' | 'info'
 type LogCategory = 'all' | 'general' | 'websocket' | 'cast' | 'repair'
 
-export default function Logs() {
+export default function Logs({ embedded = false }: { embedded?: boolean }) {
   const { isConnected } = useAuth()
   const [logs, setLogs] = useState<Log[]>([])
   const [loading, setLoading] = useState(true)
@@ -113,7 +113,7 @@ export default function Logs() {
     { id: 'general' as LogCategory, label: 'Geral', icon: '📝', color: 'var(--text-secondary)' },
   ]
 
-  if (!isConnected) {
+  if (!isConnected && !embedded) {
     return (
       <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
         <div style={{ fontSize: '4rem', marginBottom: '1.5rem', opacity: 0.8 }}>
@@ -136,7 +136,8 @@ export default function Logs() {
 
   return (
     <div style={{ animation: 'fadeIn 0.4s ease' }}>
-      {/* Header */}
+      {/* Header - only show if not embedded */}
+      {!embedded && (
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <LogsHeaderIcon />
         <h2 style={{
@@ -151,6 +152,7 @@ export default function Logs() {
           Logs do Bot
         </h2>
       </div>
+      )}
 
       {/* Layout: Sidebar + Content */}
       <div style={{ display: 'flex', gap: '24px' }}>

@@ -283,6 +283,12 @@ export async function updateBotConfig(params: {
   autoRepairMax?: number;
   autoUpgrade?: boolean;
   autoRestartMinutes?: number;
+  autoBuyBait?: boolean;
+  autoBuyBaitIds?: string;
+  autoUseBaitId?: number;
+  autoBuyBaitThreshold?: number;
+  autoUseBaitOrder?: string;
+  autoBuyBaitQty?: string;
 }) {
   return apiRequest<{ success: boolean; error?: string }>("/bot", {
     method: "PATCH",
@@ -424,6 +430,58 @@ export async function getWalletBalances(walletPubkey: string) {
     usdc: number;
     error?: string;
   }>(`/wallet/${walletPubkey}/balances`, { requiresAuth: false });
+}
+
+/**
+ * Obtém configuração de baits on-chain (não requer auth)
+ */
+export async function getBaitConfig() {
+  return apiRequest<{
+    baits: Array<{
+      unlockLevel: number;
+      castsPerUnit: number;
+      fishCostAtRefDifficulty: string;
+      usdcFee: string;
+    }>;
+    difficultyRef: string;
+    isActive: boolean;
+    error?: string;
+  }>("/bait/config", { requiresAuth: false });
+}
+
+/**
+ * Obtém inventário de baits do player (não requer auth)
+ */
+export async function getBaitInventory(walletPubkey: string) {
+  return apiRequest<{
+    exists: boolean;
+    inventory: {
+      owner: string;
+      activeBait: number;
+      remainingCasts: number[];
+    } | null;
+    error?: string;
+  }>(`/bait/inventory/${walletPubkey}`, { requiresAuth: false });
+}
+
+/**
+ * Compra bait manualmente
+ */
+export async function buyBait(baitType: number, quantity: number = 1) {
+  return apiRequest<{ success: boolean; error?: string }>("/bot/bait/buy", {
+    method: "POST",
+    body: { baitType, quantity },
+  });
+}
+
+/**
+ * Equipa bait manualmente (0 = remover bait)
+ */
+export async function equipBait(baitType: number) {
+  return apiRequest<{ success: boolean; error?: string }>("/bot/bait/equip", {
+    method: "POST",
+    body: { baitType },
+  });
 }
 
 /**

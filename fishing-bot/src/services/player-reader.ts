@@ -2,10 +2,10 @@ import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import { Keypair } from "@solana/web3.js";
 import { PROGRAM_ID, BOT_CONFIG, CUSTOM_HEADERS, FISH_MINT, FOGO_MINT } from "../config/constants";
-import { getPlayerStatePDA, getConfigPDA, getGlobalStatePDA } from "../utils/pda";
+import { getPlayerStatePDA, getConfigPDA, getGlobalStatePDA, getRiverFishConfigPDA, getRiverFishStatePDA } from "../utils/pda";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { FOGO_FISHING_IDL } from "../config/idl";
-import { PlayerState } from "../types";
+import { PlayerState, RiverBaitDef, RiverFishState } from "../types";
 
 /**
  * Serviço para ler dados do player diretamente da blockchain
@@ -145,6 +145,59 @@ export class PlayerReader {
       };
     } catch (error: any) {
       console.error("Erro ao buscar global state:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Busca o RiverFishConfig (definicoes globais dos baits)
+   */
+  async fetchRiverFishConfig(): Promise<{ baits: RiverBaitDef[]; difficultyRef: string; isActive: boolean } | null> {
+    try {
+      const [riverFishConfigPDA] = getRiverFishConfigPDA();
+      const config = await this.program.account.riverFishConfig.fetch(riverFishConfigPDA);
+
+      const baits: RiverBaitDef[] = [];
+      for (let i = 0; i < 10; i++) {
+        const b = (config.baits as any[])[i];
+        baits.push({
+          unlockLevel: b.unlockLevel,
+          castsPerUnit: b.castsPerUnit,
+          fishCostAtRefDifficulty: b.fishCostAtRefDifficulty.toString(),
+          usdcFee: b.usdcFee.toString(),
+        });
+      }
+
+      return {
+        baits,
+        difficultyRef: (config as any).difficultyRef.toString(),
+        isActive: config.isActive as boolean,
+      };
+    } catch (error: any) {
+      console.error("Erro ao buscar river fish config:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Busca o RiverFishState do player (inventario de iscas)
+   */
+  async fetchRiverFishState(walletPubkey: string): Promise<RiverFishState | null> {
+    try {
+      const walletPublicKey = new PublicKey(walletPubkey);
+      const [riverFishStatePDA] = getRiverFishStatePDA(walletPublicKey);
+      const state = await this.program.account.riverFishState.fetch(riverFishStatePDA);
+
+      return {
+        owner: (state.owner as PublicKey).toBase58(),
+        activeBait: state.activeBait as number,
+        remainingCasts: (state.remainingCasts as number[]).map(Number),
+      };
+    } catch (error: any) {
+      if (error.message?.includes("Account does not exist")) {
+        return null;
+      }
+      console.error("Erro ao buscar river fish state:", error);
       return null;
     }
   }

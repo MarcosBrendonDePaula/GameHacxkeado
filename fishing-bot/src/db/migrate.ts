@@ -200,6 +200,65 @@ try {
   }
 }
 
+// Migração: adicionar colunas de bait (auto-buy/auto-use iscas)
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_buy_bait INTEGER DEFAULT 0;`);
+  console.log("  ✓ Coluna 'auto_buy_bait' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_buy_bait:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_buy_bait_ids TEXT DEFAULT '';`);
+  console.log("  ✓ Coluna 'auto_buy_bait_ids' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_buy_bait_ids:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_use_bait_id INTEGER DEFAULT 0;`);
+  console.log("  ✓ Coluna 'auto_use_bait_id' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_use_bait_id:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_buy_bait_threshold INTEGER DEFAULT 100;`);
+  console.log("  ✓ Coluna 'auto_buy_bait_threshold' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_buy_bait_threshold:", e.message);
+  }
+}
+
+// Migração: adicionar autoUseBaitOrder (ordem de prioridade para auto-equipar)
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_use_bait_order TEXT DEFAULT '';`);
+  console.log("  ✓ Coluna 'auto_use_bait_order' adicionada à tabela bots");
+  // Migra autoUseBaitId antigo para novo formato
+  sqlite.exec(`UPDATE bots SET auto_use_bait_order = CAST(auto_use_bait_id AS TEXT) WHERE auto_use_bait_id > 0 AND (auto_use_bait_order IS NULL OR auto_use_bait_order = '');`);
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_use_bait_order:", e.message);
+  }
+}
+
+// Migração: adicionar autoBuyBaitQty (quantidade por isca para auto-compra)
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_buy_bait_qty TEXT DEFAULT '';`);
+  console.log("  ✓ Coluna 'auto_buy_bait_qty' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_buy_bait_qty:", e.message);
+  }
+}
+
 sqlite.close();
 
 console.log(`✅ Migração concluída com sucesso!`);

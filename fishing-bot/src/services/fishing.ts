@@ -5,6 +5,7 @@ import {
   SystemProgram,
   TransactionInstruction,
   ComputeBudgetProgram,
+  LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import BN from "bn.js";
@@ -37,7 +38,7 @@ import { generateRandomNonce, Logger, sleep } from "../utils/helpers";
 import { createCapabilityInstruction } from "../utils/capability";
 import { sendTransactionViaPaymaster, getSponsor } from "../utils/paymaster";
 import { FOGO_FISHING_IDL } from "../config/idl";
-import { PlayerState, GlobalState } from "../types";
+import { PlayerState, GlobalState, RiverFishState } from "../types";
 import { createProxyAgent, checkProxyIP } from "../utils/proxy";
 import { CastLogMonitor } from "./log-monitor";
 
@@ -662,6 +663,219 @@ export class FishingService {
       return signature;
     } catch (error: any) {
       this.logger.error("Erro ao finalizar upgrade:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Busca o RiverFishState do player (inventario de iscas)
+   */
+  async fetchRiverFishState(): Promise<RiverFishState | null> {
+    try {
+      const [riverFishStatePDA] = getRiverFishStatePDA(this.walletPublicKey);
+      const state = await this.program.account.riverFishState.fetch(riverFishStatePDA);
+
+      return {
+        owner: (state.owner as PublicKey).toBase58(),
+        activeBait: state.activeBait as number,
+        remainingCasts: (state.remainingCasts as number[]).map(Number),
+      };
+    } catch (error: any) {
+      if (error.message?.includes("Account does not exist")) {
+        return null;
+      }
+      this.logger.error("Erro ao buscar river fish state:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Busca saldos da wallet do bot (FOGO nativo, FISH token, USDC token)
+   */
+  async fetchBalances(): Promise<{ fogo: number; fish: number; usdc: number } | null> {
+    try {
+      await this.loadMintsFromGlobalState();
+
+      const fogoBalance = await this.connection.getBalance(this.walletPublicKey);
+
+      let fishBalance = 0;
+      try {
+        const fishAta = getAssociatedTokenAddressSync(this.fishMint, this.walletPublicKey);
+        const fishAccount = await this.connection.getTokenAccountBalance(fishAta);
+        fishBalance = fishAccount.value.uiAmount || 0;
+      } catch {}
+
+      let usdcBalance = 0;
+      try {
+        const usdcAta = getAssociatedTokenAddressSync(this.fogoMint, this.walletPublicKey);
+        const usdcAccount = await this.connection.getTokenAccountBalance(usdcAta);
+        usdcBalance = usdcAccount.value.uiAmount || 0;
+      } catch {}
+
+      return {
+        fogo: fogoBalance / LAMPORTS_PER_SOL,
+        fish: fishBalance,
+        usdc: usdcBalance,
+      };
+    } catch (error: any) {
+      this.logger.error("Erro ao buscar balances:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Busca custos dinâmicos das baits (on-chain, escalados por dificuldade)
+   * Retorna custo real em FISH e USDC para cada bait ID (1-10)
+   */
+  async fetchBaitDynamicCosts(): Promise<Record<number, { fishCost: number; usdcFee: number }> | null> {
+    try {
+      const [riverFishConfigPDA] = getRiverFishConfigPDA();
+      const [globalStatePDA] = getGlobalStatePDA();
+      const [config, globalState] = await Promise.all([
+        this.program.account.riverFishConfig.fetch(riverFishConfigPDA),
+        this.program.account.globalState.fetch(globalStatePDA),
+      ]);
+
+      const diffRef = Number((config as any).difficultyRef.toString());
+      const curDiff = Number(globalState.currentDifficulty.toString());
+      if (diffRef <= 0 || curDiff <= 0) return null;
+
+      const costs: Record<number, { fishCost: number; usdcFee: number }> = {};
+      for (let i = 0; i < 10; i++) {
+        const b = (config.baits as any[])[i];
+        const refCostLamports = Number(b.fishCostAtRefDifficulty.toString());
+        const usdcFeeLamports = Number(b.usdcFee.toString());
+        const actualFishLamports = Math.round(refCostLamports * diffRef / curDiff);
+        costs[i + 1] = {
+          fishCost: actualFishLamports / 1_000_000, // lamports -> FISH
+          usdcFee: usdcFeeLamports / 1_000_000,     // lamports -> USDC
+        };
+      }
+      return costs;
+    } catch (error: any) {
+      this.logger.error("Erro ao buscar bait dynamic costs:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Compra isca (queima FISH + USDC fee)
+   */
+  async buyRiverBait(baitType: number, quantity: number = 1): Promise<string | null> {
+    try {
+      this.logger.info(`🪱 Comprando isca tipo ${baitType} (qty: ${quantity})...`);
+
+      await this.loadMintsFromGlobalState();
+
+      const [globalStatePDA] = getGlobalStatePDA();
+      const [configPDA] = getConfigPDA();
+      const [playerStatePDA] = getPlayerStatePDA(this.walletPublicKey);
+      const [riverFishConfigPDA] = getRiverFishConfigPDA();
+      const [riverFishStatePDA] = getRiverFishStatePDA(this.walletPublicKey);
+      const [programSignerPDA] = getProgramSignerPDA();
+
+      const ownerFishAta = getAssociatedTokenAddressSync(this.fishMint, this.walletPublicKey);
+      const ownerFogoAta = getAssociatedTokenAddressSync(this.fogoMint, this.walletPublicKey);
+
+      const capabilityIx = await createCapabilityInstruction(this.walletPublicKey, this.logger);
+
+      // @ts-ignore
+      const buyIx = await this.program.methods
+        .buyRiverBait(this.walletPublicKey, baitType, quantity)
+        .accounts({
+          signer: this.signerPublicKey,
+          ownerAccount: this.walletPublicKey,
+          globalState: globalStatePDA,
+          config: configPDA,
+          playerState: playerStatePDA,
+          riverFishConfig: riverFishConfigPDA,
+          riverFishState: riverFishStatePDA,
+          fishMint: this.fishMint,
+          ownerFishAta: ownerFishAta,
+          fogoMint: this.fogoMint,
+          ownerFogoAta: ownerFogoAta,
+          buybackTreasury: BUYBACK_TREASURY,
+          liquidityTreasury: LIQUIDITY_TREASURY,
+          opsTreasury: OPS_TREASURY,
+          programSigner: programSignerPDA,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+        })
+        .instruction();
+
+      const computeUnitIx = ComputeBudgetProgram.setComputeUnitLimit({
+        units: CU_LIMITS.BUY_RIVER_BAIT,
+      });
+
+      const sponsor = await getSponsor(this.logger);
+
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      const Transaction = require("@solana/web3.js").Transaction;
+      const tx = new Transaction();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = sponsor;
+
+      tx.add(computeUnitIx);
+      tx.add(capabilityIx);
+      tx.add(buyIx);
+
+      tx.sign(this.wallet.payer);
+
+      const signature = await sendTransactionViaPaymaster(tx, sponsor, this.logger);
+
+      this.logger.success(`🪱 Isca comprada! Tipo ${baitType} x${quantity} | Sig: ${signature.slice(0, 12)}...`);
+      return signature;
+    } catch (error: any) {
+      this.logger.error("Erro ao comprar isca:", error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Equipa/desativa isca (0 = desativa)
+   */
+  async setActiveRiverBait(baitType: number): Promise<string | null> {
+    try {
+      this.logger.info(`🪱 ${baitType === 0 ? 'Desativando' : `Equipando isca tipo ${baitType}`}...`);
+
+      const [playerStatePDA] = getPlayerStatePDA(this.walletPublicKey);
+      const [riverFishConfigPDA] = getRiverFishConfigPDA();
+      const [riverFishStatePDA] = getRiverFishStatePDA(this.walletPublicKey);
+
+      // @ts-ignore
+      const equipIx = await this.program.methods
+        .setActiveRiverBait(this.walletPublicKey, baitType)
+        .accounts({
+          signer: this.signerPublicKey,
+          playerState: playerStatePDA,
+          riverFishConfig: riverFishConfigPDA,
+          riverFishState: riverFishStatePDA,
+        })
+        .instruction();
+
+      const computeUnitIx = ComputeBudgetProgram.setComputeUnitLimit({
+        units: CU_LIMITS.SET_ACTIVE_RIVER_BAIT,
+      });
+
+      const sponsor = await getSponsor(this.logger);
+
+      const { blockhash } = await this.connection.getLatestBlockhash();
+      const Transaction = require("@solana/web3.js").Transaction;
+      const tx = new Transaction();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = sponsor;
+
+      tx.add(computeUnitIx);
+      tx.add(equipIx);
+
+      tx.sign(this.wallet.payer);
+
+      const signature = await sendTransactionViaPaymaster(tx, sponsor, this.logger);
+
+      this.logger.success(`🪱 Isca ${baitType === 0 ? 'desativada' : `tipo ${baitType} equipada`}! Sig: ${signature.slice(0, 12)}...`);
+      return signature;
+    } catch (error: any) {
+      this.logger.error("Erro ao equipar isca:", error.message || error);
       return null;
     }
   }

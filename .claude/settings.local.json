@@ -48,7 +48,9 @@
       "Bash(bun build:*)",
       "Bash(bun -e:*)",
       "Bash(HTTP_PROXY=http://2.56.249.17:50100 HTTPS_PROXY=http://2.56.249.17:50100 node:*)",
-      "Bash(NODE_TLS_REJECT_UNAUTHORIZED=0 bun run:*)"
+      "Bash(NODE_TLS_REJECT_UNAUTHORIZED=0 bun run:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

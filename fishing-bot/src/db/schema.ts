@@ -17,14 +17,20 @@ export const bots = sqliteTable("bots", {
     .references(() => accounts.walletPubkey, { onDelete: "cascade" }),
   sessionSecretKey: text("session_secret_key"), // Base64 encoded (32 bytes) - plaintext
   sessionPubkey: text("session_pubkey"), // Public key da session
-  delayMin: integer("delay_min").default(1500), // Delay minimo entre casts (ms)
-  delayMax: integer("delay_max").default(3000), // Delay maximo entre casts (ms)
+  delayMin: integer("delay_min").default(2300), // Delay minimo entre casts (ms)
+  delayMax: integer("delay_max").default(2600), // Delay maximo entre casts (ms)
   proxy: text("proxy"),
-  autoRepair: integer("auto_repair", { mode: "boolean" }).default(true), // Auto-reparo habilitado
+  autoRepair: integer("auto_repair", { mode: "boolean" }).default(false), // Auto-reparo habilitado
   autoRepairMin: integer("auto_repair_min").default(15), // Durabilidade minima da range (%)
   autoRepairMax: integer("auto_repair_max").default(25), // Durabilidade maxima da range (%)
   autoUpgrade: integer("auto_upgrade", { mode: "boolean" }).default(false), // Auto-upgrade da vara
   autoRestartMinutes: integer("auto_restart_minutes").default(240), // Auto-restart a cada X minutos (0 = desabilitado)
+  autoBuyBait: integer("auto_buy_bait", { mode: "boolean" }).default(false), // Auto-compra de iscas
+  autoBuyBaitIds: text("auto_buy_bait_ids").default(""), // IDs das iscas para auto-compra (ex: "1,3,7")
+  autoUseBaitId: integer("auto_use_bait_id").default(0), // ID da isca para auto-equipar (0 = desativado) - DEPRECATED, usar autoUseBaitOrder
+  autoUseBaitOrder: text("auto_use_bait_order").default(""), // Ordem de prioridade das iscas para auto-equipar (ex: "1,5,3")
+  autoBuyBaitThreshold: integer("auto_buy_bait_threshold").default(100), // Compra quando casts restantes < threshold
+  autoBuyBaitQty: text("auto_buy_bait_qty").default(""), // Quantidade por isca para auto-compra (ex: "1:5,3:10")
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

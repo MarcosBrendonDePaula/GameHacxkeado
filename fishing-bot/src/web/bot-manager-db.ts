@@ -4,6 +4,7 @@ import { FishingService } from "../services/fishing";
 import { CastLogMonitor } from "../services/log-monitor";
 import { getPlayerStatePDA } from "../utils/pda";
 import { BOT_CONFIG } from "../config/constants";
+import { BAIT_NAMES } from "../types";
 import { db, bots, castResults, botHistory, logs, accounts } from "../db";
 import type { Bot, NewBot, NewCastResult, NewBotHistory, NewLog } from "../db";
 import * as path from "path";
@@ -15,6 +16,28 @@ const UPGRADE_CAST_REQUIREMENTS = [
   24876, 27073, 29509, 32215, 35225, 38576, 42312, 46482, 51144, 56360, 62205, 68762, 76129, 84416, 93749, 104275,
   116162, 129602, 144820, 162073, 181659, 203924, 229267, 258152, 291119, 328795
 ];
+
+// Custo em USDC (FOGO_MINT) por nível de upgrade (L2-L60) - em micro-units (dividir por 1e6)
+const UPGRADE_USDC_COST = [
+  0, 0, 13083, 54216, 108126, 170760, 240352, 315848, 396526, 481859, 571436, 664931, 762075, 862640, 966434,
+  1073290, 1183059, 1295613, 1410835, 1528622, 1648877, 1771517, 1896461, 2023637, 2152979, 2284425, 2417917,
+  2553402, 2690829, 2830151, 2971325, 3114308, 3259061, 3405547, 3553731, 3703579, 3855059, 4008141, 4162796,
+  4318997, 4476717, 4635930, 4796613, 4958743, 5122297, 5287253, 5453591, 5621292, 5790335, 5960703, 6132377,
+  6305341, 6479578, 6655071, 6831806, 7009766, 7188937, 7369306, 7550858, 7733580, 7917459
+];
+
+// Custo em FISH por bait ID (1-10) em unidades reais
+// fishCost: "75K"=75000, "150K"=150000, "315K"=315000, etc
+const BAIT_FISH_COST: Record<number, number> = {
+  1: 75_000, 2: 150_000, 3: 150_000, 4: 315_000, 5: 480_000,
+  6: 665_000, 7: 1_500_000, 8: 2_000_000, 9: 5_000_000, 10: 10_000_000,
+};
+
+// Custo em USDC por bait ID (1-10)
+const BAIT_USDC_COST: Record<number, number> = {
+  1: 0.13, 2: 0.13, 3: 0.13, 4: 0.25, 5: 0.25,
+  6: 0.38, 7: 0.38, 8: 0.50, 9: 0.63, 10: 0.75,
+};
 
 // ============================================================
 // DB Write Batcher - acumula INSERTs e grava em lote
@@ -141,6 +164,8 @@ class BotInstance {
   private autoRestartTimer?: NodeJS.Timeout;
   private restartCallback?: () => Promise<void>;
   private currentRepairThreshold: number = 20; // Threshold atual (randomizado)
+  private autoUpgradeStartNextRetry = 0; // Cooldown para auto-start upgrade (timestamp)
+  private autoBaitNextRetry = 0; // Cooldown para auto-bait (timestamp)
 
   constructor(
     public walletPubkey: string,
@@ -148,11 +173,17 @@ class BotInstance {
     public delayMin: number,
     public delayMax: number,
     public proxy?: string,
-    public autoRepair: boolean = true,
+    public autoRepair: boolean = false,
     public autoRepairMin: number = 15,
     public autoRepairMax: number = 25,
     public autoUpgrade: boolean = false,
-    public autoRestartMinutes: number = 240
+    public autoRestartMinutes: number = 240,
+    public autoBuyBait: boolean = false,
+    public autoBuyBaitIds: string = "",
+    public autoUseBaitId: number = 0,
+    public autoBuyBaitThreshold: number = 100,
+    public autoUseBaitOrder: string = "",
+    public autoBuyBaitQty: string = ""
   ) {
     // Sorteia threshold inicial dentro da range
     this.currentRepairThreshold = this.randomThreshold();
@@ -415,18 +446,128 @@ class BotInstance {
           // Auto-start upgrade quando não tem upgrade em progresso e autoUpgrade está ligado
           if (this.autoUpgrade && !playerState.upgradeInProgress && !this.isFinishingUpgrade) {
             const nextLevel = playerState.rodLevel + 1;
-            if (nextLevel <= 60) {
-              this.addLog("info", `🔨 Auto-upgrade: iniciando upgrade para level ${nextLevel}...`);
-              try {
-                const result = await this.startUpgrade(nextLevel);
-                if (result.success) {
-                  this.addLog("success", `🔨 Auto-upgrade para level ${nextLevel} iniciado!`);
-                } else {
-                  this.addLog("error", `🔨 Falha no auto-upgrade: ${result.error}`);
-                }
-              } catch (error: any) {
-                this.addLog("error", `🔨 Erro no auto-upgrade: ${error.message}`);
+            if (nextLevel <= 60 && Date.now() >= this.autoUpgradeStartNextRetry) {
+              // Verifica saldo USDC antes de tentar
+              const upgradeCost = (UPGRADE_USDC_COST[nextLevel] || 0) / 1_000_000; // micro-units para units
+              let canUpgrade = true;
+              if (upgradeCost > 0 && this.service) {
+                try {
+                  const balances = await this.service.fetchBalances();
+                  if (balances) {
+                    if (balances.usdc < upgradeCost) {
+                      this.addLog("warn", `🔨 Auto-upgrade: USDC insuficiente (${balances.usdc.toFixed(2)} < ${upgradeCost.toFixed(2)} necessarios para Lv.${nextLevel})`);
+                      canUpgrade = false;
+                      this.autoUpgradeStartNextRetry = Date.now() + 60_000; // retry em 60s
+                    }
+                  }
+                } catch {}
               }
+              if (canUpgrade) {
+                this.addLog("info", `🔨 Auto-upgrade: iniciando upgrade para level ${nextLevel} (custo: ${upgradeCost.toFixed(2)} USDC)...`);
+                try {
+                  const result = await this.startUpgrade(nextLevel);
+                  if (result.success) {
+                    this.addLog("success", `🔨 Auto-upgrade para level ${nextLevel} iniciado!`);
+                    this.autoUpgradeStartNextRetry = 0;
+                  } else {
+                    this.addLog("error", `🔨 Falha no auto-upgrade: ${result.error}`);
+                    this.autoUpgradeStartNextRetry = Date.now() + 30_000; // cooldown 30s
+                  }
+                } catch (error: any) {
+                  this.addLog("error", `🔨 Erro no auto-upgrade: ${error.message}`);
+                  this.autoUpgradeStartNextRetry = Date.now() + 30_000; // cooldown 30s
+                }
+              }
+            }
+          }
+
+          // Auto-bait: verifica inventario de iscas e auto-compra/equipa
+          const hasAutoEquip = this.autoUseBaitOrder ? this.autoUseBaitOrder.length > 0 : this.autoUseBaitId > 0;
+          if ((this.autoBuyBait || hasAutoEquip) && this.service) {
+            try {
+              const baitState = await this.service.fetchRiverFishState();
+              if (baitState) {
+                // Auto-equip por prioridade: tenta cada bait na ordem até encontrar uma com estoque
+                if (hasAutoEquip) {
+                  const orderList = this.autoUseBaitOrder
+                    ? this.autoUseBaitOrder.split(",").map(Number).filter(n => n >= 1 && n <= 10)
+                    : this.autoUseBaitId > 0 ? [this.autoUseBaitId] : [];
+
+                  // Só troca se a isca atual não está na lista ou não tem mais casts
+                  const currentBait = baitState.activeBait;
+                  const currentCasts = currentBait > 0 ? (baitState.remainingCasts[currentBait - 1] || 0) : 0;
+                  const currentInList = orderList.includes(currentBait);
+
+                  if (!currentInList || currentCasts === 0) {
+                    // Busca a primeira isca da lista com estoque
+                    for (const baitId of orderList) {
+                      const castsForBait = baitState.remainingCasts[baitId - 1] || 0;
+                      if (castsForBait > 0 && baitId !== currentBait) {
+                        this.addLog("info", `🪱 Auto-equip: ativando ${BAIT_NAMES[baitId] || `tipo ${baitId}`} (${castsForBait} casts)...`);
+                        const sig = await this.service.setActiveRiverBait(baitId);
+                        if (sig) {
+                          this.addLog("success", `🪱 ${BAIT_NAMES[baitId] || `Isca ${baitId}`} equipada!`);
+                        }
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                // Auto-buy: compra iscas quando casts restantes < threshold
+                if (this.autoBuyBait && this.autoBuyBaitIds && Date.now() >= this.autoBaitNextRetry) {
+                  const baitIds = this.autoBuyBaitIds.split(",").map(Number).filter(n => n >= 1 && n <= 10);
+                  // Parse per-bait quantities (format: "1:5,3:10")
+                  const qtyMap: Record<number, number> = {};
+                  if (this.autoBuyBaitQty) {
+                    this.autoBuyBaitQty.split(",").forEach(entry => {
+                      const [id, qty] = entry.split(":").map(Number);
+                      if (id >= 1 && id <= 10 && qty > 0) qtyMap[id] = Math.min(qty, 100);
+                    });
+                  }
+                  // Busca custos dinâmicos on-chain (escalados por dificuldade)
+                  const dynamicCosts = await this.service!.fetchBaitDynamicCosts();
+                  for (const baitId of baitIds) {
+                    const remaining = baitState.remainingCasts[baitId - 1] || 0;
+                    if (remaining < this.autoBuyBaitThreshold) {
+                      const buyQty = qtyMap[baitId] || 1;
+                      const unitFishCost = dynamicCosts?.[baitId]?.fishCost ?? BAIT_FISH_COST[baitId] ?? 0;
+                      const unitUsdcCost = dynamicCosts?.[baitId]?.usdcFee ?? BAIT_USDC_COST[baitId] ?? 0;
+                      const totalFishCost = unitFishCost * buyQty;
+                      const totalUsdcCost = unitUsdcCost * buyQty;
+                      // Verifica saldo antes de comprar
+                      const balances = await this.service!.fetchBalances();
+                      if (balances) {
+                        if (balances.fish < totalFishCost) {
+                          this.addLog("warn", `🪱 Auto-buy: FISH insuficiente (${balances.fish.toLocaleString()} < ${Math.round(totalFishCost).toLocaleString()} para ${buyQty}x ${BAIT_NAMES[baitId]})`);
+                          this.autoBaitNextRetry = Date.now() + 60_000;
+                          break;
+                        }
+                        if (balances.usdc < totalUsdcCost) {
+                          this.addLog("warn", `🪱 Auto-buy: USDC insuficiente (${balances.usdc.toFixed(2)} < ${totalUsdcCost.toFixed(2)} para ${buyQty}x ${BAIT_NAMES[baitId]})`);
+                          this.autoBaitNextRetry = Date.now() + 60_000;
+                          break;
+                        }
+                      }
+                      this.addLog("info", `🪱 Auto-buy: ${buyQty}x ${BAIT_NAMES[baitId] || `tipo ${baitId}`} (${remaining} casts < ${this.autoBuyBaitThreshold}) custo: ${Math.round(totalFishCost).toLocaleString()} FISH + ${totalUsdcCost.toFixed(2)} USDC...`);
+                      try {
+                        const sig = await this.service!.buyRiverBait(baitId, buyQty);
+                        if (sig) {
+                          this.addLog("success", `🪱 ${buyQty}x ${BAIT_NAMES[baitId] || `Isca ${baitId}`} comprada!`);
+                          this.autoBaitNextRetry = 0;
+                        }
+                      } catch (buyErr: any) {
+                        this.addLog("error", `🪱 Falha na compra de ${BAIT_NAMES[baitId]}: ${buyErr.message}`);
+                        this.autoBaitNextRetry = Date.now() + 30_000;
+                      }
+                      break; // Compra uma por ciclo para nao sobrecarregar
+                    }
+                  }
+                }
+              }
+            } catch (error: any) {
+              this.addLog("warn", `🪱 Erro no auto-bait: ${error.message}`);
+              this.autoBaitNextRetry = Date.now() + 30_000; // cooldown 30s
             }
           }
         } else {
@@ -639,6 +780,38 @@ class BotInstance {
       return { success: false, error: error.message };
     }
   }
+
+  async buyBait(baitType: number, quantity: number = 1): Promise<{ success: boolean; error?: string }> {
+    if (!this.service) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    try {
+      const signature = await this.service.buyRiverBait(baitType, quantity);
+      if (signature) {
+        this.addLog("success", `🪱 Isca ${BAIT_NAMES[baitType] || `tipo ${baitType}`} comprada!`, "general");
+        return { success: true };
+      }
+      return { success: false, error: "Falha ao enviar transação de compra" };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async equipBait(baitType: number): Promise<{ success: boolean; error?: string }> {
+    if (!this.service) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    try {
+      const signature = await this.service.setActiveRiverBait(baitType);
+      if (signature) {
+        this.addLog("success", `🪱 Isca ${baitType === 0 ? 'desativada' : `${BAIT_NAMES[baitType] || `tipo ${baitType}`} equipada`}!`, "general");
+        return { success: true };
+      }
+      return { success: false, error: "Falha ao enviar transação de equipar" };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 /**
@@ -681,8 +854,8 @@ export class BotManager {
         walletPubkey: params.walletPubkey,
         sessionSecretKey: params.sessionSecretKey,
         sessionPubkey: params.sessionPublicKey,
-        delayMin: params.delayMin ?? 1500,
-        delayMax: params.delayMax ?? 3000,
+        delayMin: params.delayMin ?? 2300,
+        delayMax: params.delayMax ?? 2600,
         proxy: params.proxy,
         enabled: true,
         updatedAt: new Date(),
@@ -747,14 +920,20 @@ export class BotManager {
       const instance = new BotInstance(
         walletPubkey,
         keypair,
-        bot.delayMin ?? 1500,
-        bot.delayMax ?? 3000,
+        bot.delayMin ?? 2300,
+        bot.delayMax ?? 2600,
         bot.proxy || undefined,
-        bot.autoRepair ?? true,
+        bot.autoRepair ?? false,
         bot.autoRepairMin ?? 15,
         bot.autoRepairMax ?? 25,
         bot.autoUpgrade ?? false,
-        bot.autoRestartMinutes ?? 240
+        bot.autoRestartMinutes ?? 240,
+        bot.autoBuyBait ?? false,
+        bot.autoBuyBaitIds ?? "",
+        bot.autoUseBaitId ?? 0,
+        bot.autoBuyBaitThreshold ?? 100,
+        bot.autoUseBaitOrder ?? "",
+        bot.autoBuyBaitQty ?? ""
       );
 
       // Configura callback de restart
@@ -1081,10 +1260,15 @@ export class BotManager {
    */
   async updateBotConfig(
     walletPubkey: string,
-    config: { delayMin?: number; delayMax?: number; proxy?: string; autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number; autoUpgrade?: boolean; autoRestartMinutes?: number }
+    config: {
+      delayMin?: number; delayMax?: number; proxy?: string;
+      autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number;
+      autoUpgrade?: boolean; autoRestartMinutes?: number;
+      autoBuyBait?: boolean; autoBuyBaitIds?: string; autoUseBaitId?: number; autoBuyBaitThreshold?: number;
+      autoUseBaitOrder?: string; autoBuyBaitQty?: string;
+    }
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Só inclui campos que foram definidos (evita sobrescrever com undefined)
       const updateData: Record<string, any> = { updatedAt: new Date() };
       if (config.delayMin !== undefined) updateData.delayMin = config.delayMin;
       if (config.delayMax !== undefined) updateData.delayMax = config.delayMax;
@@ -1094,13 +1278,18 @@ export class BotManager {
       if (config.autoRepairMax !== undefined) updateData.autoRepairMax = config.autoRepairMax;
       if (config.autoUpgrade !== undefined) updateData.autoUpgrade = config.autoUpgrade;
       if (config.autoRestartMinutes !== undefined) updateData.autoRestartMinutes = config.autoRestartMinutes;
+      if (config.autoBuyBait !== undefined) updateData.autoBuyBait = config.autoBuyBait;
+      if (config.autoBuyBaitIds !== undefined) updateData.autoBuyBaitIds = config.autoBuyBaitIds;
+      if (config.autoUseBaitId !== undefined) updateData.autoUseBaitId = config.autoUseBaitId;
+      if (config.autoBuyBaitThreshold !== undefined) updateData.autoBuyBaitThreshold = config.autoBuyBaitThreshold;
+      if (config.autoUseBaitOrder !== undefined) updateData.autoUseBaitOrder = config.autoUseBaitOrder;
+      if (config.autoBuyBaitQty !== undefined) updateData.autoBuyBaitQty = config.autoBuyBaitQty;
 
       await db
         .update(bots)
         .set(updateData)
         .where(eq(bots.walletPubkey, walletPubkey));
 
-      // Se o bot está rodando, atualiza as configs em memória
       const instance = this.runningBots.get(walletPubkey);
       if (instance) {
         if (config.delayMin !== undefined) {
@@ -1111,28 +1300,39 @@ export class BotManager {
           instance.delayMax = config.delayMax;
           instance.stats.delayMax = config.delayMax;
         }
-        if (config.autoRepair !== undefined) {
-          instance.autoRepair = config.autoRepair;
-        }
-        if (config.autoRepairMin !== undefined) {
-          instance.autoRepairMin = config.autoRepairMin;
-        }
-        if (config.autoRepairMax !== undefined) {
-          instance.autoRepairMax = config.autoRepairMax;
-        }
-        if (config.autoUpgrade !== undefined) {
-          instance.autoUpgrade = config.autoUpgrade;
-        }
-        if (config.autoRestartMinutes !== undefined) {
-          instance.autoRestartMinutes = config.autoRestartMinutes;
-        }
-        // Nota: proxy e autoRestartMinutes requerem reiniciar o bot para aplicar totalmente
+        if (config.autoRepair !== undefined) instance.autoRepair = config.autoRepair;
+        if (config.autoRepairMin !== undefined) instance.autoRepairMin = config.autoRepairMin;
+        if (config.autoRepairMax !== undefined) instance.autoRepairMax = config.autoRepairMax;
+        if (config.autoUpgrade !== undefined) instance.autoUpgrade = config.autoUpgrade;
+        if (config.autoRestartMinutes !== undefined) instance.autoRestartMinutes = config.autoRestartMinutes;
+        if (config.autoBuyBait !== undefined) instance.autoBuyBait = config.autoBuyBait;
+        if (config.autoBuyBaitIds !== undefined) instance.autoBuyBaitIds = config.autoBuyBaitIds;
+        if (config.autoUseBaitId !== undefined) instance.autoUseBaitId = config.autoUseBaitId;
+        if (config.autoBuyBaitThreshold !== undefined) instance.autoBuyBaitThreshold = config.autoBuyBaitThreshold;
+        if (config.autoUseBaitOrder !== undefined) instance.autoUseBaitOrder = config.autoUseBaitOrder;
+        if (config.autoBuyBaitQty !== undefined) instance.autoBuyBaitQty = config.autoBuyBaitQty;
       }
 
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
+  }
+
+  async buyBait(walletPubkey: string, baitType: number, quantity: number = 1): Promise<{ success: boolean; error?: string }> {
+    const instance = this.runningBots.get(walletPubkey);
+    if (!instance) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    return instance.buyBait(baitType, quantity);
+  }
+
+  async equipBait(walletPubkey: string, baitType: number): Promise<{ success: boolean; error?: string }> {
+    const instance = this.runningBots.get(walletPubkey);
+    if (!instance) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+    return instance.equipBait(baitType);
   }
 }
 

@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
-import { getBot, getResults, getHistory, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances } from '../lib/api'
+import { getBot, getResults, getHistory, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances, getBaitInventory, buyBait, equipBait, getBaitConfig, getGameConfig } from '../lib/api'
+import LogsTab from './Logs'
+import ConfigTab from './AddWallet'
 
 interface BotStats {
   walletPubkey: string
@@ -64,6 +66,30 @@ interface PlayerData {
   upgradeCastsAtStart: string
 }
 
+// Nomes dos baits (1-10)
+const BAIT_NAMES: Record<number, string> = {
+  1: "Mudwiggler", 2: "Skitterbug", 3: "River Scraps",
+  4: "Scented Dough", 5: "Flash Spinner", 6: "Crankbait",
+  7: "Live Flicker", 8: "Glow Ember", 9: "Ember Bait", 10: "River Charm",
+}
+
+// Custos de bait são dinâmicos (on-chain) - calculados via:
+// actualFishCost = fishCostAtRefDifficulty * difficultyRef / currentDifficulty
+// usdcFee é flat (on-chain)
+interface BaitCostInfo {
+  fishCost: number; // FISH real (já escalado por dificuldade)
+  usdcFee: number;  // USDC flat fee
+  unlockLevel: number;
+  castsPerUnit: number;
+}
+
+// Formata números grandes: 75000 -> "75K", 1600000 -> "1.6M"
+function formatFish(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`
+  return n.toString()
+}
+
 // Requisitos de casts por nível (L2-L60)
 const UPGRADE_CAST_REQUIREMENTS = [
   0, 0, 3750, 3869, 3998, 4139, 4291, 4457, 4636, 4831, 5042, 5271, 5520, 5789, 6082, 6400, 6746, 7122, 7531,
@@ -85,6 +111,7 @@ export default function BotInfo() {
   const navigate = useNavigate()
   const { isConnected, walletPubkey } = useAuth()
 
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'automacoes' | 'logs' | 'config'>('dashboard')
   const [botExists, setBotExists] = useState(false)
   const [botInfo, setBotInfo] = useState<BotInfo | null>(null)
   const [botStats, setBotStats] = useState<BotStats | null>(null)
@@ -97,9 +124,25 @@ export default function BotInfo() {
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [balances, setBalances] = useState<{ fogo: number; fish: number; usdc: number } | null>(null)
   const [autoUpgrade, setAutoUpgrade] = useState(false)
+  const [autoRepair, setAutoRepair] = useState(false)
+  const [autoRepairMin, setAutoRepairMin] = useState(15)
+  const [autoRepairMax, setAutoRepairMax] = useState(25)
+  const [autoRestartMinutes, setAutoRestartMinutes] = useState(240)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
+  // Bait states
+  const [baitInventory, setBaitInventory] = useState<{ activeBait: number; remainingCasts: number[] } | null>(null)
+  const [baitLoading, setBaitLoading] = useState<string | null>(null) // 'buy-3' or 'equip-5' etc
+  const [baitError, setBaitError] = useState<string | null>(null)
+  const [autoBuyBait, setAutoBuyBait] = useState(false)
+  const [autoBuyBaitIds, setAutoBuyBaitIds] = useState('')
+  const [autoUseBaitId, setAutoUseBaitId] = useState(0)
+  const [autoBuyBaitThreshold, setAutoBuyBaitThreshold] = useState(100)
+  const [autoUseBaitOrder, setAutoUseBaitOrder] = useState('')
+  const [autoBuyBaitQty, setAutoBuyBaitQty] = useState('')
+  const [baitCosts, setBaitCosts] = useState<Record<number, BaitCostInfo>>({})
+  const fetchAttemptsRef = useRef(0)
 
   const fetchData = useCallback(async () => {
     if (!isConnected || !walletPubkey) {
@@ -109,6 +152,18 @@ export default function BotInfo() {
 
     try {
       const data = await getBot()
+
+      if (!data.exists) {
+        fetchAttemptsRef.current++
+        // Espera pelo menos 2 tentativas antes de mostrar "Nenhum Bot Configurado"
+        // para evitar falso positivo por delay de autenticação
+        if (fetchAttemptsRef.current < 2) {
+          return // mantém loading=true, próximo interval tenta de novo
+        }
+      } else {
+        fetchAttemptsRef.current = 0
+      }
+
       setBotExists(data.exists)
 
       if (data.exists) {
@@ -116,17 +171,29 @@ export default function BotInfo() {
         setBotStats(data.stats)
         setIsRunning(data.isRunning || false)
 
-        // Busca autoUpgrade do bot
-        if (data.bot?.autoUpgrade !== undefined) {
-          setAutoUpgrade(data.bot.autoUpgrade)
-        }
+        // Busca configs de automacao do bot
+        if (data.bot?.autoUpgrade !== undefined) setAutoUpgrade(data.bot.autoUpgrade)
+        if (data.bot?.autoRepair !== undefined) setAutoRepair(data.bot.autoRepair)
+        if (data.bot?.autoRepairMin !== undefined) setAutoRepairMin(data.bot.autoRepairMin || 15)
+        if (data.bot?.autoRepairMax !== undefined) setAutoRepairMax(data.bot.autoRepairMax || 25)
+        if (data.bot?.autoRestartMinutes !== undefined) setAutoRestartMinutes(data.bot.autoRestartMinutes || 240)
+        // Busca config de auto-bait do bot
+        if (data.bot?.autoBuyBait !== undefined) setAutoBuyBait(data.bot.autoBuyBait)
+        if (data.bot?.autoBuyBaitIds !== undefined) setAutoBuyBaitIds(data.bot.autoBuyBaitIds || '')
+        if (data.bot?.autoUseBaitId !== undefined) setAutoUseBaitId(data.bot.autoUseBaitId || 0)
+        if (data.bot?.autoBuyBaitThreshold !== undefined) setAutoBuyBaitThreshold(data.bot.autoBuyBaitThreshold || 100)
+        if (data.bot?.autoUseBaitOrder !== undefined) setAutoUseBaitOrder(data.bot.autoUseBaitOrder || '')
+        if (data.bot?.autoBuyBaitQty !== undefined) setAutoBuyBaitQty(data.bot.autoBuyBaitQty || '')
 
-        // Busca resultados, historico, dados do player e balances
-        const [resultsData, historyData, playerStateData, balancesData] = await Promise.all([
+        // Busca resultados, historico, dados do player, balances, bait inventory, bait config e game config
+        const [resultsData, historyData, playerStateData, balancesData, baitData, baitConfigData, gameConfigData] = await Promise.all([
           getResults({ limit: 50 }),
           getHistory({ limit: 100 }),
           getPlayerState(walletPubkey),
-          getWalletBalances(walletPubkey).catch(() => null)
+          getWalletBalances(walletPubkey).catch(() => null),
+          getBaitInventory(walletPubkey).catch(() => null),
+          getBaitConfig().catch(() => null),
+          getGameConfig().catch(() => null),
         ])
         setResults(resultsData.results || [])
         setHistory(historyData.history || [])
@@ -136,12 +203,45 @@ export default function BotInfo() {
         if (balancesData && !balancesData.error) {
           setBalances(balancesData)
         }
+        if (baitData?.exists && baitData.inventory) {
+          setBaitInventory(baitData.inventory)
+        }
+
+        // Calcula custos dinâmicos das baits com dados on-chain
+        if (baitConfigData?.baits && gameConfigData?.globalState?.currentDifficulty) {
+          const diffRef = Number(baitConfigData.difficultyRef || '0')
+          const curDiff = Number(gameConfigData.globalState.currentDifficulty)
+          if (diffRef > 0 && curDiff > 0) {
+            const costs: Record<number, BaitCostInfo> = {}
+            baitConfigData.baits.forEach((b: any, i: number) => {
+              const baitId = i + 1
+              const refCostLamports = Number(b.fishCostAtRefDifficulty)
+              const usdcFeeLamports = Number(b.usdcFee)
+              // Formula: actualFishCost = fishCostAtRefDifficulty * difficultyRef / currentDifficulty
+              const actualFishLamports = Math.round(refCostLamports * diffRef / curDiff)
+              costs[baitId] = {
+                fishCost: actualFishLamports / 1_000_000, // lamports -> FISH
+                usdcFee: usdcFeeLamports / 1_000_000,     // lamports -> USDC
+                unlockLevel: b.unlockLevel,
+                castsPerUnit: b.castsPerUnit,
+              }
+            })
+            setBaitCosts(costs)
+          }
+        }
       }
       setError(null)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
       setLoading(false)
+    } catch (err: any) {
+      // Se a sessao ainda nao esta pronta, nao mostra erro - mantém loading e tenta de novo
+      const msg = err.message || ''
+      if (msg.includes('Sessão não conectada') || msg.includes('Sessao nao conectada')) {
+        // mantém loading=true para nao mostrar "nenhum bot configurado"
+        return // finally ainda roda, mas usamos flag abaixo
+      } else {
+        setError(msg)
+        setLoading(false)
+      }
     }
   }, [isConnected, walletPubkey])
 
@@ -216,6 +316,174 @@ export default function BotInfo() {
     }
   }
 
+  // Compra bait
+  const handleBuyBait = async (baitType: number) => {
+    setBaitLoading(`buy-${baitType}`)
+    setBaitError(null)
+    try {
+      const result = await buyBait(baitType, 1)
+      if (result.success) {
+        fetchData()
+      } else {
+        setBaitError(result.error || 'Erro ao comprar bait')
+      }
+    } catch (err: any) {
+      setBaitError(err.message)
+    } finally {
+      setBaitLoading(null)
+    }
+  }
+
+  // Equipa bait
+  const handleEquipBait = async (baitType: number) => {
+    setBaitLoading(`equip-${baitType}`)
+    setBaitError(null)
+    try {
+      const result = await equipBait(baitType)
+      if (result.success) {
+        fetchData()
+      } else {
+        setBaitError(result.error || 'Erro ao equipar bait')
+      }
+    } catch (err: any) {
+      setBaitError(err.message)
+    } finally {
+      setBaitLoading(null)
+    }
+  }
+
+  // Toggle auto-buy bait
+  const handleToggleAutoBuyBait = async () => {
+    const newValue = !autoBuyBait
+    setAutoBuyBait(newValue)
+    try {
+      await updateBotConfig({ autoBuyBait: newValue })
+    } catch (err: any) {
+      setAutoBuyBait(!newValue)
+    }
+  }
+
+  // Atualiza auto-use bait (legacy single)
+  const handleAutoUseBaitChange = async (baitId: number) => {
+    const newValue = autoUseBaitId === baitId ? 0 : baitId
+    setAutoUseBaitId(newValue)
+    try {
+      await updateBotConfig({ autoUseBaitId: newValue })
+    } catch (err: any) {
+      setAutoUseBaitId(autoUseBaitId)
+    }
+  }
+
+  // Toggle bait na lista de prioridade (adiciona no final ou remove)
+  const handleToggleBaitOrder = async (baitId: number) => {
+    const currentOrder = autoUseBaitOrder ? autoUseBaitOrder.split(',').map(Number).filter(n => n >= 1 && n <= 10) : []
+    let newOrder: number[]
+    if (currentOrder.includes(baitId)) {
+      newOrder = currentOrder.filter(id => id !== baitId)
+    } else {
+      newOrder = [...currentOrder, baitId]
+    }
+    const newValue = newOrder.join(',')
+    setAutoUseBaitOrder(newValue)
+    try {
+      await updateBotConfig({ autoUseBaitOrder: newValue })
+    } catch (err: any) {
+      setAutoUseBaitOrder(autoUseBaitOrder)
+    }
+  }
+
+  // Move bait para cima na lista de prioridade
+  const handleMoveBaitUp = async (baitId: number) => {
+    const currentOrder = autoUseBaitOrder ? autoUseBaitOrder.split(',').map(Number).filter(n => n >= 1 && n <= 10) : []
+    const idx = currentOrder.indexOf(baitId)
+    if (idx <= 0) return
+    const newOrder = [...currentOrder]
+    ;[newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]]
+    const newValue = newOrder.join(',')
+    setAutoUseBaitOrder(newValue)
+    try {
+      await updateBotConfig({ autoUseBaitOrder: newValue })
+    } catch (err: any) {
+      setAutoUseBaitOrder(autoUseBaitOrder)
+    }
+  }
+
+  // Move bait para baixo na lista de prioridade
+  const handleMoveBaitDown = async (baitId: number) => {
+    const currentOrder = autoUseBaitOrder ? autoUseBaitOrder.split(',').map(Number).filter(n => n >= 1 && n <= 10) : []
+    const idx = currentOrder.indexOf(baitId)
+    if (idx < 0 || idx >= currentOrder.length - 1) return
+    const newOrder = [...currentOrder]
+    ;[newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]]
+    const newValue = newOrder.join(',')
+    setAutoUseBaitOrder(newValue)
+    try {
+      await updateBotConfig({ autoUseBaitOrder: newValue })
+    } catch (err: any) {
+      setAutoUseBaitOrder(autoUseBaitOrder)
+    }
+  }
+
+  // Atualiza auto-buy bait IDs
+  const handleAutoBuyBaitIdsChange = async (baitId: number) => {
+    const currentIds = autoBuyBaitIds.split(',').filter(Boolean).map(Number)
+    const newIds = currentIds.includes(baitId)
+      ? currentIds.filter(id => id !== baitId)
+      : [...currentIds, baitId].sort((a, b) => a - b)
+    const newValue = newIds.join(',')
+    setAutoBuyBaitIds(newValue)
+    try {
+      await updateBotConfig({ autoBuyBaitIds: newValue })
+    } catch (err: any) {
+      setAutoBuyBaitIds(autoBuyBaitIds)
+    }
+  }
+
+  // Atualiza threshold de auto-buy
+  const handleThresholdChange = async (value: number) => {
+    setAutoBuyBaitThreshold(value)
+    try {
+      await updateBotConfig({ autoBuyBaitThreshold: value })
+    } catch (err: any) {
+      // revert silently
+    }
+  }
+
+  // Atualiza quantidade de compra por bait (formato: "1:5,3:10")
+  const handleBuyQtyChange = async (baitId: number, qty: number) => {
+    const qtyMap: Record<number, number> = {}
+    if (autoBuyBaitQty) {
+      autoBuyBaitQty.split(',').forEach(entry => {
+        const [id, q] = entry.split(':').map(Number)
+        if (id >= 1 && id <= 10 && q > 0) qtyMap[id] = q
+      })
+    }
+    if (qty <= 1) {
+      delete qtyMap[baitId]
+    } else {
+      qtyMap[baitId] = Math.min(qty, 100)
+    }
+    const newValue = Object.entries(qtyMap).map(([id, q]) => `${id}:${q}`).join(',')
+    setAutoBuyBaitQty(newValue)
+    try {
+      await updateBotConfig({ autoBuyBaitQty: newValue })
+    } catch (err: any) {
+      setAutoBuyBaitQty(autoBuyBaitQty)
+    }
+  }
+
+  // Helper: parse qty map from string
+  const parseBuyQtyMap = (): Record<number, number> => {
+    const qtyMap: Record<number, number> = {}
+    if (autoBuyBaitQty) {
+      autoBuyBaitQty.split(',').forEach(entry => {
+        const [id, q] = entry.split(':').map(Number)
+        if (id >= 1 && id <= 10 && q > 0) qtyMap[id] = q
+      })
+    }
+    return qtyMap
+  }
+
   // Finaliza upgrade
   const handleFinishUpgrade = async () => {
     setUpgradeLoading(true)
@@ -233,6 +501,15 @@ export default function BotInfo() {
       setUpgradeLoading(false)
     }
   }
+
+  // Quando conecta, reseta loading para evitar flash de "Nenhum Bot Configurado"
+  // antes do primeiro fetch completar
+  useEffect(() => {
+    if (isConnected && walletPubkey) {
+      setLoading(true)
+      fetchAttemptsRef.current = 0
+    }
+  }, [isConnected, walletPubkey])
 
   useEffect(() => {
     fetchData()
@@ -262,6 +539,10 @@ export default function BotInfo() {
   }
 
   if (error) {
+    // Se a carteira esta conectada mas a sessao ainda nao foi configurada, mostra loading
+    if (isConnected && (error.includes('Sessão não conectada') || error.includes('Sessao nao conectada'))) {
+      return <div className="loading">Carregando informacoes, aguarde...</div>
+    }
     return (
       <div className="error">
         <h2 style={{ marginBottom: '12px' }}>Erro ao carregar dados</h2>
@@ -408,7 +689,42 @@ export default function BotInfo() {
         </div>
       </div>
 
-      {/* ============ LAYOUT 3 COLUNAS ============ */}
+      {/* ============ TABS ============ */}
+      <div style={{
+        display: 'flex',
+        gap: '0',
+        marginBottom: '20px',
+        borderBottom: '2px solid var(--border)',
+      }}>
+        {([
+          { id: 'dashboard' as const, label: 'Dashboard', color: 'var(--accent)' },
+          { id: 'automacoes' as const, label: 'Automacoes', color: 'var(--purple)' },
+          { id: 'logs' as const, label: 'Logs', color: 'var(--warning)' },
+          { id: 'config' as const, label: 'Config', color: 'var(--success)' },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              padding: '10px 24px',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              border: 'none',
+              borderBottom: activeTab === tab.id ? `2px solid ${tab.color}` : '2px solid transparent',
+              marginBottom: '-2px',
+              background: 'transparent',
+              color: activeTab === tab.id ? tab.color : 'var(--text-muted)',
+              cursor: 'pointer',
+              transition: 'color 0.2s ease, border-color 0.2s ease',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ============ TAB: DASHBOARD ============ */}
+      {activeTab === 'dashboard' && (
       <div className="dashboard-grid" style={{
         display: 'grid',
         gridTemplateColumns: '280px 1fr 320px',
@@ -672,41 +988,6 @@ export default function BotInfo() {
                 Upgrade
               </h3>
 
-              {/* Auto-upgrade toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                marginBottom: '12px',
-                background: autoUpgrade ? 'rgba(63, 185, 80, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                border: `1px solid ${autoUpgrade ? 'rgba(63, 185, 80, 0.2)' : 'var(--border)'}`,
-                borderRadius: '8px',
-                cursor: 'pointer',
-              }} onClick={handleToggleAutoUpgrade}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Auto-upgrade</span>
-                <div style={{
-                  width: '36px',
-                  height: '20px',
-                  borderRadius: '10px',
-                  background: autoUpgrade ? 'var(--success)' : 'rgba(255,255,255,0.15)',
-                  position: 'relative',
-                  transition: 'background 0.2s ease',
-                }}>
-                  <div style={{
-                    width: '16px',
-                    height: '16px',
-                    borderRadius: '50%',
-                    background: 'white',
-                    position: 'absolute',
-                    top: '2px',
-                    left: autoUpgrade ? '18px' : '2px',
-                    transition: 'left 0.2s ease',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                  }} />
-                </div>
-              </div>
-
               {upgradeError && (
                 <div style={{
                   padding: '8px 12px',
@@ -815,9 +1096,11 @@ export default function BotInfo() {
                     </div>
                   )
                 }
+                const upgradeFogoCostDisplay = (fogoCost / 1_000_000).toFixed(2)
+                const canAffordUpgrade = balances ? balances.usdc >= fogoCost / 1_000_000 : null
                 return (
                   <div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
                       <div style={{
                         padding: '10px',
                         background: 'rgba(59, 130, 246, 0.08)',
@@ -830,19 +1113,38 @@ export default function BotInfo() {
                       </div>
                       <div style={{
                         padding: '10px',
-                        background: 'rgba(168, 85, 247, 0.08)',
-                        border: '1px solid rgba(168, 85, 247, 0.2)',
+                        background: canAffordUpgrade === false ? 'rgba(248, 81, 73, 0.08)' : 'rgba(168, 85, 247, 0.08)',
+                        border: `1px solid ${canAffordUpgrade === false ? 'rgba(248, 81, 73, 0.2)' : 'rgba(168, 85, 247, 0.2)'}`,
                         borderRadius: '8px',
                         textAlign: 'center',
                       }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>FOGO</div>
-                        <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--purple)' }}>{fogoCost.toLocaleString('pt-BR')}</div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>Custo USDC</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 700, color: canAffordUpgrade === false ? 'var(--danger)' : 'var(--purple)' }}>{upgradeFogoCostDisplay}</div>
                       </div>
                     </div>
 
+                    {/* Indicador de saldo */}
+                    {balances && (
+                      <div style={{
+                        padding: '6px 10px',
+                        marginBottom: '12px',
+                        borderRadius: '6px',
+                        fontSize: '0.7rem',
+                        textAlign: 'center',
+                        background: canAffordUpgrade ? 'rgba(63, 185, 80, 0.08)' : 'rgba(248, 81, 73, 0.08)',
+                        border: `1px solid ${canAffordUpgrade ? 'rgba(63, 185, 80, 0.15)' : 'rgba(248, 81, 73, 0.15)'}`,
+                        color: canAffordUpgrade ? 'var(--success)' : 'var(--danger)',
+                      }}>
+                        {canAffordUpgrade
+                          ? `Saldo: ${balances.usdc.toFixed(2)} USDC - Pode pagar`
+                          : `Saldo: ${balances.usdc.toFixed(2)} USDC - Insuficiente (faltam ${(fogoCost / 1_000_000 - balances.usdc).toFixed(2)})`
+                        }
+                      </div>
+                    )}
+
                     <button
                       onClick={handleStartUpgrade}
-                      disabled={upgradeLoading || !isRunning}
+                      disabled={upgradeLoading || !isRunning || canAffordUpgrade === false}
                       style={{
                         width: '100%',
                         padding: '12px',
@@ -850,14 +1152,16 @@ export default function BotInfo() {
                         fontWeight: 700,
                         border: 'none',
                         borderRadius: '10px',
-                        cursor: upgradeLoading || !isRunning ? 'not-allowed' : 'pointer',
-                        opacity: upgradeLoading || !isRunning ? 0.6 : 1,
-                        background: 'linear-gradient(135deg, var(--gold) 0%, #f59e0b 100%)',
-                        color: '#1a1a2e',
-                        boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
+                        cursor: upgradeLoading || !isRunning || canAffordUpgrade === false ? 'not-allowed' : 'pointer',
+                        opacity: upgradeLoading || !isRunning || canAffordUpgrade === false ? 0.6 : 1,
+                        background: canAffordUpgrade === false
+                          ? 'linear-gradient(135deg, #666 0%, #444 100%)'
+                          : 'linear-gradient(135deg, var(--gold) 0%, #f59e0b 100%)',
+                        color: canAffordUpgrade === false ? '#999' : '#1a1a2e',
+                        boxShadow: canAffordUpgrade === false ? 'none' : '0 4px 12px rgba(255, 215, 0, 0.3)',
                       }}
                     >
-                      {upgradeLoading ? 'Iniciando...' : `Upgrade → Lv.${nextLevel}`}
+                      {upgradeLoading ? 'Iniciando...' : canAffordUpgrade === false ? 'USDC Insuficiente' : `Upgrade → Lv.${nextLevel}`}
                     </button>
                     {!isRunning && (
                       <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.7rem', marginTop: '6px' }}>
@@ -867,6 +1171,192 @@ export default function BotInfo() {
                   </div>
                 )
               })()}
+            </div>
+          )}
+
+          {/* Card de Iscas */}
+          {playerData && (
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{
+                marginBottom: '16px',
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <BaitIcon />
+                Iscas
+              </h3>
+
+              {baitError && (
+                <div style={{
+                  padding: '8px 12px',
+                  marginBottom: '12px',
+                  background: 'rgba(248, 81, 73, 0.1)',
+                  border: '1px solid rgba(248, 81, 73, 0.3)',
+                  borderRadius: '8px',
+                  color: 'var(--danger)',
+                  fontSize: '0.8rem',
+                }}>
+                  {baitError}
+                </div>
+              )}
+
+              {/* Bait ativa */}
+              <div style={{
+                padding: '8px 12px',
+                marginBottom: '12px',
+                background: baitInventory?.activeBait ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                border: `1px solid ${baitInventory?.activeBait ? 'rgba(59, 130, 246, 0.2)' : 'var(--border)'}`,
+                borderRadius: '8px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Isca Ativa</span>
+                <span style={{ fontWeight: 600, color: baitInventory?.activeBait ? 'var(--accent)' : 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  {baitInventory?.activeBait ? BAIT_NAMES[baitInventory.activeBait] || `#${baitInventory.activeBait}` : 'Nenhuma'}
+                </span>
+              </div>
+
+              {/* Grid de baits disponíveis */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '400px', overflowY: 'auto' }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(baitId => {
+                  const casts = baitInventory?.remainingCasts?.[baitId - 1] || 0
+                  const isActive = baitInventory?.activeBait === baitId
+                  const costInfo = baitCosts[baitId]
+                  const unlockLevel = costInfo?.unlockLevel || 0
+                  const isUnlocked = playerData.rodLevel >= unlockLevel
+                  const isBuying = baitLoading === `buy-${baitId}`
+                  const isEquipping = baitLoading === `equip-${baitId}`
+                  const fishCost = costInfo?.fishCost || 0
+                  const usdcCost = costInfo?.usdcFee || 0
+                  const hasCostData = !!costInfo
+                  const canAffordFish = balances && hasCostData ? balances.fish >= fishCost : null
+                  const canAffordUsdc = balances && hasCostData ? balances.usdc >= usdcCost : null
+                  const canAfford = canAffordFish !== null ? (canAffordFish && canAffordUsdc) : null
+
+                  return (
+                    <div key={baitId} style={{
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      background: isActive ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+                      border: `1px solid ${isActive ? 'rgba(59, 130, 246, 0.3)' : 'var(--border)'}`,
+                      opacity: isUnlocked ? 1 : 0.4,
+                    }}>
+                      {/* Linha 1: Nome + casts + botões */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: isActive ? 'var(--accent)' : 'var(--text-primary)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            {BAIT_NAMES[baitId]}
+                            {!isUnlocked && <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginLeft: '4px' }}>Lv.{unlockLevel}</span>}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            {casts > 0 ? `${casts} casts` : 'Sem estoque'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                          {isUnlocked && isRunning && (
+                            <>
+                              <button
+                                onClick={() => handleEquipBait(isActive ? 0 : baitId)}
+                                disabled={!!baitLoading || (casts === 0 && !isActive)}
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.65rem',
+                                  fontWeight: 600,
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: !!baitLoading || (casts === 0 && !isActive) ? 'not-allowed' : 'pointer',
+                                  opacity: !!baitLoading || (casts === 0 && !isActive) ? 0.5 : 1,
+                                  background: isActive ? 'rgba(248, 81, 73, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                                  color: isActive ? 'var(--danger)' : 'var(--accent)',
+                                }}
+                              >
+                                {isEquipping ? '...' : isActive ? 'Remover' : 'Usar'}
+                              </button>
+                              <button
+                                onClick={() => handleBuyBait(baitId)}
+                                disabled={!!baitLoading || canAfford === false}
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '0.65rem',
+                                  fontWeight: 600,
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: !!baitLoading || canAfford === false ? 'not-allowed' : 'pointer',
+                                  opacity: !!baitLoading || canAfford === false ? 0.5 : 1,
+                                  background: canAfford === false ? 'rgba(248, 81, 73, 0.15)' : 'rgba(63, 185, 80, 0.15)',
+                                  color: canAfford === false ? 'var(--danger)' : 'var(--success)',
+                                }}
+                              >
+                                {isBuying ? '...' : canAfford === false ? 'Sem saldo' : 'Comprar'}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {/* Linha 2: Custos */}
+                      {isUnlocked && hasCostData && (
+                        <div style={{
+                          display: 'flex',
+                          gap: '6px',
+                          marginTop: '4px',
+                          fontSize: '0.6rem',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                        }}>
+                          <span style={{
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            background: canAffordFish === false ? 'rgba(248, 81, 73, 0.1)' : 'rgba(59, 130, 246, 0.08)',
+                            color: canAffordFish === false ? 'var(--danger)' : 'var(--text-muted)',
+                            fontWeight: 500,
+                          }}>
+                            {formatFish(Math.round(fishCost))} FISH
+                          </span>
+                          <span style={{
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            background: canAffordUsdc === false ? 'rgba(248, 81, 73, 0.1)' : 'rgba(34, 197, 94, 0.08)',
+                            color: canAffordUsdc === false ? 'var(--danger)' : 'var(--text-muted)',
+                            fontWeight: 500,
+                          }}>
+                            {usdcCost.toFixed(2)} USDC
+                          </span>
+                          <span style={{
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(168, 85, 247, 0.08)',
+                            color: 'var(--text-muted)',
+                            fontWeight: 500,
+                          }}>
+                            {costInfo.castsPerUnit} casts/un
+                          </span>
+                          {canAfford !== null && (
+                            <span style={{
+                              fontWeight: 600,
+                              color: canAfford ? 'var(--success)' : 'var(--danger)',
+                            }}>
+                              {canAfford ? '\u2713' : '\u2717'}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
             </div>
           )}
 
@@ -967,6 +1457,731 @@ export default function BotInfo() {
         </div>
 
       </div>
+      )}
+
+      {/* ============ TAB: AUTOMACOES ============ */}
+      {activeTab === 'automacoes' && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '24px' }}>
+
+        {/* Row 1: Status geral das automacoes */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+          gap: '10px',
+        }}>
+          {[
+            { label: 'Reparo', active: autoRepair, color: 'var(--success)', icon: <WrenchIcon size={16} /> },
+            { label: 'Upgrade', active: autoUpgrade, color: 'var(--gold)', icon: <UpgradeIcon /> },
+            { label: 'Restart', active: autoRestartMinutes > 0, color: 'var(--accent)', icon: <ClockIcon /> },
+            { label: 'Equipar', active: (autoUseBaitOrder || '').split(',').filter(n => parseInt(n) >= 1).length > 0, color: 'var(--purple)', icon: <BaitIcon /> },
+            { label: 'Compra', active: autoBuyBait, color: 'var(--warning)', icon: <BaitIcon /> },
+          ].map((item, i) => (
+            <div key={i} style={{
+              padding: '10px 14px',
+              borderRadius: '10px',
+              background: item.active ? `${item.color}10` : 'rgba(255,255,255,0.02)',
+              border: `1px solid ${item.active ? `${item.color}30` : 'var(--border)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.3s ease',
+            }}>
+              <div style={{ color: item.active ? item.color : 'var(--text-muted)', opacity: item.active ? 1 : 0.5, display: 'flex' }}>
+                {item.icon}
+              </div>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: item.active ? 'var(--text-primary)' : 'var(--text-muted)', flex: 1 }}>
+                {item.label}
+              </span>
+              <div style={{
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: item.active ? item.color : 'var(--text-muted)',
+                opacity: item.active ? 1 : 0.3,
+                boxShadow: item.active ? `0 0 8px ${item.color}60` : 'none',
+                animation: item.active ? 'pulse 2s ease-in-out infinite' : 'none',
+              }} />
+            </div>
+          ))}
+        </div>
+
+        {/* Row 2: Cards principais */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+          gap: '20px',
+        }}>
+
+        {/* Card: Auto-Repair */}
+        <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h3 style={{
+              margin: 0,
+              fontSize: '1rem',
+              fontWeight: 600,
+              color: 'var(--success)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <WrenchIcon size={20} />
+              Auto-Reparo
+            </h3>
+            <div
+              onClick={async () => {
+                const newVal = !autoRepair
+                setAutoRepair(newVal)
+                try { await updateBotConfig({ autoRepair: newVal }) } catch { setAutoRepair(!newVal) }
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                padding: '4px 12px', borderRadius: '20px',
+                background: autoRepair ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${autoRepair ? 'rgba(63, 185, 80, 0.3)' : 'var(--border)'}`,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span style={{ fontSize: '0.7rem', fontWeight: 600, color: autoRepair ? 'var(--success)' : 'var(--text-muted)' }}>
+                {autoRepair ? 'ON' : 'OFF'}
+              </span>
+              <div style={{
+                width: '32px', height: '18px', borderRadius: '9px',
+                background: autoRepair ? 'var(--success)' : 'rgba(255,255,255,0.15)',
+                position: 'relative', transition: 'background 0.2s ease',
+              }}>
+                <div style={{
+                  width: '14px', height: '14px', borderRadius: '50%', background: 'white',
+                  position: 'absolute', top: '2px', left: autoRepair ? '16px' : '2px',
+                  transition: 'left 0.2s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Durabilidade atual */}
+          {durability && (
+            <div style={{
+              padding: '10px 14px',
+              marginBottom: '14px',
+              borderRadius: '10px',
+              background: 'rgba(0,0,0,0.2)',
+              border: '1px solid var(--border)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Durabilidade Atual</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: durabilityColor }}>
+                  {durability.current}/{durability.max} ({durabilityPercent}%)
+                </span>
+              </div>
+              <div style={{
+                width: '100%', height: '6px', background: 'rgba(0,0,0,0.3)',
+                borderRadius: '3px', overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${durabilityPercent}%`, height: '100%',
+                  background: `linear-gradient(90deg, ${durabilityColor}, ${durabilityColor}cc)`,
+                  borderRadius: '3px', transition: 'width 0.5s ease',
+                }} />
+              </div>
+            </div>
+          )}
+
+          {autoRepair && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Range visual de reparo */}
+              <div style={{
+                padding: '14px',
+                borderRadius: '10px',
+                background: 'rgba(63, 185, 80, 0.04)',
+                border: '1px solid rgba(63, 185, 80, 0.1)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'var(--danger)' }} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Reparar abaixo de</span>
+                  </div>
+                  <span style={{
+                    padding: '2px 10px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700,
+                    background: 'rgba(248, 81, 73, 0.15)', color: 'var(--danger)',
+                  }}>{autoRepairMin}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={5} max={50} step={5}
+                  value={autoRepairMin}
+                  onChange={async (e) => {
+                    const val = parseInt(e.target.value)
+                    setAutoRepairMin(val)
+                    try { await updateBotConfig({ autoRepairMin: val }) } catch {}
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--danger)' }}
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: 'var(--success)' }} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Reparar ate</span>
+                  </div>
+                  <span style={{
+                    padding: '2px 10px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700,
+                    background: 'rgba(63, 185, 80, 0.15)', color: 'var(--success)',
+                  }}>{autoRepairMax}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={10} max={100} step={5}
+                  value={autoRepairMax}
+                  onChange={async (e) => {
+                    const val = parseInt(e.target.value)
+                    setAutoRepairMax(val)
+                    try { await updateBotConfig({ autoRepairMax: val }) } catch {}
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--success)' }}
+                />
+              </div>
+
+              {/* Visualizacao do range */}
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: 'rgba(0,0,0,0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}>
+                <div style={{ flex: 1, position: 'relative', height: '24px' }}>
+                  <div style={{
+                    position: 'absolute', top: '10px', left: 0, right: 0, height: '4px',
+                    background: 'rgba(255,255,255,0.08)', borderRadius: '2px',
+                  }} />
+                  <div style={{
+                    position: 'absolute', top: '10px',
+                    left: `${autoRepairMin}%`, width: `${autoRepairMax - autoRepairMin}%`,
+                    height: '4px', background: 'linear-gradient(90deg, var(--danger), var(--success))',
+                    borderRadius: '2px',
+                  }} />
+                  <div style={{
+                    position: 'absolute', top: '4px', left: `${autoRepairMin}%`, transform: 'translateX(-50%)',
+                    fontSize: '0.6rem', color: 'var(--danger)', fontWeight: 700,
+                  }}>{autoRepairMin}%</div>
+                  <div style={{
+                    position: 'absolute', top: '4px', left: `${autoRepairMax}%`, transform: 'translateX(-50%)',
+                    fontSize: '0.6rem', color: 'var(--success)', fontWeight: 700,
+                  }}>{autoRepairMax}%</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Card: Auto-Upgrade + Auto-Restart (combined compact) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Auto-Upgrade */}
+          <div className="card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <h3 style={{
+                margin: 0,
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--gold)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <UpgradeIcon />
+                Auto-Upgrade
+              </h3>
+              <div
+                onClick={handleToggleAutoUpgrade}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                  padding: '4px 12px', borderRadius: '20px',
+                  background: autoUpgrade ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${autoUpgrade ? 'rgba(63, 185, 80, 0.3)' : 'var(--border)'}`,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: autoUpgrade ? 'var(--success)' : 'var(--text-muted)' }}>
+                  {autoUpgrade ? 'ON' : 'OFF'}
+                </span>
+                <div style={{
+                  width: '32px', height: '18px', borderRadius: '9px',
+                  background: autoUpgrade ? 'var(--success)' : 'rgba(255,255,255,0.15)',
+                  position: 'relative', transition: 'background 0.2s ease',
+                }}>
+                  <div style={{
+                    width: '14px', height: '14px', borderRadius: '50%', background: 'white',
+                    position: 'absolute', top: '2px', left: autoUpgrade ? '16px' : '2px',
+                    transition: 'left 0.2s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Rod level info */}
+            {playerData && (
+              <div style={{
+                display: 'flex', gap: '10px', marginBottom: '12px',
+              }}>
+                <div style={{
+                  flex: 1, padding: '10px', borderRadius: '8px',
+                  background: 'rgba(255, 215, 0, 0.06)', border: '1px solid rgba(255, 215, 0, 0.12)',
+                  textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Nivel Atual</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--gold)' }}>Lv.{playerData.rodLevel}</div>
+                </div>
+                {upgradeData?.inProgress ? (
+                  <div style={{
+                    flex: 1, padding: '10px', borderRadius: '8px',
+                    background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.12)',
+                    textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Upgrade</div>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent)' }}>
+                      {(upgradeData as any).progress?.toFixed(0)}%
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    flex: 1, padding: '10px', borderRadius: '8px',
+                    background: 'rgba(168, 85, 247, 0.06)', border: '1px solid rgba(168, 85, 247, 0.12)',
+                    textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Proximo</div>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--purple)' }}>
+                      {playerData.rodLevel < 60 ? `Lv.${playerData.rodLevel + 1}` : 'MAX'}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              background: 'rgba(255, 215, 0, 0.04)',
+              border: '1px solid rgba(255, 215, 0, 0.08)',
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              lineHeight: 1.5,
+            }}>
+              O bot inicia e finaliza upgrades automaticamente ao atingir os casts necessarios.
+            </div>
+          </div>
+
+          {/* Auto-Restart */}
+          <div className="card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <h3 style={{
+                margin: 0,
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <ClockIcon />
+                Auto-Restart
+              </h3>
+              <div
+                onClick={async () => {
+                  const newVal = autoRestartMinutes > 0 ? 0 : 240
+                  setAutoRestartMinutes(newVal)
+                  try { await updateBotConfig({ autoRestartMinutes: newVal }) } catch { setAutoRestartMinutes(autoRestartMinutes) }
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                  padding: '4px 12px', borderRadius: '20px',
+                  background: autoRestartMinutes > 0 ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${autoRestartMinutes > 0 ? 'rgba(63, 185, 80, 0.3)' : 'var(--border)'}`,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <span style={{ fontSize: '0.7rem', fontWeight: 600, color: autoRestartMinutes > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
+                  {autoRestartMinutes > 0 ? 'ON' : 'OFF'}
+                </span>
+                <div style={{
+                  width: '32px', height: '18px', borderRadius: '9px',
+                  background: autoRestartMinutes > 0 ? 'var(--success)' : 'rgba(255,255,255,0.15)',
+                  position: 'relative', transition: 'background 0.2s ease',
+                }}>
+                  <div style={{
+                    width: '14px', height: '14px', borderRadius: '50%', background: 'white',
+                    position: 'absolute', top: '2px', left: autoRestartMinutes > 0 ? '16px' : '2px',
+                    transition: 'left 0.2s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }} />
+                </div>
+              </div>
+            </div>
+
+            {autoRestartMinutes > 0 && (
+              <div>
+                {/* Intervalo display grande */}
+                <div style={{
+                  padding: '12px',
+                  marginBottom: '12px',
+                  borderRadius: '10px',
+                  background: 'rgba(59, 130, 246, 0.06)',
+                  border: '1px solid rgba(59, 130, 246, 0.12)',
+                  textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Intervalo</div>
+                  <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--accent)' }}>
+                    {autoRestartMinutes >= 60
+                      ? `${Math.floor(autoRestartMinutes / 60)}h ${autoRestartMinutes % 60 > 0 ? `${autoRestartMinutes % 60}m` : ''}`
+                      : `${autoRestartMinutes}min`
+                    }
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={30} max={720} step={30}
+                  value={autoRestartMinutes}
+                  onChange={async (e) => {
+                    const val = parseInt(e.target.value)
+                    setAutoRestartMinutes(val)
+                    try { await updateBotConfig({ autoRestartMinutes: val }) } catch {}
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--accent)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <span>30min</span>
+                  <span>6h</span>
+                  <span>12h</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card: Auto-Equipar Isca */}
+        <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <h3 style={{
+              margin: 0,
+              fontSize: '1rem',
+              fontWeight: 600,
+              color: 'var(--purple)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <BaitIcon />
+              Auto-Equipar Isca
+            </h3>
+            {(() => {
+              const count = autoUseBaitOrder ? autoUseBaitOrder.split(',').map(Number).filter(n => n >= 1 && n <= 10).length : 0
+              return count > 0 ? (
+                <span style={{
+                  padding: '3px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600,
+                  background: 'rgba(168, 85, 247, 0.15)', color: 'var(--purple)',
+                }}>
+                  {count} {count === 1 ? 'isca' : 'iscas'}
+                </span>
+              ) : null
+            })()}
+          </div>
+
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.5 }}>
+            Ordem de prioridade: quando a isca ativa acabar, a proxima sera equipada automaticamente.
+          </div>
+
+          {/* Lista ordenada */}
+          {(() => {
+            const orderList = autoUseBaitOrder ? autoUseBaitOrder.split(',').map(Number).filter(n => n >= 1 && n <= 10) : []
+            return orderList.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                {orderList.map((baitId, idx) => {
+                  const casts = baitInventory?.remainingCasts?.[baitId - 1] || 0
+                  return (
+                    <div key={baitId} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      borderRadius: '10px',
+                      background: idx === 0 ? 'rgba(168, 85, 247, 0.12)' : 'rgba(59, 130, 246, 0.06)',
+                      border: `1px solid ${idx === 0 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(59, 130, 246, 0.12)'}`,
+                      transition: 'all 0.2s ease',
+                    }}>
+                      <div style={{
+                        width: '24px', height: '24px', borderRadius: '6px',
+                        background: idx === 0 ? 'var(--purple)' : 'rgba(59, 130, 246, 0.2)',
+                        color: idx === 0 ? 'white' : 'var(--accent)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.7rem', fontWeight: 800, flexShrink: 0,
+                      }}>
+                        {idx + 1}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {BAIT_NAMES[baitId]}
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: casts > 0 ? 'var(--text-muted)' : 'var(--danger)' }}>
+                          {casts > 0 ? `${casts} casts restantes` : 'Sem estoque'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
+                        <button onClick={() => handleMoveBaitUp(baitId)} disabled={idx === 0} style={{
+                          width: '26px', height: '26px', fontSize: '0.65rem', border: 'none', borderRadius: '6px',
+                          cursor: idx === 0 ? 'not-allowed' : 'pointer', opacity: idx === 0 ? 0.2 : 0.7,
+                          background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'opacity 0.2s ease',
+                        }}>&#9650;</button>
+                        <button onClick={() => handleMoveBaitDown(baitId)} disabled={idx === orderList.length - 1} style={{
+                          width: '26px', height: '26px', fontSize: '0.65rem', border: 'none', borderRadius: '6px',
+                          cursor: idx === orderList.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === orderList.length - 1 ? 0.2 : 0.7,
+                          background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'opacity 0.2s ease',
+                        }}>&#9660;</button>
+                        <button onClick={() => handleToggleBaitOrder(baitId)} style={{
+                          width: '26px', height: '26px', fontSize: '0.85rem', border: 'none', borderRadius: '6px',
+                          cursor: 'pointer', background: 'rgba(248, 81, 73, 0.1)', color: 'var(--danger)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'background 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => { (e.target as HTMLElement).style.background = 'rgba(248, 81, 73, 0.25)' }}
+                        onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'rgba(248, 81, 73, 0.1)' }}
+                        >&times;</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div style={{
+                padding: '16px', textAlign: 'center', marginBottom: '12px',
+                borderRadius: '10px', border: '1px dashed rgba(168, 85, 247, 0.2)',
+                background: 'rgba(168, 85, 247, 0.03)',
+              }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Nenhuma isca na fila
+                </div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', opacity: 0.7 }}>
+                  Adicione iscas abaixo para ativar
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Botoes para adicionar */}
+          <div style={{
+            padding: '10px',
+            borderRadius: '10px',
+            background: 'rgba(0,0,0,0.1)',
+            border: '1px solid var(--border)',
+          }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Adicionar Isca
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(id => {
+                const orderList = autoUseBaitOrder ? autoUseBaitOrder.split(',').map(Number).filter(n => n >= 1 && n <= 10) : []
+                const isInList = orderList.includes(id)
+                const isUnlocked = playerData ? playerData.rodLevel >= (baitCosts[id]?.unlockLevel || 0) : true
+                const casts = baitInventory?.remainingCasts?.[id - 1] || 0
+                return (
+                  <button
+                    key={id}
+                    onClick={() => handleToggleBaitOrder(id)}
+                    disabled={!isUnlocked}
+                    title={!isUnlocked ? `Requer Lv.${baitCosts[id]?.unlockLevel}` : isInList ? 'Remover da fila' : `${BAIT_NAMES[id]} (${casts} casts)`}
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: !isUnlocked ? 'not-allowed' : 'pointer',
+                      background: isInList ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                      color: isInList ? 'var(--purple)' : !isUnlocked ? 'var(--text-muted)' : 'var(--text-secondary)',
+                      opacity: !isUnlocked ? 0.3 : isInList ? 0.6 : 1,
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {isInList ? '\u2713 ' : '+ '}{BAIT_NAMES[id]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Card: Auto-Compra de Isca */}
+        <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h3 style={{
+              margin: 0,
+              fontSize: '1rem',
+              fontWeight: 600,
+              color: 'var(--warning)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <BaitIcon />
+              Auto-Compra de Isca
+            </h3>
+            <div
+              onClick={handleToggleAutoBuyBait}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                padding: '4px 12px', borderRadius: '20px',
+                background: autoBuyBait ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${autoBuyBait ? 'rgba(63, 185, 80, 0.3)' : 'var(--border)'}`,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span style={{ fontSize: '0.7rem', fontWeight: 600, color: autoBuyBait ? 'var(--success)' : 'var(--text-muted)' }}>
+                {autoBuyBait ? 'ON' : 'OFF'}
+              </span>
+              <div style={{
+                width: '32px', height: '18px', borderRadius: '9px',
+                background: autoBuyBait ? 'var(--success)' : 'rgba(255,255,255,0.15)',
+                position: 'relative', transition: 'background 0.2s ease',
+              }}>
+                <div style={{
+                  width: '14px', height: '14px', borderRadius: '50%', background: 'white',
+                  position: 'absolute', top: '2px', left: autoBuyBait ? '16px' : '2px',
+                  transition: 'left 0.2s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </div>
+          </div>
+
+          {autoBuyBait && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Threshold com display grande */}
+              <div style={{
+                padding: '12px',
+                borderRadius: '10px',
+                background: 'rgba(210, 153, 34, 0.06)',
+                border: '1px solid rgba(210, 153, 34, 0.12)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Comprar quando casts restantes menor que</span>
+                  <span style={{
+                    padding: '2px 10px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 700,
+                    background: 'rgba(210, 153, 34, 0.15)', color: 'var(--warning)',
+                  }}>{autoBuyBaitThreshold}</span>
+                </div>
+                <input
+                  type="range"
+                  min={10} max={500} step={10}
+                  value={autoBuyBaitThreshold}
+                  onChange={(e) => handleThresholdChange(parseInt(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--warning)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <span>10</span>
+                  <span>250</span>
+                  <span>500</span>
+                </div>
+              </div>
+
+              {/* Iscas selecionaveis com quantidade */}
+              <div style={{
+                padding: '10px',
+                borderRadius: '10px',
+                background: 'rgba(0,0,0,0.1)',
+                border: '1px solid var(--border)',
+              }}>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Iscas para auto-compra
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(id => {
+                    const isSelected = autoBuyBaitIds.split(',').filter(Boolean).map(Number).includes(id)
+                    const qtyMap = parseBuyQtyMap()
+                    const qty = qtyMap[id] || 1
+                    const costInfo = baitCosts[id]
+                    const casts = baitInventory?.remainingCasts?.[id - 1] || 0
+                    const isUnlocked = playerData ? playerData.rodLevel >= (costInfo?.unlockLevel || 0) : true
+                    return (
+                      <div key={id} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 8px',
+                        borderRadius: '8px',
+                        background: isSelected ? 'rgba(210, 153, 34, 0.08)' : 'transparent',
+                        border: `1px solid ${isSelected ? 'rgba(210, 153, 34, 0.15)' : 'transparent'}`,
+                        opacity: isUnlocked ? 1 : 0.3,
+                        transition: 'all 0.15s ease',
+                      }}>
+                        {/* Checkbox visual */}
+                        <div
+                          onClick={() => isUnlocked && handleAutoBuyBaitIdsChange(id)}
+                          style={{
+                            width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
+                            border: `2px solid ${isSelected ? 'var(--warning)' : 'var(--border)'}`,
+                            background: isSelected ? 'var(--warning)' : 'transparent',
+                            cursor: isUnlocked ? 'pointer' : 'not-allowed',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {isSelected && <span style={{ color: '#000', fontSize: '0.65rem', fontWeight: 800 }}>{'\u2713'}</span>}
+                        </div>
+
+                        {/* Nome + info */}
+                        <div
+                          onClick={() => isUnlocked && handleAutoBuyBaitIdsChange(id)}
+                          style={{ flex: 1, minWidth: 0, cursor: isUnlocked ? 'pointer' : 'not-allowed' }}
+                        >
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                            {BAIT_NAMES[id]}
+                          </div>
+                          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', gap: '6px' }}>
+                            <span>{casts} casts</span>
+                            {costInfo && <span>| {formatFish(Math.round(costInfo.fishCost))} FISH + {costInfo.usdcFee.toFixed(2)} USDC</span>}
+                          </div>
+                        </div>
+
+                        {/* Qty input */}
+                        {isSelected && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                            <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>x</span>
+                            <input
+                              type="number"
+                              min={1} max={100}
+                              value={qty}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => handleBuyQtyChange(id, parseInt(e.target.value) || 1)}
+                              style={{
+                                width: '44px', padding: '4px 6px', fontSize: '0.75rem',
+                                background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                                border: '1px solid var(--border)', borderRadius: '6px', textAlign: 'center',
+                                fontWeight: 600,
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        </div>
+      </div>
+      )}
+
+      {/* ============ TAB: LOGS ============ */}
+      {activeTab === 'logs' && (
+        <LogsTab embedded />
+      )}
+
+      {/* ============ TAB: CONFIG ============ */}
+      {activeTab === 'config' && (
+        <ConfigTab embedded />
+      )}
+
     </div>
   )
 }
@@ -1404,6 +2619,17 @@ function UpgradeIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 19V5M5 12l7-7 7 7"/>
+    </svg>
+  )
+}
+
+function BaitIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+      <path d="M12 8v4"/>
+      <path d="M9 12c0 3 1.5 6 3 8 1.5-2 3-5 3-8"/>
+      <circle cx="12" cy="20" r="2"/>
     </svg>
   )
 }

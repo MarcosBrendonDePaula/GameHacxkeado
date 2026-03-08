@@ -18,7 +18,7 @@ import { upsertBot, updateBotConfig, getBot } from '../lib/api'
 // Chave do localStorage para saber se bot ja foi configurado
 const BOT_CONFIGURED_KEY = 'fogo_bot_configured_'
 
-export default function AddWallet() {
+export default function AddWallet({ embedded = false }: { embedded?: boolean }) {
   const sessionState = useSession()
   const { isConnected, walletPubkey, refreshAccount, bot } = useAuth()
   const [status, setStatus] = useState<'idle' | 'saving' | 'creating' | 'success' | 'error'>('idle')
@@ -27,12 +27,8 @@ export default function AddWallet() {
 
   // Configuracoes do bot
   const [proxy, setProxy] = useState('')
-  const [delayMin, setDelayMin] = useState(1500)
-  const [delayMax, setDelayMax] = useState(3000)
-  const [autoRepair, setAutoRepair] = useState(true)
-  const [autoRepairMin, setAutoRepairMin] = useState(15)
-  const [autoRepairMax, setAutoRepairMax] = useState(25)
-  const [autoRestartMinutes, setAutoRestartMinutes] = useState(240)
+  const [delayMin, setDelayMin] = useState(2300)
+  const [delayMax, setDelayMax] = useState(2600)
 
   // Verifica se ja configurou o bot (localStorage ou estado do backend)
   const [hasConfiguredBot, setHasConfiguredBot] = useState(false)
@@ -53,12 +49,8 @@ export default function AddWallet() {
           localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
           if (data.bot.proxy) setProxy(data.bot.proxy)
           // Usa valores do banco ou padrões se não existirem
-          setDelayMin(data.bot.delayMin ?? 1500)
-          setDelayMax(data.bot.delayMax ?? 3000)
-          if (data.bot.autoRepair !== undefined) setAutoRepair(data.bot.autoRepair)
-          setAutoRepairMin(data.bot.autoRepairMin ?? 15)
-          setAutoRepairMax(data.bot.autoRepairMax ?? 25)
-          setAutoRestartMinutes(data.bot.autoRestartMinutes ?? 240)
+          setDelayMin(data.bot.delayMin ?? 2300)
+          setDelayMax(data.bot.delayMax ?? 2600)
         }
       }).catch(err => {
         console.error('[AddWallet] Erro ao buscar bot:', err)
@@ -77,12 +69,8 @@ export default function AddWallet() {
       console.log('[AddWallet] Setting proxy:', bot.proxy, 'delayMin:', bot.delayMin, 'delayMax:', bot.delayMax)
       if (bot.proxy) setProxy(bot.proxy)
       // Usa valores do bot ou mantém padrões
-      setDelayMin(bot.delayMin ?? 1500)
-      setDelayMax(bot.delayMax ?? 3000)
-      if (bot.autoRepair !== undefined) setAutoRepair(bot.autoRepair)
-      setAutoRepairMin(bot.autoRepairMin ?? 15)
-      setAutoRepairMax(bot.autoRepairMax ?? 25)
-      setAutoRestartMinutes(bot.autoRestartMinutes ?? 240)
+      setDelayMin(bot.delayMin ?? 2300)
+      setDelayMax(bot.delayMax ?? 2600)
     }
   }, [bot, walletPubkey])
 
@@ -114,10 +102,6 @@ export default function AddWallet() {
         proxy: proxy.trim(),
         delayMin,
         delayMax,
-        autoRepair,
-        autoRepairMin,
-        autoRepairMax,
-        autoRestartMinutes,
       })
 
       if (result.success) {
@@ -133,7 +117,7 @@ export default function AddWallet() {
       setStatus('error')
       setError(err.message || 'Erro desconhecido')
     }
-  }, [proxy, delayMin, delayMax, autoRepair, autoRepairMin, autoRepairMax, autoRestartMinutes, refreshAccount])
+  }, [proxy, delayMin, delayMax, refreshAccount])
 
   // Cria/recria a sessao do bot
   const handleCreateSession = useCallback(async () => {
@@ -272,7 +256,7 @@ export default function AddWallet() {
   const isSessionEstablished = isEstablished(sessionState)
 
   // Se nao esta conectado, mostra tela de conexao
-  if (!isSessionEstablished) {
+  if (!isSessionEstablished && !embedded) {
     return (
       <div style={{ animation: 'fadeIn 0.4s ease' }}>
         {/* Header */}
@@ -311,7 +295,8 @@ export default function AddWallet() {
 
   return (
     <div style={{ animation: 'fadeIn 0.4s ease' }}>
-      {/* Header */}
+      {/* Header - only show if not embedded */}
+      {!embedded && (
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
         <ConfigHeaderIcon />
         <h2 style={{
@@ -326,6 +311,7 @@ export default function AddWallet() {
           Configurar Bot
         </h2>
       </div>
+      )}
 
       {/* Mensagem de sucesso */}
       {status === 'success' && (
@@ -411,138 +397,101 @@ export default function AddWallet() {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            marginBottom: '10px',
+            marginBottom: '14px',
             color: 'var(--text-primary)',
             fontWeight: 600,
             fontSize: '0.95rem',
           }}>
             <TimerIcon />
-            Delay entre Casts (ms)
+            Delay entre Casts
           </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Entre</span>
-            <input
-              type="number"
-              value={delayMin}
-              onChange={(e) => { setDelayMin(Math.max(100, parseInt(e.target.value) || 1500)); setStatus('idle'); }}
-              min={100}
-              max={10000}
-              step={100}
-              disabled={isLoading}
-              style={{
-                width: '100px',
-                opacity: isLoading ? 0.6 : 1,
-              }}
-            />
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>e</span>
-            <input
-              type="number"
-              value={delayMax}
-              onChange={(e) => { setDelayMax(Math.max(100, parseInt(e.target.value) || 3000)); setStatus('idle'); }}
-              min={100}
-              max={10000}
-              step={100}
-              disabled={isLoading}
-              style={{
-                width: '100px',
-                opacity: isLoading ? 0.6 : 1,
-              }}
-            />
-            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>ms</span>
-          </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <InfoIcon />
-            Delay randomizado entre a range para parecer humano. Padrao: 1500-3000ms
-          </p>
-        </div>
 
-        {/* Auto Reparo */}
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{
+          {/* Display do range atual */}
+          <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
-            marginBottom: '12px',
-            color: 'var(--text-primary)',
-            fontWeight: 600,
-            fontSize: '0.95rem',
+            justifyContent: 'center',
+            gap: '12px',
+            padding: '14px',
+            marginBottom: '16px',
+            borderRadius: '12px',
+            background: 'rgba(88, 166, 255, 0.06)',
+            border: '1px solid rgba(88, 166, 255, 0.12)',
           }}>
-            <WrenchIcon />
-            Auto Reparo
-          </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={autoRepair}
-                onChange={(e) => { setAutoRepair(e.target.checked); setStatus('idle'); }}
-                disabled={isLoading}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-              />
-              <span style={{ color: 'var(--text-secondary)' }}>Habilitado</span>
-            </label>
-          </div>
-          {autoRepair && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Reparar entre</span>
-              <input
-                type="number"
-                value={autoRepairMin}
-                onChange={(e) => { setAutoRepairMin(Math.max(1, Math.min(99, parseInt(e.target.value) || 15))); setStatus('idle'); }}
-                min={1}
-                max={99}
-                disabled={isLoading}
-                style={{ width: '70px', opacity: isLoading ? 0.6 : 1 }}
-              />
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>% e</span>
-              <input
-                type="number"
-                value={autoRepairMax}
-                onChange={(e) => { setAutoRepairMax(Math.max(1, Math.min(99, parseInt(e.target.value) || 25))); setStatus('idle'); }}
-                min={1}
-                max={99}
-                disabled={isLoading}
-                style={{ width: '70px', opacity: isLoading ? 0.6 : 1 }}
-              />
-              <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>%</span>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Min</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--accent)', fontFamily: 'monospace' }}>{delayMin}</div>
             </div>
-          )}
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <InfoIcon />
-            Repara a vara quando durabilidade cair na faixa. Valor exato e randomizado para parecer humano.
-          </p>
-        </div>
+            <div style={{ fontSize: '1.2rem', color: 'var(--text-muted)', fontWeight: 300 }}>-</div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '2px' }}>Max</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--purple)', fontFamily: 'monospace' }}>{delayMax}</div>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '4px' }}>ms</div>
+          </div>
 
-        {/* Auto Restart */}
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            marginBottom: '12px',
-            color: 'var(--text-primary)',
-            fontWeight: 600,
-            fontSize: '0.95rem',
-          }}>
-            <RestartIcon />
-            Auto Restart (minutos)
-          </label>
-          <input
-            type="number"
-            value={autoRestartMinutes}
-            onChange={(e) => { setAutoRestartMinutes(Math.max(0, parseInt(e.target.value) || 0)); setStatus('idle'); }}
-            min={0}
-            max={1440}
-            step={30}
-            disabled={isLoading}
-            style={{
-              width: '200px',
-              opacity: isLoading ? 0.6 : 1,
-            }}
-          />
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Slider Min */}
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: 'var(--accent)' }} />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Delay minimo</span>
+              </div>
+              <span style={{
+                padding: '1px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700,
+                background: 'rgba(88, 166, 255, 0.12)', color: 'var(--accent)', fontFamily: 'monospace',
+              }}>{delayMin}ms</span>
+            </div>
+            <input
+              type="range"
+              min={1000} max={5000} step={100}
+              value={delayMin}
+              onChange={(e) => {
+                const val = parseInt(e.target.value)
+                setDelayMin(val)
+                if (val > delayMax) setDelayMax(val)
+                setStatus('idle')
+              }}
+              disabled={isLoading}
+              style={{ width: '100%', accentColor: 'var(--accent)', opacity: isLoading ? 0.6 : 1 }}
+            />
+          </div>
+
+          {/* Slider Max */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: 'var(--purple)' }} />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Delay maximo</span>
+              </div>
+              <span style={{
+                padding: '1px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700,
+                background: 'rgba(168, 85, 247, 0.12)', color: 'var(--purple)', fontFamily: 'monospace',
+              }}>{delayMax}ms</span>
+            </div>
+            <input
+              type="range"
+              min={1000} max={5000} step={100}
+              value={delayMax}
+              onChange={(e) => {
+                const val = parseInt(e.target.value)
+                setDelayMax(val)
+                if (val < delayMin) setDelayMin(val)
+                setStatus('idle')
+              }}
+              disabled={isLoading}
+              style={{ width: '100%', accentColor: 'var(--purple)', opacity: isLoading ? 0.6 : 1 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              <span>1000ms</span>
+              <span>3000ms</span>
+              <span>5000ms</span>
+            </div>
+          </div>
+
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <InfoIcon />
-            Reinicia o bot automaticamente. 0 = desabilitado. Padrao: 240 (4 horas)
+            Delay randomizado entre min e max para parecer humano. Recomendado: 2300-2600ms
           </p>
         </div>
 
@@ -826,22 +775,6 @@ function InfoCircleIcon() {
   )
 }
 
-function RestartIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 4v6h6"/>
-      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-    </svg>
-  )
-}
-
-function WrenchIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-    </svg>
-  )
-}
 
 function Spinner() {
   return (
