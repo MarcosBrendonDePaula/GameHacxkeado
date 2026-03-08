@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react";
 import { useSession, isEstablished, SessionStateType } from "@fogo/sessions-sdk-react";
-import { setWallet, getMe } from "../lib/api";
+import { setWallet, getMe, upsertBot } from "../lib/api";
 
 interface AuthContextType {
   // Estado da wallet/sessão
@@ -13,6 +13,7 @@ interface AuthContextType {
   bot: any | null;
   isLoading: boolean;
   error: string | null;
+  sessionSynced: boolean; // sessão foi exportada e sincronizada com backend
 
   // Ações
   refreshAccount: () => Promise<void>;
@@ -28,6 +29,29 @@ export function useAuth() {
   return context;
 }
 
+// Encode bytes to Base58
+function encodeBase58(bytes: Uint8Array): string {
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const digits: number[] = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let j = 0; j < digits.length; j++) {
+      carry += (digits[j] ?? 0) << 8;
+      digits[j] = carry % 58;
+      carry = (carry / 58) | 0;
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = (carry / 58) | 0;
+    }
+  }
+  let result = "";
+  for (let i = digits.length - 1; i >= 0; i--) {
+    result += ALPHABET[digits[i]!];
+  }
+  return result;
+}
+
 interface AuthProviderProps {
   children: ReactNode;
 }
@@ -39,6 +63,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [bot, setBot] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionSynced, setSessionSynced] = useState(false);
+  const sessionSyncedRef = useRef<string | null>(null); // wallet pubkey da sessão já sincronizada
 
   // Verifica se está conectado (sessão estabelecida)
   const isConnected = isEstablished(sessionState);
@@ -80,29 +106,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
             sessionState.sessionKey.publicKey
           );
           const publicKeyBytes = new Uint8Array(publicKeyRaw);
+          const sessionPubkeyBase58 = encodeBase58(publicKeyBytes);
 
           const sessionPubkeyObj = {
-            toBase58: () => {
-              const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-              const digits: number[] = [0];
-              for (const byte of publicKeyBytes) {
-                let carry = byte;
-                for (let j = 0; j < digits.length; j++) {
-                  carry += (digits[j] ?? 0) << 8;
-                  digits[j] = carry % 58;
-                  carry = (carry / 58) | 0;
-                }
-                while (carry > 0) {
-                  digits.push(carry % 58);
-                  carry = (carry / 58) | 0;
-                }
-              }
-              let result = "";
-              for (let i = digits.length - 1; i >= 0; i--) {
-                result += ALPHABET[digits[i]!];
-              }
-              return result;
-            }
+            toBase58: () => sessionPubkeyBase58,
           };
 
           const sessionAdapter = {
@@ -119,11 +126,46 @@ export function AuthProvider({ children }: AuthProviderProps) {
             },
           };
 
-          // 2. Configura a sessão
+          // 2. Configura a sessão para API
           setWallet(sessionAdapter);
 
-          // 3. Agora sim carrega os dados (sessão já está configurada)
+          // 3. Carrega os dados da conta
           await refreshAccount();
+
+          // 4. Auto-sync: exporta a session key e envia pro backend
+          // (só faz uma vez por wallet conectada)
+          const currentWallet = sessionState.walletPublicKey.toBase58();
+          if (sessionSyncedRef.current !== currentWallet) {
+            try {
+              const privateKeyJwk = await crypto.subtle.exportKey(
+                "jwk",
+                sessionState.sessionKey.privateKey
+              );
+
+              if (privateKeyJwk.d) {
+                // Converte de Base64URL para Base64 padrão
+                const sessionSecretKey = privateKeyJwk.d
+                  .replace(/-/g, "+")
+                  .replace(/_/g, "/");
+
+                console.log("[AuthProvider] Auto-sync: exportando session key pro backend");
+                await upsertBot({
+                  sessionSecretKey,
+                  sessionPublicKey: sessionPubkeyBase58,
+                });
+                sessionSyncedRef.current = currentWallet;
+                setSessionSynced(true);
+                console.log("[AuthProvider] Auto-sync: session sincronizada com sucesso");
+
+                // Recarrega dados pra pegar o bot atualizado
+                await refreshAccount();
+              }
+            } catch (syncErr) {
+              // Session key não é exportável (sessão antiga criada antes do override)
+              console.warn("[AuthProvider] Auto-sync falhou - session key não exportável. Desconecte e reconecte a wallet para criar uma nova sessão exportável.", syncErr);
+              setSessionSynced(false);
+            }
+          }
         } catch (err) {
           console.error("Erro ao configurar sessão:", err);
         }
@@ -134,6 +176,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setWallet(null);
       setAccount(null);
       setBot(null);
+      sessionSyncedRef.current = null;
+      setSessionSynced(false);
     }
   }, [isConnected, sessionState]);
 
@@ -145,6 +189,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     bot,
     isLoading,
     error,
+    sessionSynced,
     refreshAccount,
   };
 

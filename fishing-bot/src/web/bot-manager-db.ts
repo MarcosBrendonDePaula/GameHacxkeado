@@ -1269,6 +1269,12 @@ export class BotManager {
     }
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      // Verifica se o bot existe antes de atualizar
+      const existing = await this.getBot(walletPubkey);
+      if (!existing) {
+        return { success: false, error: "Bot não encontrado. Reconecte a wallet para criar o bot automaticamente." };
+      }
+
       const updateData: Record<string, any> = { updatedAt: new Date() };
       if (config.delayMin !== undefined) updateData.delayMin = config.delayMin;
       if (config.delayMax !== undefined) updateData.delayMax = config.delayMax;

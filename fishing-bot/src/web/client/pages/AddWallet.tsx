@@ -3,25 +3,14 @@ import {
   useSession,
   SessionButton,
   isEstablished,
-  SessionStateType
 } from '@fogo/sessions-sdk-react'
-import {
-  establishSession,
-  createSessionConnection,
-  createSessionContext,
-  Network,
-  SessionResultType,
-} from '@fogo/sessions-sdk'
 import { useAuth } from '../providers/AuthProvider'
-import { upsertBot, updateBotConfig, getBot } from '../lib/api'
-
-// Chave do localStorage para saber se bot ja foi configurado
-const BOT_CONFIGURED_KEY = 'fogo_bot_configured_'
+import { updateBotConfig, getBot } from '../lib/api'
 
 export default function AddWallet({ embedded = false }: { embedded?: boolean }) {
   const sessionState = useSession()
-  const { isConnected, walletPubkey, refreshAccount, bot } = useAuth()
-  const [status, setStatus] = useState<'idle' | 'saving' | 'creating' | 'success' | 'error'>('idle')
+  const { isConnected, walletPubkey, refreshAccount, bot, sessionSynced } = useAuth()
+  const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string>('')
 
@@ -30,25 +19,12 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
   const [delayMin, setDelayMin] = useState(2300)
   const [delayMax, setDelayMax] = useState(2600)
 
-  // Verifica se ja configurou o bot (localStorage ou estado do backend)
-  const [hasConfiguredBot, setHasConfiguredBot] = useState(false)
-
-  // Carrega do localStorage e busca config do bot ao montar
+  // Carrega config do bot ao montar
   useEffect(() => {
     if (walletPubkey) {
-      const configured = localStorage.getItem(BOT_CONFIGURED_KEY + walletPubkey)
-      if (configured === 'true') {
-        setHasConfiguredBot(true)
-      }
-
-      // Busca config do bot diretamente
       getBot().then(data => {
-        console.log('[AddWallet] getBot response:', data)
         if (data.exists && data.bot) {
-          setHasConfiguredBot(true)
-          localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
           if (data.bot.proxy) setProxy(data.bot.proxy)
-          // Usa valores do banco ou padrões se não existirem
           setDelayMin(data.bot.delayMin ?? 2300)
           setDelayMax(data.bot.delayMax ?? 2600)
         }
@@ -58,21 +34,14 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
     }
   }, [walletPubkey])
 
-  // Tambem marca como configurado se o backend retornar bot
+  // Atualiza config quando bot muda no AuthProvider
   useEffect(() => {
-    console.log('[AddWallet] bot changed:', bot)
     if (bot) {
-      setHasConfiguredBot(true)
-      if (walletPubkey) {
-        localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
-      }
-      console.log('[AddWallet] Setting proxy:', bot.proxy, 'delayMin:', bot.delayMin, 'delayMax:', bot.delayMax)
       if (bot.proxy) setProxy(bot.proxy)
-      // Usa valores do bot ou mantém padrões
       setDelayMin(bot.delayMin ?? 2300)
       setDelayMax(bot.delayMax ?? 2600)
     }
-  }, [bot, walletPubkey])
+  }, [bot])
 
   // Valida proxy
   const validateProxy = () => {
@@ -119,140 +88,6 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
     }
   }, [proxy, delayMin, delayMax, refreshAccount])
 
-  // Cria/recria a sessao do bot
-  const handleCreateSession = useCallback(async () => {
-    if (!isEstablished(sessionState)) {
-      setError('Sessao nao estabelecida')
-      return
-    }
-
-    if (!validateProxy()) return
-
-    setStatus('creating')
-    setError(null)
-
-    try {
-      const { walletPublicKey, sessionKey } = sessionState
-
-      // Primeiro, tenta exportar a sessao atual
-      let sessionSecretKey: string
-      let sessionPublicKey: string
-
-      try {
-        const privateKeyJwk = await crypto.subtle.exportKey('jwk', sessionKey.privateKey)
-        if (!privateKeyJwk.d) {
-          throw new Error('Key nao exportavel')
-        }
-        // Sessao atual e exportavel!
-        sessionSecretKey = privateKeyJwk.d.replace(/-/g, '+').replace(/_/g, '/')
-
-        // Exporta public key para base58
-        const publicKeyRaw = await crypto.subtle.exportKey('raw', sessionKey.publicKey)
-        const publicKeyBytes = new Uint8Array(publicKeyRaw)
-        sessionPublicKey = encodeBase58(publicKeyBytes)
-
-        console.log('Usando sessao atual (exportavel)')
-      } catch {
-        // Sessao atual nao e exportavel, cria uma nova
-        console.log('Sessao atual nao e exportavel, criando nova...')
-
-        const connection = createSessionConnection({
-          network: Network.Mainnet,
-          rpc: `${window.location.origin}/api/rpc`,
-          paymaster: window.location.origin,
-        })
-
-        const context = await createSessionContext({
-          connection,
-          domain: 'https://fogofishing.com',
-        })
-
-        const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 dias
-
-        const result = await establishSession({
-          context,
-          walletPublicKey,
-          signMessage: async (message: Uint8Array) => {
-            if (!isEstablished(sessionState)) {
-              throw new Error('Sessao nao estabelecida')
-            }
-            const { solanaWallet } = sessionState
-            if (!solanaWallet?.signMessage) {
-              throw new Error('Carteira nao suporta signMessage')
-            }
-            const signature = await solanaWallet.signMessage(message)
-            return { signedMessage: message, signature }
-          },
-          expires,
-          unlimited: true,
-          createUnsafeExtractableSessionKey: true,
-        })
-
-        if (result.type !== SessionResultType.Success) {
-          throw new Error(result.error?.message || 'Erro ao criar sessao exportavel')
-        }
-
-        const { session } = result
-        const privateKeyJwk = await crypto.subtle.exportKey('jwk', session.sessionKey.privateKey)
-        if (!privateKeyJwk.d) {
-          throw new Error('Falha ao exportar session key')
-        }
-
-        sessionSecretKey = privateKeyJwk.d.replace(/-/g, '+').replace(/_/g, '/')
-        sessionPublicKey = session.sessionPublicKey.toBase58()
-      }
-
-      // Envia para o backend com proxy e delay
-      const apiResult = await upsertBot({
-        sessionSecretKey,
-        sessionPublicKey,
-        proxy: proxy.trim(),
-        delayMin,
-        delayMax,
-      })
-
-      if (apiResult.success) {
-        setStatus('success')
-        setSuccessMessage('Sessao criada com sucesso!')
-        setHasConfiguredBot(true)
-        if (walletPubkey) {
-          localStorage.setItem(BOT_CONFIGURED_KEY + walletPubkey, 'true')
-        }
-        refreshAccount()
-        setTimeout(() => setStatus('idle'), 3000)
-      } else {
-        throw new Error(apiResult.error || 'Erro ao salvar')
-      }
-    } catch (err: any) {
-      console.error('Erro ao criar sessao:', err)
-      setStatus('error')
-      setError(err.message || 'Erro desconhecido')
-    }
-  }, [sessionState, refreshAccount, proxy, delayMin, delayMax])
-
-  // Funcao auxiliar para converter bytes para Base58
-  function encodeBase58(bytes: Uint8Array): string {
-    const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    const digits: number[] = [0]
-    for (const byte of bytes) {
-      let carry = byte
-      for (let j = 0; j < digits.length; j++) {
-        carry += (digits[j] ?? 0) << 8
-        digits[j] = carry % 58
-        carry = (carry / 58) | 0
-      }
-      while (carry > 0) {
-        digits.push(carry % 58)
-        carry = (carry / 58) | 0
-      }
-    }
-    let result = ""
-    for (let i = digits.length - 1; i >= 0; i--) {
-      result += ALPHABET[digits[i]!]
-    }
-    return result
-  }
-
   const isSessionEstablished = isEstablished(sessionState)
 
   // Se nao esta conectado, mostra tela de conexao
@@ -289,9 +124,7 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
     )
   }
 
-  // Usa localStorage OU estado do backend para saber se tem bot
-  const showBotConfig = hasConfiguredBot || !!bot
-  const isLoading = status === 'saving' || status === 'creating'
+  const isLoading = status === 'saving'
 
   return (
     <div style={{ animation: 'fadeIn 0.4s ease' }}>
@@ -359,6 +192,27 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
             {walletPubkey?.slice(0, 6)}...{walletPubkey?.slice(-6)}
           </span>
         </div>
+
+        {/* Aviso se sessão não foi sincronizada */}
+        {isConnected && !sessionSynced && (
+          <div style={{
+            padding: '16px 20px',
+            marginBottom: '20px',
+            background: 'rgba(210, 153, 34, 0.1)',
+            border: '1px solid rgba(210, 153, 34, 0.3)',
+            borderRadius: '12px',
+            color: 'var(--warning)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            animation: 'fadeIn 0.3s ease',
+          }}>
+            <InfoIcon />
+            <span style={{ fontSize: '0.9rem' }}>
+              Sessao antiga detectada. Desconecte e reconecte a wallet para sincronizar automaticamente com o bot.
+            </span>
+          </div>
+        )}
 
         {/* Campo Proxy */}
         <div style={{ marginBottom: '24px' }}>
@@ -514,112 +368,33 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
           </div>
         )}
 
-        {/* Botoes */}
-        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-          {/* Botao principal: Salvar Config (se ja tem bot) ou Criar Sessao (se nao tem) */}
-          {showBotConfig ? (
-            <>
-              <button
-                onClick={handleSaveConfig}
-                disabled={isLoading}
-                className="btn-success"
-                style={{
-                  flex: 1,
-                  minWidth: '200px',
-                  padding: '14px 24px',
-                  fontSize: '1rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                }}
-              >
-                {status === 'saving' ? (
-                  <>
-                    <Spinner />
-                    Salvando...
-                  </>
-                ) : (
-                  <>
-                    <SaveIcon />
-                    Salvar Configuracoes
-                  </>
-                )}
-              </button>
-              <button
-                onClick={handleCreateSession}
-                disabled={isLoading}
-                className="btn-purple"
-                style={{
-                  padding: '14px 24px',
-                  fontSize: '0.95rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                }}
-              >
-                {status === 'creating' ? (
-                  <>
-                    <Spinner />
-                    Criando...
-                  </>
-                ) : (
-                  <>
-                    <RefreshIcon />
-                    Recriar Sessao
-                  </>
-                )}
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleCreateSession}
-              disabled={isLoading}
-              className="btn-success"
-              style={{
-                width: '100%',
-                padding: '16px 24px',
-                fontSize: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-              }}
-            >
-              {status === 'creating' ? (
-                <>
-                  <Spinner />
-                  Criando Sessao...
-                </>
-              ) : (
-                <>
-                  <RocketIcon />
-                  Criar Sessao e Configurar Bot
-                </>
-              )}
-            </button>
-          )}
-        </div>
-
-        {status === 'creating' && (
-          <p style={{
-            color: 'var(--warning)',
-            marginTop: '16px',
-            textAlign: 'center',
-            padding: '12px',
-            background: 'rgba(210, 153, 34, 0.1)',
-            borderRadius: '8px',
-            border: '1px solid rgba(210, 153, 34, 0.2)',
+        {/* Botao Salvar */}
+        <button
+          onClick={handleSaveConfig}
+          disabled={isLoading}
+          className="btn-success"
+          style={{
+            width: '100%',
+            padding: '14px 24px',
+            fontSize: '1rem',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '10px',
-          }}>
-            <AlertIcon />
-            Criando sessao... Pode ser necessario confirmar na carteira.
-          </p>
-        )}
+          }}
+        >
+          {status === 'saving' ? (
+            <>
+              <Spinner />
+              Salvando...
+            </>
+          ) : (
+            <>
+              <SaveIcon />
+              Salvar Configuracoes
+            </>
+          )}
+        </button>
       </div>
 
       {/* Info Box */}
@@ -648,9 +423,9 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
           margin: 0,
         }}>
           <li>O proxy e necessario para evitar rate-limit do jogo</li>
-          <li>A sessao expira em 7 dias - use "Recriar Sessao" para renovar</li>
+          <li>A sessao e sincronizada automaticamente ao conectar a wallet</li>
+          <li>A sessao expira em 7 dias - reconecte a wallet para renovar</li>
           <li>Sua carteira principal nunca e exposta ao servidor</li>
-          <li>Cada carteira pode ter apenas 1 bot configurado</li>
         </ul>
       </div>
     </div>
@@ -730,37 +505,6 @@ function SaveIcon() {
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
       <polyline points="17 21 17 13 7 13 7 21"/>
       <polyline points="7 3 7 8 15 8"/>
-    </svg>
-  )
-}
-
-function RefreshIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="23 4 23 10 17 10"/>
-      <polyline points="1 20 1 14 7 14"/>
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-    </svg>
-  )
-}
-
-function RocketIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
-      <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
-      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
-      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
-    </svg>
-  )
-}
-
-function AlertIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-      <line x1="12" y1="9" x2="12" y2="13"/>
-      <line x1="12" y1="17" x2="12.01" y2="17"/>
     </svg>
   )
 }
