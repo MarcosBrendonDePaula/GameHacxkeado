@@ -143,6 +143,8 @@ export default function BotInfo() {
   const [autoBuyBaitQty, setAutoBuyBaitQty] = useState('')
   const [baitCosts, setBaitCosts] = useState<Record<number, BaitCostInfo>>({})
   const fetchAttemptsRef = useRef(0)
+  const [isBanned, setIsBanned] = useState(false)
+  const [banCertainty, setBanCertainty] = useState(0)
 
   const fetchData = useCallback(async () => {
     if (!isConnected || !walletPubkey) {
@@ -199,6 +201,29 @@ export default function BotInfo() {
         setHistory(historyData.history || [])
         if (playerStateData.exists && playerStateData.player) {
           setPlayerData(playerStateData.player)
+
+          // Detecção de banimento:
+          // Se na sessão atual a taxa de acerto está abaixo de 5%, a conta pode estar banida
+          // A certeza aumenta com o número de casts (mais dados = menos chance de azar)
+          // ~50 casts (~3min): 55% certeza | ~200 casts (~10min): 82% | ~600 casts (~30min): 98%
+          const sessionCatches = data.stats?.catches || 0
+          const sessionMisses = data.stats?.misses || 0
+          const sessionTotal = sessionCatches + sessionMisses
+          if (sessionTotal >= 30) {
+            const sessionCatchRate = (sessionCatches / sessionTotal) * 100
+            if (sessionCatchRate < 5) {
+              // Certeza baseada em volume: curva exponencial de 50% a 99%
+              const volumeCertainty = 50 + 50 * (1 - Math.exp(-sessionTotal / 200))
+              // Bonus: quanto mais perto de 0% a taxa, mais certeza
+              const rateBonus = (1 - sessionCatchRate / 5) * 5
+              const certainty = Math.max(50, Math.min(99, Math.round(volumeCertainty + rateBonus)))
+              setIsBanned(true)
+              setBanCertainty(certainty)
+            } else {
+              setIsBanned(false)
+              setBanCertainty(0)
+            }
+          }
         }
         if (balancesData && !balancesData.error) {
           setBalances(balancesData)
@@ -649,20 +674,40 @@ export default function BotInfo() {
         gap: '16px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <h2 style={{
+          <h2
+            onDoubleClick={() => setIsBanned(b => !b)}
+            title="Duplo clique para testar alerta de ban"
+            style={{
             margin: 0,
             fontSize: '1.75rem',
             fontWeight: 700,
             background: 'linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text'
+            backgroundClip: 'text',
+            cursor: 'default',
+            userSelect: 'none',
           }}>
             Dashboard
           </h2>
           <span className={`status-badge ${isRunning ? 'online' : 'offline'}`}>
             {isRunning ? 'Online' : 'Offline'}
           </span>
+          {isBanned && (
+            <span style={{
+              padding: '4px 12px',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              background: 'rgba(248, 81, 73, 0.15)',
+              color: 'var(--danger)',
+              border: '1px solid rgba(248, 81, 73, 0.4)',
+            }}>
+              Banned ({banCertainty}%)
+            </span>
+          )}
         </div>
 
         <div className="actions" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -688,6 +733,147 @@ export default function BotInfo() {
           )}
         </div>
       </div>
+
+      {/* ============ ALERTA DE BANIMENTO ============ */}
+      {isBanned && (
+        <div className="card" style={{
+          marginBottom: '20px',
+          padding: '28px',
+          background: 'linear-gradient(145deg, rgba(248, 81, 73, 0.12) 0%, rgba(248, 81, 73, 0.04) 100%)',
+          border: '2px solid rgba(248, 81, 73, 0.5)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '16px',
+          animation: 'fadeIn 0.5s ease',
+          textAlign: 'center',
+        }}>
+          <img
+            src="/ban-seal.png"
+            alt="Conta Banida"
+            style={{
+              width: '200px',
+              height: '200px',
+              borderRadius: '16px',
+              border: '3px solid rgba(248, 81, 73, 0.4)',
+              objectFit: 'cover',
+              boxShadow: '0 8px 32px rgba(248, 81, 73, 0.25)',
+            }}
+          />
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+            </svg>
+            <span style={{
+              color: 'var(--danger)',
+              fontWeight: 700,
+              fontSize: '1.3rem',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+            }}>
+              Conta Banida
+            </span>
+            <span style={{
+              padding: '3px 10px',
+              borderRadius: '20px',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              background: banCertainty >= 90 ? 'rgba(248, 81, 73, 0.25)' : banCertainty >= 70 ? 'rgba(210, 153, 34, 0.25)' : 'rgba(88, 166, 255, 0.2)',
+              color: banCertainty >= 90 ? 'var(--danger)' : banCertainty >= 70 ? 'var(--warning)' : 'var(--accent)',
+            }}>
+              {banCertainty}% certeza
+            </span>
+          </div>
+          {/* Barra de certeza */}
+          <div style={{
+            width: '100%',
+            maxWidth: '520px',
+            height: '6px',
+            borderRadius: '3px',
+            background: 'rgba(255,255,255,0.05)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${banCertainty}%`,
+              height: '100%',
+              borderRadius: '3px',
+              background: banCertainty >= 90 ? 'var(--danger)' : banCertainty >= 70 ? 'var(--warning)' : 'var(--accent)',
+              transition: 'width 0.5s ease',
+            }} />
+          </div>
+          <p style={{
+            margin: 0,
+            color: 'var(--text-secondary)',
+            fontSize: '0.9rem',
+            lineHeight: 1.6,
+            maxWidth: '520px',
+          }}>
+            {banCertainty >= 90
+              ? <>Com {totalCasts.toLocaleString()} casts e {successRate}% de acerto, e praticamente certo que esta conta esta banida. Entre no <a href="https://discord.gg/sPbZ7Z7EMf" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'underline' }}>Discord do Fogo Fish</a> e abra um ticket para solicitar o desbanimento.</>
+              : banCertainty >= 70
+              ? `Com ${totalCasts.toLocaleString()} casts e ${successRate}% de acerto, e muito provavel que esta conta esteja banida. Aguarde mais tempo para confirmar.`
+              : `Com ${totalCasts.toLocaleString()} casts e ${successRate}% de acerto, pode ser azar ou banimento. Aguarde mais casts para ter certeza.`
+            }
+          </p>
+          {banCertainty >= 90 && (
+            <div style={{
+              width: '100%',
+              maxWidth: '520px',
+              padding: '14px 18px',
+              background: 'rgba(210, 153, 34, 0.15)',
+              border: '2px solid rgba(210, 153, 34, 0.5)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+            }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span style={{
+                color: 'var(--warning)',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                lineHeight: 1.5,
+              }}>
+                NAO mencione este sistema ou bot no Discord! Apenas diga que sua conta foi banida e peca para desbanir.
+              </span>
+            </div>
+          )}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '10px',
+            width: '100%',
+            maxWidth: '520px',
+            marginTop: '4px',
+          }}>
+            {[
+              { label: 'Total Casts', value: totalCasts.toLocaleString(), color: 'var(--accent)' },
+              { label: 'Catches', value: catches.toLocaleString(), color: 'var(--success)' },
+              { label: 'Misses', value: misses.toLocaleString(), color: 'var(--danger)' },
+              { label: 'Taxa de Acerto', value: `${successRate}%`, color: parseFloat(successRate) < 5 ? 'var(--danger)' : 'var(--warning)' },
+            ].map((s, i) => (
+              <div key={i} style={{
+                padding: '10px 8px',
+                background: 'rgba(0,0,0,0.2)',
+                borderRadius: '10px',
+                border: '1px solid var(--border)',
+              }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s.label}</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: s.color }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ============ TABS ============ */}
       <div style={{
