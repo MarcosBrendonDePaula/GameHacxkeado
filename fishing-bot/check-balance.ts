@@ -16,7 +16,12 @@ if (args.length === 0) {
   process.exit(1);
 }
 
-const keypairPath = path.resolve(args[0]);
+const keypairArg = args[0];
+if (!keypairArg) {
+  throw new Error("Caminho da keypair não informado");
+}
+
+const keypairPath = path.resolve(keypairArg);
 const secretKeyString = fs.readFileSync(keypairPath, "utf-8");
 const secretKey = Uint8Array.from(JSON.parse(secretKeyString));
 const keypair = Keypair.fromSecretKey(secretKey);

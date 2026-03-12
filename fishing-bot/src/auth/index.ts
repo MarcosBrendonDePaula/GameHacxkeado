@@ -33,7 +33,10 @@ function decodeBase58(str: string): Uint8Array {
   const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
   const ALPHABET_MAP: Record<string, number> = {};
   for (let i = 0; i < ALPHABET.length; i++) {
-    ALPHABET_MAP[ALPHABET[i]] = i;
+    const char = ALPHABET[i];
+    if (char) {
+      ALPHABET_MAP[char] = i;
+    }
   }
 
   const bytes: number[] = [0];
@@ -231,7 +234,7 @@ export async function verifySignedRequest(
   // Formato do nonce: timestamp-random
   const nonceParts = nonce.split("-");
   if (nonceParts.length >= 1) {
-    const nonceTimestamp = parseInt(nonceParts[0], 10);
+    const nonceTimestamp = parseInt(nonceParts[0] ?? "0", 10);
     const now = Date.now();
 
     // Nonce não pode ser mais antigo que 5 minutos

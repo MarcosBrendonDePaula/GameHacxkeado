@@ -14,7 +14,7 @@
 function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    binary += String.fromCharCode(bytes[i] ?? 0);
   }
   return btoa(binary);
 }
@@ -67,7 +67,7 @@ function sha256Sync(data: string): string {
   for (let i = 0; i < data.length; i++) {
     const j = data.charCodeAt(i);
     if (j >> 8) return ""; // ASCII check
-    words[i >> 2] |= j << (((3 - i) % 4) * 8);
+    words[i >> 2] = (words[i >> 2] ?? 0) | (j << (((3 - i) % 4) * 8));
   }
   words[words.length] = (asciiBitLength / maxWord) | 0;
   words[words.length] = asciiBitLength;
@@ -192,7 +192,7 @@ export async function apiRequest<T = any>(
     }
 
     // Remove query string do path para assinatura (backend verifica apenas o path)
-    const pathWithoutQuery = path.split("?")[0];
+    const pathWithoutQuery = path.split("?")[0] ?? path;
 
     const nonce = generateNonce();
     const message = createSignableMessage(method, pathWithoutQuery, nonce, bodyString);
@@ -281,6 +281,13 @@ export async function updateBotConfig(params: {
   autoRepair?: boolean;
   autoRepairMin?: number;
   autoRepairMax?: number;
+  autoRepairWaitMinMinutes?: number;
+  autoRepairWaitMaxMinutes?: number;
+  autoWaitDurability?: boolean;
+  autoWaitDurabilityMin?: number;
+  autoWaitDurabilityMax?: number;
+  autoWaitMinutesMin?: number;
+  autoWaitMinutesMax?: number;
   autoUpgrade?: boolean;
   autoRestartMinutes?: number;
   autoBuyBait?: boolean;
@@ -344,6 +351,68 @@ export async function getHistory(params?: { limit?: number }) {
 
   const queryString = query.toString();
   return apiRequest(`/history${queryString ? `?${queryString}` : ""}`);
+}
+
+/**
+ * Obtém analytics estatísticos do bot.
+ */
+export async function getAnalytics() {
+  return apiRequest<{
+    sampledCatches: number;
+    sampledMisses: number;
+    sampledTotalFish: number;
+    windows: Array<{
+      key: '5m' | '15m' | '1h' | '24h';
+      label: string;
+      catches: number;
+      misses: number;
+      totalFish: number;
+      successRate: number;
+      fishPerHour: number;
+      avgFishPerCatch: number;
+    }>;
+    todayCatches: number;
+    todayMisses: number;
+    todayTotalFish: number;
+    yesterdayCatches: number;
+    yesterdayMisses: number;
+    yesterdayTotalFish: number;
+    comparison: {
+      fishDelta: number;
+      fishDeltaPercent: number | null;
+      catchesDelta: number;
+      successRateDelta: number;
+    };
+    projectedTotalFishToday: number;
+    projectedCatchesToday: number;
+    elapsedDayPercent: number;
+    streaks: {
+      currentCatch: number;
+      currentMiss: number;
+      maxCatch: number;
+      maxMiss: number;
+    };
+    hourlySeries: Array<{
+      hour: number;
+      label: string;
+      fish: number;
+      catches: number;
+      cumulativeFish: number;
+    }>;
+    fishTypes: Array<{
+      amount: number;
+      amountLabel: string;
+      count: number;
+      totalFish: number;
+      probability: number;
+      lastSeenAt: Date | null;
+      averageGapMs: number | null;
+      maxGapMs: number | null;
+      timeSinceLastMs: number | null;
+      overdueRatio: number | null;
+      status: 'normal' | 'attention' | 'late' | 'insufficient_data';
+    }>;
+  }>("/analytics");
 }
 
 /**

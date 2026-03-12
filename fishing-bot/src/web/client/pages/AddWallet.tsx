@@ -189,7 +189,12 @@ export default function AddWallet({ embedded = false }: { embedded?: boolean }) 
         })
 
         if (result.type !== SessionResultType.Success) {
-          throw new Error(result.error?.message || 'Erro ao criar sessao exportavel')
+          const resultError = result.error as { message?: string } | string | undefined
+          throw new Error(
+            typeof resultError === 'string'
+              ? resultError
+              : resultError?.message || 'Erro ao criar sessao exportavel'
+          )
         }
 
         const { session } = result

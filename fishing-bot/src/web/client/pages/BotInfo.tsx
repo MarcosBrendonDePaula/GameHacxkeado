@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
-import { getBot, getResults, getHistory, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances, getBaitInventory, buyBait, equipBait, getBaitConfig, getGameConfig } from '../lib/api'
+import { getBot, getResults, getHistory, getAnalytics, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances, getBaitInventory, buyBait, equipBait, getBaitConfig, getGameConfig } from '../lib/api'
 import LogsTab from './Logs'
 import ConfigTab from './AddWallet'
 
@@ -66,6 +66,113 @@ interface PlayerData {
   upgradeCastsAtStart: string
 }
 
+interface BotAnalytics {
+  sampledCatches: number
+  sampledMisses: number
+  sampledTotalFish: number
+  windows: Array<{
+    key: '5m' | '15m' | '1h' | '24h'
+    label: string
+    catches: number
+    misses: number
+    totalFish: number
+    successRate: number
+    fishPerHour: number
+    avgFishPerCatch: number
+  }>
+  todayCatches: number
+  todayMisses: number
+  todayTotalFish: number
+  yesterdayCatches: number
+  yesterdayMisses: number
+  yesterdayTotalFish: number
+  comparison: {
+    fishDelta: number
+    fishDeltaPercent: number | null
+    catchesDelta: number
+    successRateDelta: number
+  }
+  projectedTotalFishToday: number
+  projectedCatchesToday: number
+  elapsedDayPercent: number
+  streaks: {
+    currentCatch: number
+    currentMiss: number
+    maxCatch: number
+    maxMiss: number
+  }
+  hourlySeries: Array<{
+    hour: number
+    label: string
+    fish: number
+    catches: number
+    cumulativeFish: number
+  }>
+  fishTypes: Array<{
+    amount: number
+    amountLabel: string
+    count: number
+    totalFish: number
+    probability: number
+    lastSeenAt: Date | null
+    averageGapMs: number | null
+    maxGapMs: number | null
+    timeSinceLastMs: number | null
+    overdueRatio: number | null
+    status: 'normal' | 'attention' | 'late' | 'insufficient_data'
+  }>
+}
+
+const EMPTY_ANALYTICS: BotAnalytics = {
+  sampledCatches: 0,
+  sampledMisses: 0,
+  sampledTotalFish: 0,
+  windows: [],
+  todayCatches: 0,
+  todayMisses: 0,
+  todayTotalFish: 0,
+  yesterdayCatches: 0,
+  yesterdayMisses: 0,
+  yesterdayTotalFish: 0,
+  comparison: {
+    fishDelta: 0,
+    fishDeltaPercent: null,
+    catchesDelta: 0,
+    successRateDelta: 0,
+  },
+  projectedTotalFishToday: 0,
+  projectedCatchesToday: 0,
+  elapsedDayPercent: 0,
+  streaks: {
+    currentCatch: 0,
+    currentMiss: 0,
+    maxCatch: 0,
+    maxMiss: 0,
+  },
+  hourlySeries: [],
+  fishTypes: [],
+}
+
+function normalizeAnalytics(data: Partial<BotAnalytics> | null | undefined): BotAnalytics | null {
+  if (!data) return null
+
+  return {
+    ...EMPTY_ANALYTICS,
+    ...data,
+    windows: Array.isArray(data.windows) ? data.windows : EMPTY_ANALYTICS.windows,
+    comparison: {
+      ...EMPTY_ANALYTICS.comparison,
+      ...(data.comparison || {}),
+    },
+    streaks: {
+      ...EMPTY_ANALYTICS.streaks,
+      ...(data.streaks || {}),
+    },
+    hourlySeries: Array.isArray(data.hourlySeries) ? data.hourlySeries : EMPTY_ANALYTICS.hourlySeries,
+    fishTypes: Array.isArray(data.fishTypes) ? data.fishTypes : EMPTY_ANALYTICS.fishTypes,
+  }
+}
+
 // Nomes dos baits (1-10)
 const BAIT_NAMES: Record<number, string> = {
   1: "Mudwiggler", 2: "Skitterbug", 3: "River Scraps",
@@ -111,7 +218,7 @@ export default function BotInfo() {
   const navigate = useNavigate()
   const { isConnected, walletPubkey } = useAuth()
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'automacoes' | 'logs' | 'config'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estatisticas' | 'automacoes' | 'logs' | 'config'>('dashboard')
   const [botExists, setBotExists] = useState(false)
   const [botInfo, setBotInfo] = useState<BotInfo | null>(null)
   const [botStats, setBotStats] = useState<BotStats | null>(null)
@@ -119,6 +226,7 @@ export default function BotInfo() {
   const [isRunning, setIsRunning] = useState(false)
   const [results, setResults] = useState<CastResult[]>([])
   const [history, setHistory] = useState<HistoryPoint[]>([])
+  const [analytics, setAnalytics] = useState<BotAnalytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [upgradeLoading, setUpgradeLoading] = useState(false)
@@ -127,6 +235,11 @@ export default function BotInfo() {
   const [autoRepair, setAutoRepair] = useState(false)
   const [autoRepairMin, setAutoRepairMin] = useState(15)
   const [autoRepairMax, setAutoRepairMax] = useState(25)
+  const [autoWaitDurability, setAutoWaitDurability] = useState(false)
+  const [autoWaitDurabilityMin, setAutoWaitDurabilityMin] = useState(15)
+  const [autoWaitDurabilityMax, setAutoWaitDurabilityMax] = useState(25)
+  const [autoWaitMinutesMin, setAutoWaitMinutesMin] = useState(0)
+  const [autoWaitMinutesMax, setAutoWaitMinutesMax] = useState(0)
   const [autoRestartMinutes, setAutoRestartMinutes] = useState(240)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -178,6 +291,11 @@ export default function BotInfo() {
         if (data.bot?.autoRepair !== undefined) setAutoRepair(data.bot.autoRepair)
         if (data.bot?.autoRepairMin !== undefined) setAutoRepairMin(data.bot.autoRepairMin || 15)
         if (data.bot?.autoRepairMax !== undefined) setAutoRepairMax(data.bot.autoRepairMax || 25)
+        if (data.bot?.autoWaitDurability !== undefined) setAutoWaitDurability(data.bot.autoWaitDurability)
+        if (data.bot?.autoWaitDurabilityMin !== undefined) setAutoWaitDurabilityMin(data.bot.autoWaitDurabilityMin || 15)
+        if (data.bot?.autoWaitDurabilityMax !== undefined) setAutoWaitDurabilityMax(data.bot.autoWaitDurabilityMax || 25)
+        if (data.bot?.autoWaitMinutesMin !== undefined) setAutoWaitMinutesMin(data.bot.autoWaitMinutesMin || 0)
+        if (data.bot?.autoWaitMinutesMax !== undefined) setAutoWaitMinutesMax(data.bot.autoWaitMinutesMax || 0)
         if (data.bot?.autoRestartMinutes !== undefined) setAutoRestartMinutes(data.bot.autoRestartMinutes || 240)
         // Busca config de auto-bait do bot
         if (data.bot?.autoBuyBait !== undefined) setAutoBuyBait(data.bot.autoBuyBait)
@@ -188,9 +306,10 @@ export default function BotInfo() {
         if (data.bot?.autoBuyBaitQty !== undefined) setAutoBuyBaitQty(data.bot.autoBuyBaitQty || '')
 
         // Busca resultados, historico, dados do player, balances, bait inventory, bait config e game config
-        const [resultsData, historyData, playerStateData, balancesData, baitData, baitConfigData, gameConfigData] = await Promise.all([
+        const [resultsData, historyData, analyticsData, playerStateData, balancesData, baitData, baitConfigData, gameConfigData] = await Promise.all([
           getResults({ limit: 50 }),
           getHistory({ limit: 100 }),
+          getAnalytics(),
           getPlayerState(walletPubkey),
           getWalletBalances(walletPubkey).catch(() => null),
           getBaitInventory(walletPubkey).catch(() => null),
@@ -199,6 +318,7 @@ export default function BotInfo() {
         ])
         setResults(resultsData.results || [])
         setHistory(historyData.history || [])
+        setAnalytics(normalizeAnalytics(analyticsData))
         if (playerStateData.exists && playerStateData.player) {
           setPlayerData(playerStateData.player)
 
@@ -423,7 +543,11 @@ export default function BotInfo() {
     const idx = currentOrder.indexOf(baitId)
     if (idx <= 0) return
     const newOrder = [...currentOrder]
-    ;[newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]]
+    const currentValue = newOrder[idx]
+    const previousValue = newOrder[idx - 1]
+    if (currentValue === undefined || previousValue === undefined) return
+    newOrder[idx - 1] = currentValue
+    newOrder[idx] = previousValue
     const newValue = newOrder.join(',')
     setAutoUseBaitOrder(newValue)
     try {
@@ -439,7 +563,11 @@ export default function BotInfo() {
     const idx = currentOrder.indexOf(baitId)
     if (idx < 0 || idx >= currentOrder.length - 1) return
     const newOrder = [...currentOrder]
-    ;[newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]]
+    const currentValue = newOrder[idx]
+    const nextValue = newOrder[idx + 1]
+    if (currentValue === undefined || nextValue === undefined) return
+    newOrder[idx] = nextValue
+    newOrder[idx + 1] = currentValue
     const newValue = newOrder.join(',')
     setAutoUseBaitOrder(newValue)
     try {
@@ -480,7 +608,7 @@ export default function BotInfo() {
     if (autoBuyBaitQty) {
       autoBuyBaitQty.split(',').forEach(entry => {
         const [id, q] = entry.split(':').map(Number)
-        if (id >= 1 && id <= 10 && q > 0) qtyMap[id] = q
+        if (id !== undefined && q !== undefined && id >= 1 && id <= 10 && q > 0) qtyMap[id] = q
       })
     }
     if (qty <= 1) {
@@ -503,7 +631,7 @@ export default function BotInfo() {
     if (autoBuyBaitQty) {
       autoBuyBaitQty.split(',').forEach(entry => {
         const [id, q] = entry.split(':').map(Number)
-        if (id >= 1 && id <= 10 && q > 0) qtyMap[id] = q
+        if (id !== undefined && q !== undefined && id >= 1 && id <= 10 && q > 0) qtyMap[id] = q
       })
     }
     return qtyMap
@@ -884,6 +1012,7 @@ export default function BotInfo() {
       }}>
         {([
           { id: 'dashboard' as const, label: 'Dashboard', color: 'var(--accent)' },
+          { id: 'estatisticas' as const, label: 'Estatisticas', color: 'var(--warning)' },
           { id: 'automacoes' as const, label: 'Automacoes', color: 'var(--purple)' },
           { id: 'logs' as const, label: 'Logs', color: 'var(--warning)' },
           { id: 'config' as const, label: 'Config', color: 'var(--success)' },
@@ -1645,6 +1774,209 @@ export default function BotInfo() {
       </div>
       )}
 
+      {/* ============ TAB: ESTATISTICAS ============ */}
+      {activeTab === 'estatisticas' && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1.2fr) minmax(320px, 0.8fr)',
+          gap: '20px',
+          marginBottom: '24px',
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{
+                marginBottom: '16px',
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <ChartIcon />
+                Ritmo Recente
+              </h3>
+
+              {analytics ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                  {analytics.windows.map((windowStat) => (
+                    <div key={windowStat.key} style={{
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border)',
+                      background: 'rgba(0,0,0,0.14)',
+                      display: 'grid',
+                      gap: '8px',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{windowStat.label}</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--success)', fontWeight: 700 }}>{windowStat.successRate.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fish/h</div>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--warning)' }}>{windowStat.fishPerHour.toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Media/catch</div>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>{windowStat.avgFishPerCatch.toFixed(3)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Catches</div>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>{windowStat.catches}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Misses</div>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>{windowStat.misses}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '1rem' }}>
+                  Sem dados recentes para calcular ritmo.
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{
+                marginBottom: '16px',
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <BarChartIcon />
+                Projecao do Dia
+              </h3>
+
+              {analytics ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '12px',
+                  }}>
+                    <MiniStat label="Fish Hoje" value={analytics.todayTotalFish.toFixed(2)} color="var(--warning)" percent={Math.max(4, analytics.elapsedDayPercent)} />
+                    <MiniStat label="Proj. Fim do Dia" value={analytics.projectedTotalFishToday.toFixed(2)} color="var(--accent)" percent={Math.max(4, analytics.elapsedDayPercent)} />
+                    <MiniStat label="Catches Hoje" value={analytics.todayCatches.toLocaleString()} color="var(--success)" percent={Math.max(4, analytics.elapsedDayPercent)} />
+                  </div>
+
+                  <DailyProjectionChart series={analytics.hourlySeries} />
+
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-secondary)'
+                  }}>
+                    <span>Janela amostrada: {analytics.sampledCatches.toLocaleString()} catches e {analytics.sampledMisses.toLocaleString()} misses</span>
+                    <span>Andamento do dia: {analytics.elapsedDayPercent.toFixed(1)}%</span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '1.5rem' }}>
+                  Sem dados suficientes para projetar o dia.
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{
+                marginBottom: '16px',
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <AvgIcon />
+                Hoje vs Ontem
+              </h3>
+
+              {analytics ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <ComparisonCard label="Fish" today={analytics.todayTotalFish.toFixed(2)} yesterday={analytics.yesterdayTotalFish.toFixed(2)} delta={analytics.comparison.fishDelta} percent={analytics.comparison.fishDeltaPercent} accent="var(--warning)" />
+                  <ComparisonCard label="Catches" today={analytics.todayCatches.toString()} yesterday={analytics.yesterdayCatches.toString()} delta={analytics.comparison.catchesDelta} accent="var(--success)" />
+                  <ComparisonCard label="Taxa" today={`${safeRate(analytics.todayCatches, analytics.todayMisses).toFixed(1)}%`} yesterday={`${safeRate(analytics.yesterdayCatches, analytics.yesterdayMisses).toFixed(1)}%`} delta={analytics.comparison.successRateDelta} accent="var(--accent)" suffix=" pp" />
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '1rem' }}>
+                  Sem base suficiente para comparar com ontem.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{
+                marginBottom: '16px',
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <ZapIcon />
+                Streaks
+              </h3>
+
+              {analytics ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                  <MiniStat label="Catch atual" value={analytics.streaks.currentCatch.toString()} color="var(--success)" percent={Math.min(100, analytics.streaks.currentCatch * 10)} />
+                  <MiniStat label="Miss atual" value={analytics.streaks.currentMiss.toString()} color="var(--danger)" percent={Math.min(100, analytics.streaks.currentMiss * 10)} />
+                  <MiniStat label="Maior catch streak" value={analytics.streaks.maxCatch.toString()} color="var(--success)" percent={Math.min(100, analytics.streaks.maxCatch * 5)} />
+                  <MiniStat label="Maior miss streak" value={analytics.streaks.maxMiss.toString()} color="var(--danger)" percent={Math.min(100, analytics.streaks.maxMiss * 5)} />
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '1rem' }}>
+                  Sem dados de streak.
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{
+                marginBottom: '8px',
+                fontSize: '1rem',
+                fontWeight: 600,
+                color: 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <FishIcon />
+                Tipos Inferidos
+              </h3>
+              <p style={{ marginBottom: '14px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                Agrupado por valor de catch. Serve como leitura estatistica do que saiu, nao como garantia do RNG.
+              </p>
+
+              {analytics && analytics.fishTypes.length > 0 ? (
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {analytics.fishTypes.map((fishType) => (
+                    <FishTypeCard key={fishType.amountLabel} fishType={fishType} />
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '1rem' }}>
+                  Ainda nao ha catches suficientes para separar tipos.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ============ TAB: AUTOMACOES ============ */}
       {activeTab === 'automacoes' && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '24px' }}>
@@ -1695,6 +2027,36 @@ export default function BotInfo() {
           gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
           gap: '20px',
         }}>
+
+        <div style={{
+          gridColumn: '1 / -1',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '14px 16px',
+          borderRadius: '14px',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,184,77,0.06))',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}>
+          <div>
+            <div style={{ fontSize: '0.82rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+              Manutencao da Vara
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Escolha entre reparar automaticamente ou apenas pausar os casts quando a durabilidade entrar na faixa critica.
+            </div>
+          </div>
+          <div style={{
+            padding: '6px 10px',
+            borderRadius: '999px',
+            background: autoRepair ? 'rgba(63, 185, 80, 0.14)' : autoWaitDurability ? 'rgba(255, 184, 77, 0.14)' : 'rgba(255,255,255,0.05)',
+            color: autoRepair ? 'var(--success)' : autoWaitDurability ? 'var(--warning)' : 'var(--text-muted)',
+            fontSize: '0.74rem',
+            fontWeight: 700,
+          }}>
+            {autoRepair ? 'Modo: Reparar' : autoWaitDurability ? 'Modo: Esperar' : 'Modo: Manual'}
+          </div>
+        </div>
 
         {/* Card: Auto-Repair */}
         <div className="card" style={{ padding: '24px' }}>
@@ -1852,6 +2214,181 @@ export default function BotInfo() {
                     position: 'absolute', top: '4px', left: `${autoRepairMax}%`, transform: 'translateX(-50%)',
                     fontSize: '0.6rem', color: 'var(--success)', fontWeight: 700,
                   }}>{autoRepairMax}%</div>
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h3 style={{
+              margin: 0,
+              fontSize: '1rem',
+              fontWeight: 600,
+              color: 'var(--warning)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <WrenchIcon size={20} />
+              Espera por Durabilidade
+            </h3>
+            <div
+              onClick={async () => {
+                const newVal = !autoWaitDurability
+                setAutoWaitDurability(newVal)
+                try { await updateBotConfig({ autoWaitDurability: newVal }) } catch { setAutoWaitDurability(!newVal) }
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                padding: '4px 12px', borderRadius: '20px',
+                background: autoWaitDurability ? 'rgba(255, 184, 77, 0.15)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${autoWaitDurability ? 'rgba(255, 184, 77, 0.3)' : 'var(--border)'}`,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <span style={{ fontSize: '0.7rem', fontWeight: 600, color: autoWaitDurability ? 'var(--warning)' : 'var(--text-muted)' }}>
+                {autoWaitDurability ? 'ON' : 'OFF'}
+              </span>
+              <div style={{
+                width: '32px', height: '18px', borderRadius: '9px',
+                background: autoWaitDurability ? 'var(--warning)' : 'rgba(255,255,255,0.15)',
+                position: 'relative', transition: 'background 0.2s ease',
+              }}>
+                <div style={{
+                  width: '14px', height: '14px', borderRadius: '50%', background: 'white',
+                  position: 'absolute', top: '2px', left: autoWaitDurability ? '16px' : '2px',
+                  transition: 'left 0.2s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                }} />
+              </div>
+            </div>
+          </div>
+
+          {autoWaitDurability && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{
+                padding: '14px',
+                borderRadius: '10px',
+                background: 'rgba(255, 184, 77, 0.05)',
+                border: '1px solid rgba(255, 184, 77, 0.12)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ativar espera abaixo de</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)' }}>{autoWaitDurabilityMin}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={50}
+                  step={5}
+                  value={autoWaitDurabilityMin}
+                  onChange={async (e) => {
+                    const val = parseInt(e.target.value)
+                    setAutoWaitDurabilityMin(val)
+                    try { await updateBotConfig({ autoWaitDurabilityMin: val }) } catch {}
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--warning)' }}
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ate</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)' }}>{autoWaitDurabilityMax}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={autoWaitDurabilityMax}
+                  onChange={async (e) => {
+                    const val = parseInt(e.target.value)
+                    setAutoWaitDurabilityMax(val)
+                    try { await updateBotConfig({ autoWaitDurabilityMax: val }) } catch {}
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--warning)' }}
+                />
+              </div>
+
+              <div style={{
+                padding: '14px',
+                borderRadius: '10px',
+                background: 'rgba(255, 184, 77, 0.05)',
+                border: '1px solid rgba(255, 184, 77, 0.12)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Tempo de pausa</span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--warning)' }}>
+                    Esperar {autoWaitMinutesMin}-{autoWaitMinutesMax} min
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Espera minima (min)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={autoWaitMinutesMin}
+                      onChange={(e) => {
+                        const val = Math.max(0, parseInt(e.target.value || '0', 10))
+                        setAutoWaitMinutesMin(val)
+                        if (val > autoWaitMinutesMax) setAutoWaitMinutesMax(val)
+                      }}
+                      onBlur={async () => {
+                        try {
+                          await updateBotConfig({
+                            autoWaitMinutesMin,
+                            autoWaitMinutesMax: autoWaitMinutesMin > autoWaitMinutesMax ? autoWaitMinutesMin : autoWaitMinutesMax,
+                          })
+                        } catch {}
+                      }}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(0,0,0,0.2)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '8px',
+                        color: 'var(--text-primary)',
+                        padding: '10px 12px',
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Espera maxima (min)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={autoWaitMinutesMax}
+                      onChange={(e) => {
+                        const val = Math.max(0, parseInt(e.target.value || '0', 10))
+                        setAutoWaitMinutesMax(val)
+                        if (val < autoWaitMinutesMin) setAutoWaitMinutesMin(val)
+                      }}
+                      onBlur={async () => {
+                        try {
+                          await updateBotConfig({
+                            autoWaitMinutesMin: autoWaitMinutesMax < autoWaitMinutesMin ? autoWaitMinutesMax : autoWaitMinutesMin,
+                            autoWaitMinutesMax,
+                          })
+                        } catch {}
+                      }}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(0,0,0,0.2)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '8px',
+                        color: 'var(--text-primary)',
+                        padding: '10px 12px',
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
             </div>
@@ -2641,6 +3178,197 @@ function ProgressBar({ label, value, unit, color, percent }: { label: string; va
       <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
     </div>
   )
+}
+
+function DailyProjectionChart({ series }: { series: Array<{ label: string; cumulativeFish: number; fish: number }> }) {
+  const width = 680
+  const height = 180
+  const padding = 18
+  const maxValue = Math.max(1, ...series.map(point => point.cumulativeFish))
+  const points = series.map((point, index) => {
+    const x = padding + (index * (width - padding * 2)) / Math.max(1, series.length - 1)
+    const y = height - padding - ((point.cumulativeFish / maxValue) * (height - padding * 2))
+    return `${x},${y}`
+  }).join(' ')
+
+  return (
+    <div style={{
+      padding: '14px',
+      borderRadius: '12px',
+      border: '1px solid var(--border)',
+      background: 'linear-gradient(180deg, rgba(17, 24, 39, 0.45) 0%, rgba(0, 0, 0, 0.15) 100%)'
+    }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '160px', display: 'block' }}>
+        <defs>
+          <linearGradient id="dailyFishLine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="var(--warning)" />
+            <stop offset="100%" stopColor="var(--accent)" />
+          </linearGradient>
+        </defs>
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+          const y = height - padding - ratio * (height - padding * 2)
+          return (
+            <line
+              key={index}
+              x1={padding}
+              y1={y}
+              x2={width - padding}
+              y2={y}
+              stroke="rgba(255,255,255,0.08)"
+              strokeDasharray="4 6"
+            />
+          )
+        })}
+        <polyline
+          fill="none"
+          stroke="url(#dailyFishLine)"
+          strokeWidth="3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          points={points}
+        />
+        {series.filter((_, index) => index % 4 === 0 || index === series.length - 1).map((point, index, filtered) => {
+          const originalIndex = series.findIndex(item => item.label === point.label)
+          const x = padding + (originalIndex * (width - padding * 2)) / Math.max(1, series.length - 1)
+          return (
+            <text
+              key={`${point.label}-${index}`}
+              x={x}
+              y={height - 2}
+              textAnchor="middle"
+              fill="var(--text-muted)"
+              fontSize="10"
+            >
+              {point.label.slice(0, 2)}
+            </text>
+          )
+        })}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+        <span>Acumulado horario de fish no dia</span>
+        <span>Pico: {maxValue.toFixed(2)} fish</span>
+      </div>
+    </div>
+  )
+}
+
+function FishTypeCard({ fishType }: { fishType: BotAnalytics['fishTypes'][number] }) {
+  const statusColors = {
+    normal: 'var(--success)',
+    attention: 'var(--warning)',
+    late: 'var(--danger)',
+    insufficient_data: 'var(--text-secondary)',
+  } as const
+
+  const statusLabels = {
+    normal: 'No ritmo',
+    attention: 'Em atencao',
+    late: 'Atrasado',
+    insufficient_data: 'Pouca amostra',
+  } as const
+
+  const color = statusColors[fishType.status]
+
+  return (
+    <div style={{
+      padding: '12px 14px',
+      borderRadius: '12px',
+      border: `1px solid ${color}33`,
+      background: `${color}12`,
+      display: 'grid',
+      gap: '8px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color }}>
+            +{fishType.amountLabel} fish
+          </div>
+          <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+            {fishType.count} ocorrencias | {fishType.probability.toFixed(1)}% dos catches
+          </div>
+        </div>
+        <span className="badge" style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}>
+          {statusLabels[fishType.status]}
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+        <div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Timer</div>
+          <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{formatDurationMs(fishType.timeSinceLastMs)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Media</div>
+          <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{formatDurationMs(fishType.averageGapMs)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Maior gap</div>
+          <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{formatDurationMs(fishType.maxGapMs)}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+        <span>Ultimo: {fishType.lastSeenAt ? formatDateTime(new Date(fishType.lastSeenAt)) : '-'}</span>
+        <span>Indice: {fishType.overdueRatio ? `${fishType.overdueRatio.toFixed(2)}x` : '-'}</span>
+      </div>
+    </div>
+  )
+}
+
+function ComparisonCard({
+  label,
+  today,
+  yesterday,
+  delta,
+  percent,
+  accent,
+  suffix = '',
+}: {
+  label: string
+  today: string
+  yesterday: string
+  delta: number
+  percent?: number | null
+  accent: string
+  suffix?: string
+}) {
+  const positive = delta >= 0
+  const deltaColor = positive ? 'var(--success)' : 'var(--danger)'
+  const decimals = Math.abs(delta) < 10 ? 2 : 0
+
+  return (
+    <div style={{
+      padding: '12px',
+      borderRadius: '12px',
+      border: '1px solid var(--border)',
+      background: 'rgba(0,0,0,0.14)',
+      display: 'grid',
+      gap: '8px',
+    }}>
+      <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</div>
+      <div style={{ fontSize: '1rem', fontWeight: 700, color: accent }}>{today}</div>
+      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Ontem: {yesterday}</div>
+      <div style={{ fontSize: '0.82rem', color: deltaColor, fontWeight: 700 }}>
+        {positive ? '+' : ''}{delta.toFixed(decimals)}{suffix}
+        {percent !== undefined && percent !== null ? ` (${positive ? '+' : ''}${percent.toFixed(1)}%)` : ''}
+      </div>
+    </div>
+  )
+}
+
+function formatDurationMs(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-'
+  const totalSeconds = Math.max(0, Math.round(value / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+function safeRate(catches: number, misses: number): number {
+  return catches + misses > 0 ? (catches / (catches + misses)) * 100 : 0
 }
 
 // Icons (inline SVG)

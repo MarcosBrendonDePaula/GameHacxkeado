@@ -42,6 +42,11 @@ interface BotStats {
     percent: number
     estimatedSeconds: number
   }
+  websocket?: {
+    status: 'connected' | 'connecting' | 'disconnected' | 'reconnecting'
+    reconnectAttempts: number
+    lastError?: string
+  }
 }
 
 interface BotInfo {

@@ -1,11 +1,19 @@
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import { Keypair } from "@solana/web3.js";
-import { PROGRAM_ID, BOT_CONFIG, CUSTOM_HEADERS, FISH_MINT, FOGO_MINT } from "../config/constants";
+import { BOT_CONFIG, CUSTOM_HEADERS, FISH_MINT, FOGO_MINT } from "../config/constants";
 import { getPlayerStatePDA, getConfigPDA, getGlobalStatePDA, getRiverFishConfigPDA, getRiverFishStatePDA } from "../utils/pda";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { FOGO_FISHING_IDL } from "../config/idl";
-import { PlayerState, RiverBaitDef, RiverFishState } from "../types";
+import type { PlayerState, RiverBaitDef, RiverFishState } from "../types";
+
+type ProgramAccountMap = {
+  playerState: { fetch(address: PublicKey): Promise<any> };
+  config: { fetch(address: PublicKey): Promise<any> };
+  globalState: { fetch(address: PublicKey): Promise<any> };
+  riverFishConfig: { fetch(address: PublicKey): Promise<any> };
+  riverFishState: { fetch(address: PublicKey): Promise<any> };
+};
 
 /**
  * Serviço para ler dados do player diretamente da blockchain
@@ -60,7 +68,7 @@ export class PlayerReader {
     try {
       const walletPublicKey = new PublicKey(walletPubkey);
       const [playerStatePDA] = getPlayerStatePDA(walletPublicKey);
-      const playerState = await this.program.account.playerState.fetch(
+      const playerState = await (this.program.account as unknown as ProgramAccountMap).playerState.fetch(
         playerStatePDA
       );
 
@@ -99,7 +107,7 @@ export class PlayerReader {
   async fetchConfig(): Promise<any | null> {
     try {
       const [configPDA] = getConfigPDA();
-      const config = await this.program.account.config.fetch(configPDA);
+      const config = await (this.program.account as unknown as ProgramAccountMap).config.fetch(configPDA);
       return {
         authority: config.authority.toBase58(),
         issuerPubkey: config.issuerPubkey.toBase58(),
@@ -121,7 +129,7 @@ export class PlayerReader {
   async fetchGlobalState(): Promise<any | null> {
     try {
       const [globalStatePDA] = getGlobalStatePDA();
-      const gs = await this.program.account.globalState.fetch(globalStatePDA);
+      const gs = await (this.program.account as unknown as ProgramAccountMap).globalState.fetch(globalStatePDA);
       return {
         authority: gs.authority.toBase58(),
         fishMint: gs.fishMint.toBase58(),
@@ -155,7 +163,7 @@ export class PlayerReader {
   async fetchRiverFishConfig(): Promise<{ baits: RiverBaitDef[]; difficultyRef: string; isActive: boolean } | null> {
     try {
       const [riverFishConfigPDA] = getRiverFishConfigPDA();
-      const config = await this.program.account.riverFishConfig.fetch(riverFishConfigPDA);
+      const config = await (this.program.account as unknown as ProgramAccountMap).riverFishConfig.fetch(riverFishConfigPDA);
 
       const baits: RiverBaitDef[] = [];
       for (let i = 0; i < 10; i++) {
@@ -186,7 +194,7 @@ export class PlayerReader {
     try {
       const walletPublicKey = new PublicKey(walletPubkey);
       const [riverFishStatePDA] = getRiverFishStatePDA(walletPublicKey);
-      const state = await this.program.account.riverFishState.fetch(riverFishStatePDA);
+      const state = await (this.program.account as unknown as ProgramAccountMap).riverFishState.fetch(riverFishStatePDA);
 
       return {
         owner: (state.owner as PublicKey).toBase58(),

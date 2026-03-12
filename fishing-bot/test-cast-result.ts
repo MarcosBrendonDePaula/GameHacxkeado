@@ -18,7 +18,12 @@ if (args.length === 0) {
   process.exit(1);
 }
 
-const keypairPath = path.resolve(args[0]);
+const keypairArg = args[0];
+if (!keypairArg) {
+  throw new Error("Caminho do keypair não informado");
+}
+
+const keypairPath = path.resolve(keypairArg);
 const secretKeyString = fs.readFileSync(keypairPath, "utf-8");
 const secretKey = Uint8Array.from(JSON.parse(secretKeyString));
 const keypair = Keypair.fromSecretKey(secretKey);
@@ -26,8 +31,10 @@ const keypair = Keypair.fromSecretKey(secretKey);
 // Parse proxy se fornecido
 let proxyUrl = BOT_CONFIG.proxy_url;
 for (let i = 1; i < args.length; i++) {
-  if (args[i] === "--proxy" && args[i + 1]) {
-    proxyUrl = args[i + 1];
+  const currentArg = args[i];
+  const nextArg = args[i + 1];
+  if (currentArg === "--proxy" && nextArg) {
+    proxyUrl = nextArg;
     i++;
   }
 }

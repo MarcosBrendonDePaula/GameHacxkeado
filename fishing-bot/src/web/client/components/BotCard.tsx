@@ -1,5 +1,16 @@
 import { useNavigate } from 'react-router-dom'
-import type { Bot } from '../pages/Bots'
+
+interface Bot {
+  id: string | number
+  name: string
+  status: 'online' | 'offline'
+  wallet: string
+  catches: number
+  misses: number
+  totalFish: number
+  delay: number
+  uptime: string
+}
 
 interface BotCardProps {
   bot: Bot

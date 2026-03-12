@@ -218,7 +218,7 @@ class BotInstance {
 
         if (signature) {
           // Registra cast pendente no WebSocket monitor (usa estado atualizado pelo loop paralelo)
-          this.logMonitor.registerCast(signature, this.lastFishCaught);
+          this.logMonitor.registerCast(signature);
           this.pendingCount++;
 
           logManager.addLog(botName, "info", `🎣 Cast enviado! Sig: ${signature.slice(0, 12)}... (⏳ ${this.pendingCount} pendentes)`);
@@ -508,7 +508,7 @@ export class BotManager {
         const newConfig = configs[i];
         const oldConfig = this.configs[i];
 
-        if (!newConfig.enabled) continue;
+        if (!newConfig?.enabled) continue;
 
         const botId = String(botIndex);
         const bot = this.bots.get(botId);

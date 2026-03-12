@@ -75,8 +75,8 @@ export function useExportableSession(options: UseExportableSessionOptions) {
       if (!wallet?.publicKey) return
 
       try {
-        const stored = await getStoredSession(Network.Mainnet, wallet.publicKey)
-        if (stored && stored.expiration > new Date()) {
+        const stored = await getStoredSession(Network.Mainnet, wallet.publicKey) as { expiration?: Date } | null
+        if (stored?.expiration && stored.expiration > new Date()) {
           // Sessão válida existe, mas precisamos re-exportar a chave
           // porque o storage não guarda a chave privada exportável
           setStatus('active')
@@ -150,16 +150,19 @@ export function useExportableSession(options: UseExportableSessionOptions) {
         // Salva no storage (para reconexão, mas sem a chave privada)
         await setStoredSession(Network.Mainnet, {
           sessionKey: session.sessionKey,
-          sessionPublicKey: session.sessionPublicKey,
           walletPublicKey: wallet.publicKey,
           expiration: expires,
-        })
+        } as any)
 
         setSessionData(data)
         setStatus('active')
         return data
       } else {
-        const errorMsg = result.error?.message || 'Erro ao estabelecer sessão'
+        const resultError = result.error as { message?: string } | string | undefined
+        const errorMsg =
+          typeof resultError === 'string'
+            ? resultError
+            : resultError?.message || 'Erro ao estabelecer sessão'
         throw new Error(errorMsg)
       }
     } catch (err: any) {

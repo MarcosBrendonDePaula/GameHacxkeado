@@ -44,6 +44,7 @@ export const DEV_MODE = false;
 export const BOT_CONFIG = {
   autocast_delay: 500,
   rpc_endpoint: ENDPOINTS.rpc,
+  ws_endpoint: "",
   max_retries: 3,
   transaction_timeout: 60,
   proxy_url: process.env.PROXY_URL || "",

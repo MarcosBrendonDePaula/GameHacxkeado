@@ -9,14 +9,15 @@ import { eq } from "drizzle-orm";
 import { getPlayerReader } from "../services/player-reader";
 
 // Detecta se está rodando como executável compilado ou em Docker
-const exeName = path.basename(Bun.argv[0]).toLowerCase();
+const entryArg = Bun.argv[0] ?? "";
+const exeName = path.basename(entryArg).toLowerCase();
 const isExecutable =
   import.meta.path.includes("~BUN") ||
   (exeName.endsWith(".exe") && !exeName.includes("bun")) ||
   process.env.FISHING_BOT_PROD === "1";
 
 // APP_DIR permite override para Docker, senão usa diretório do exe
-const appDir = process.env.APP_DIR || path.dirname(Bun.argv[0]);
+const appDir = process.env.APP_DIR || path.dirname(entryArg || process.cwd());
 
 // Caminhos dependem do modo
 const distClientPath = isExecutable
@@ -327,6 +328,11 @@ const protectedApi = new Elysia({ prefix: "/api" })
         autoRepair: bot.autoRepair,
         autoRepairMin: bot.autoRepairMin,
         autoRepairMax: bot.autoRepairMax,
+        autoWaitDurability: bot.autoWaitDurability,
+        autoWaitDurabilityMin: bot.autoWaitDurabilityMin,
+        autoWaitDurabilityMax: bot.autoWaitDurabilityMax,
+        autoWaitMinutesMin: bot.autoWaitMinutesMin,
+        autoWaitMinutesMax: bot.autoWaitMinutesMax,
         autoUpgrade: bot.autoUpgrade,
         autoRestartMinutes: bot.autoRestartMinutes,
         autoBuyBait: bot.autoBuyBait,
@@ -371,7 +377,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
 
   // Atualiza configurações do bot
   .patch("/bot", async ({ walletPubkey, body }) => {
-    const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoUpgrade, autoRestartMinutes,
+    const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoRepairWaitMinMinutes, autoRepairWaitMaxMinutes, autoWaitDurability, autoWaitDurabilityMin, autoWaitDurabilityMax, autoWaitMinutesMin, autoWaitMinutesMax, autoUpgrade, autoRestartMinutes,
       autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoUseBaitOrder, autoBuyBaitQty } = body as any;
 
     const result = await botManager.updateBotConfig(walletPubkey!, {
@@ -381,6 +387,13 @@ const protectedApi = new Elysia({ prefix: "/api" })
       autoRepair,
       autoRepairMin,
       autoRepairMax,
+      autoRepairWaitMinMinutes,
+      autoRepairWaitMaxMinutes,
+      autoWaitDurability,
+      autoWaitDurabilityMin,
+      autoWaitDurabilityMax,
+      autoWaitMinutesMin,
+      autoWaitMinutesMax,
       autoUpgrade,
       autoRestartMinutes,
       autoBuyBait,
@@ -461,6 +474,11 @@ const protectedApi = new Elysia({ prefix: "/api" })
     return { history };
   })
 
+  // Analytics do bot
+  .get("/analytics", async ({ walletPubkey }) => {
+    return botManager.getAnalytics(walletPubkey!);
+  })
+
   // Logs do bot
   .get("/logs", async ({ walletPubkey, query }) => {
     const limit = query.limit ? parseInt(query.limit as string) : 50;
@@ -493,7 +511,7 @@ const mimeTypes: Record<string, string> = {
 
 // Função para servir arquivos estáticos
 function serveStatic(req: any, res: any, urlPath: string) {
-  const cleanPath = urlPath.split("?")[0];
+  const cleanPath = urlPath.split("?")[0] ?? "/";
 
   let filePath =
     cleanPath === "/" || !path.extname(cleanPath)
@@ -590,11 +608,29 @@ async function startServer() {
       console.log(`🎨 Frontend (Vite HMR) integrado no mesmo servidor`);
     }
 
-    // Log rotation: limpa dados com mais de 3 dias a cada 30 minutos
-    const CLEANUP_INTERVAL = 30 * 60 * 1000;
-    botManager.cleanupOldData(3); // cleanup inicial
-    setInterval(() => botManager.cleanupOldData(3), CLEANUP_INTERVAL);
-    console.log(`🧹 Log rotation ativo: dados >3 dias limpos a cada 30min`);
+    const cleanupDays = Number(process.env.DB_CLEANUP_DAYS || 3);
+    const cleanupIntervalMinutes = Number(process.env.DB_CLEANUP_INTERVAL_MINUTES || 30);
+    const cleanupLimits = {
+      maxLogsPerWallet: Number(process.env.DB_MAX_LOGS_PER_WALLET || 6000),
+      maxResultsPerWallet: Number(process.env.DB_MAX_RESULTS_PER_WALLET || 6000),
+      maxHistoryPerWallet: Number(process.env.DB_MAX_HISTORY_PER_WALLET || 6000),
+    };
+
+    // Limpa por idade e também limita volume por wallet para impedir crescimento contínuo.
+    const cleanupOnStartup = ["1", "true", "yes", "on"].includes((process.env.DB_CLEANUP_ON_STARTUP || "0").toLowerCase());
+    const cleanupIntervalMs = cleanupIntervalMinutes * 60 * 1000;
+    if (cleanupOnStartup) botManager.cleanupOldData(cleanupDays, cleanupLimits).catch((err) => {
+      console.error("❌ Erro no cleanup inicial do DB:", err);
+    });
+    setInterval(() => {
+      botManager.cleanupOldData(cleanupDays, cleanupLimits).catch((err) => {
+        console.error("❌ Erro no cleanup agendado do DB:", err);
+      });
+    }, cleanupIntervalMs);
+    console.log(
+      `🧹 DB cleanup ativo: >${cleanupDays} dias a cada ${cleanupIntervalMinutes}min ` +
+      `(logs=${cleanupLimits.maxLogsPerWallet}, results=${cleanupLimits.maxResultsPerWallet}, history=${cleanupLimits.maxHistoryPerWallet})`
+    );
 
     // Auto-inicia bots que estavam ligados antes do restart
     botManager.autoStartBots().catch((err) => {

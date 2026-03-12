@@ -23,6 +23,13 @@ export const bots = sqliteTable("bots", {
   autoRepair: integer("auto_repair", { mode: "boolean" }).default(false), // Auto-reparo habilitado
   autoRepairMin: integer("auto_repair_min").default(15), // Durabilidade minima da range (%)
   autoRepairMax: integer("auto_repair_max").default(25), // Durabilidade maxima da range (%)
+  autoRepairWaitMinMinutes: integer("auto_repair_wait_min_minutes").default(0), // Espera minima apos repair (min)
+  autoRepairWaitMaxMinutes: integer("auto_repair_wait_max_minutes").default(0), // Espera maxima apos repair (min)
+  autoWaitDurability: integer("auto_wait_durability", { mode: "boolean" }).default(false), // Espera por durabilidade sem reparar
+  autoWaitDurabilityMin: integer("auto_wait_durability_min").default(15), // Durabilidade minima da range (%)
+  autoWaitDurabilityMax: integer("auto_wait_durability_max").default(25), // Durabilidade maxima da range (%)
+  autoWaitMinutesMin: integer("auto_wait_minutes_min").default(0), // Espera minima quando entrar no modo pausa (min)
+  autoWaitMinutesMax: integer("auto_wait_minutes_max").default(0), // Espera maxima quando entrar no modo pausa (min)
   autoUpgrade: integer("auto_upgrade", { mode: "boolean" }).default(false), // Auto-upgrade da vara
   autoRestartMinutes: integer("auto_restart_minutes").default(240), // Auto-restart a cada X minutos (0 = desabilitado)
   autoBuyBait: integer("auto_buy_bait", { mode: "boolean" }).default(false), // Auto-compra de iscas

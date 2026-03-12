@@ -1,4 +1,4 @@
-import { FC, ReactNode } from 'react'
+import type { FC, ReactNode } from 'react'
 import { FogoSessionProvider } from '@fogo/sessions-sdk-react'
 import { Network } from '@fogo/sessions-sdk'
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets'

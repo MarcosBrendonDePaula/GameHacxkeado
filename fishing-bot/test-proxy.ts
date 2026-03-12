@@ -16,6 +16,9 @@ if (args.length === 0) {
 }
 
 const proxyUrl = args[0];
+if (!proxyUrl) {
+  throw new Error("Proxy não informado");
+}
 
 console.log("🧪 Testando conexão via proxy...\n");
 console.log(`Proxy: ${proxyUrl}\n`);

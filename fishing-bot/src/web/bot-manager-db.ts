@@ -1,11 +1,11 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { eq, desc, and, sql, lt } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { FishingService } from "../services/fishing";
 import { CastLogMonitor } from "../services/log-monitor";
 import { getPlayerStatePDA } from "../utils/pda";
 import { BOT_CONFIG } from "../config/constants";
 import { BAIT_NAMES } from "../types";
-import { db, bots, castResults, botHistory, logs, accounts } from "../db";
+import { db, bots, castResults, botHistory, logs, accounts, runDatabaseMaintenance, runSql } from "../db";
 import type { Bot, NewBot, NewCastResult, NewBotHistory, NewLog } from "../db";
 import * as path from "path";
 
@@ -144,6 +144,65 @@ export interface BotStats {
   };
 }
 
+interface FishTypeAnalytics {
+  amount: number;
+  amountLabel: string;
+  count: number;
+  totalFish: number;
+  probability: number;
+  lastSeenAt: Date | null;
+  averageGapMs: number | null;
+  maxGapMs: number | null;
+  timeSinceLastMs: number | null;
+  overdueRatio: number | null;
+  status: "normal" | "attention" | "late" | "insufficient_data";
+}
+
+interface BotAnalytics {
+  sampledCatches: number;
+  sampledMisses: number;
+  sampledTotalFish: number;
+  windows: Array<{
+    key: "5m" | "15m" | "1h" | "24h";
+    label: string;
+    catches: number;
+    misses: number;
+    totalFish: number;
+    successRate: number;
+    fishPerHour: number;
+    avgFishPerCatch: number;
+  }>;
+  todayCatches: number;
+  todayMisses: number;
+  todayTotalFish: number;
+  yesterdayCatches: number;
+  yesterdayMisses: number;
+  yesterdayTotalFish: number;
+  comparison: {
+    fishDelta: number;
+    fishDeltaPercent: number | null;
+    catchesDelta: number;
+    successRateDelta: number;
+  };
+  projectedTotalFishToday: number;
+  projectedCatchesToday: number;
+  elapsedDayPercent: number;
+  streaks: {
+    currentCatch: number;
+    currentMiss: number;
+    maxCatch: number;
+    maxMiss: number;
+  };
+  hourlySeries: Array<{
+    hour: number;
+    label: string;
+    fish: number;
+    catches: number;
+    cumulativeFish: number;
+  }>;
+  fishTypes: FishTypeAnalytics[];
+}
+
 /**
  * Instância de um bot em execução
  * Mantida apenas em memória enquanto o bot está rodando
@@ -164,8 +223,10 @@ class BotInstance {
   private autoRestartTimer?: NodeJS.Timeout;
   private restartCallback?: () => Promise<void>;
   private currentRepairThreshold: number = 20; // Threshold atual (randomizado)
+  private currentWaitThreshold: number = 20; // Threshold atual da automação de espera
   private autoUpgradeStartNextRetry = 0; // Cooldown para auto-start upgrade (timestamp)
   private autoBaitNextRetry = 0; // Cooldown para auto-bait (timestamp)
+  private durabilityPauseUntil = 0;
 
   constructor(
     public walletPubkey: string,
@@ -176,6 +237,13 @@ class BotInstance {
     public autoRepair: boolean = false,
     public autoRepairMin: number = 15,
     public autoRepairMax: number = 25,
+    public autoRepairWaitMinMinutes: number = 0,
+    public autoRepairWaitMaxMinutes: number = 0,
+    public autoWaitDurability: boolean = false,
+    public autoWaitDurabilityMin: number = 15,
+    public autoWaitDurabilityMax: number = 25,
+    public autoWaitMinutesMin: number = 0,
+    public autoWaitMinutesMax: number = 0,
     public autoUpgrade: boolean = false,
     public autoRestartMinutes: number = 240,
     public autoBuyBait: boolean = false,
@@ -187,6 +255,7 @@ class BotInstance {
   ) {
     // Sorteia threshold inicial dentro da range
     this.currentRepairThreshold = this.randomThreshold();
+    this.currentWaitThreshold = this.randomWaitThreshold();
 
     this.stats = {
       walletPubkey,
@@ -216,6 +285,24 @@ class BotInstance {
   private randomThreshold(): number {
     const min = Math.min(this.autoRepairMin, this.autoRepairMax);
     const max = Math.max(this.autoRepairMin, this.autoRepairMax);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  private randomRepairWaitMinutes(): number {
+    const min = Math.min(this.autoRepairWaitMinMinutes, this.autoRepairWaitMaxMinutes);
+    const max = Math.max(this.autoRepairWaitMinMinutes, this.autoRepairWaitMaxMinutes);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  private randomWaitThreshold(): number {
+    const min = Math.min(this.autoWaitDurabilityMin, this.autoWaitDurabilityMax);
+    const max = Math.max(this.autoWaitDurabilityMin, this.autoWaitDurabilityMax);
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  private randomDurabilityWaitMinutes(): number {
+    const min = Math.min(this.autoWaitMinutesMin, this.autoWaitMinutesMax);
+    const max = Math.max(this.autoWaitMinutesMin, this.autoWaitMinutesMax);
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
@@ -360,7 +447,6 @@ class BotInstance {
               const signature = await this.service.repairRod();
               if (signature) {
                 // Sorteia novo threshold para próximo reparo
-                const oldThreshold = this.currentRepairThreshold;
                 this.currentRepairThreshold = this.randomThreshold();
                 this.addLog("success", `🔧 Reparo OK! Próximo em ~${this.currentRepairThreshold}%`, "repair");
               } else {
@@ -371,6 +457,25 @@ class BotInstance {
             }
 
             this.isRepairing = false;
+          }
+
+          if (
+            !this.autoRepair &&
+            this.autoWaitDurability &&
+            durabilityPercent <= this.currentWaitThreshold &&
+            this.durabilityPauseUntil === 0
+          ) {
+            const waitMinutes = this.randomDurabilityWaitMinutes();
+            this.currentWaitThreshold = this.randomWaitThreshold();
+
+            if (waitMinutes > 0) {
+              this.durabilityPauseUntil = Date.now() + waitMinutes * 60 * 1000;
+              this.addLog(
+                "warn",
+                `⏳ Durabilidade ${durabilityPercent}% entrou na faixa de espera. Pausando casts por ${waitMinutes} min sem reparar. Próxima faixa em ~${this.currentWaitThreshold}%`,
+                "repair"
+              );
+            }
           }
 
           // Calcula progresso do upgrade para stats
@@ -522,7 +627,9 @@ class BotInstance {
                   if (this.autoBuyBaitQty) {
                     this.autoBuyBaitQty.split(",").forEach(entry => {
                       const [id, qty] = entry.split(":").map(Number);
-                      if (id >= 1 && id <= 10 && qty > 0) qtyMap[id] = Math.min(qty, 100);
+                      if (id !== undefined && qty !== undefined && id >= 1 && id <= 10 && qty > 0) {
+                        qtyMap[id] = Math.min(qty, 100);
+                      }
                     });
                   }
                   // Busca custos dinâmicos on-chain (escalados por dificuldade)
@@ -650,6 +757,16 @@ class BotInstance {
         if (this.pendingCount >= 20) {
           await Bun.sleep(200);
           continue;
+        }
+
+        if (this.durabilityPauseUntil > Date.now()) {
+          await Bun.sleep(Math.min(this.durabilityPauseUntil - Date.now(), 1000));
+          continue;
+        }
+
+        if (this.durabilityPauseUntil !== 0) {
+          this.durabilityPauseUntil = 0;
+          this.addLog("info", `⏳ Pausa por durabilidade concluída, retomando casts`, "repair");
         }
 
         const signature = await this.service.castLine(false);
@@ -926,6 +1043,13 @@ export class BotManager {
         bot.autoRepair ?? false,
         bot.autoRepairMin ?? 15,
         bot.autoRepairMax ?? 25,
+        bot.autoRepairWaitMinMinutes ?? 0,
+        bot.autoRepairWaitMaxMinutes ?? 0,
+        bot.autoWaitDurability ?? false,
+        bot.autoWaitDurabilityMin ?? 15,
+        bot.autoWaitDurabilityMax ?? 25,
+        bot.autoWaitMinutesMin ?? 0,
+        bot.autoWaitMinutesMax ?? 0,
         bot.autoUpgrade ?? false,
         bot.autoRestartMinutes ?? 240,
         bot.autoBuyBait ?? false,
@@ -1124,6 +1248,220 @@ export class BotManager {
     return { logs: result, total };
   }
 
+  async getAnalytics(walletPubkey: string): Promise<BotAnalytics> {
+    const sample = await db
+      .select({
+        type: castResults.type,
+        fishAmount: castResults.fishAmount,
+        timestamp: castResults.timestamp,
+      })
+      .from(castResults)
+      .where(eq(castResults.walletPubkey, walletPubkey))
+      .orderBy(desc(castResults.timestamp))
+      .limit(6000);
+
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfYesterday = new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000);
+    const endOfYesterday = new Date(startOfDay.getTime() - 1);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const chronological = [...sample].reverse();
+    const catches = chronological.filter((row) => row.type === "catch");
+    const misses = chronological.length - catches.length;
+    const sampledTotalFish = catches.reduce((sum, row) => sum + (row.fishAmount || 0), 0);
+
+    const todayRows = chronological.filter((row) => {
+      const ts = new Date(row.timestamp);
+      return ts >= startOfDay && ts <= endOfDay;
+    });
+    const yesterdayRows = chronological.filter((row) => {
+      const ts = new Date(row.timestamp);
+      return ts >= startOfYesterday && ts <= endOfYesterday;
+    });
+    const todayCatchesRows = todayRows.filter((row) => row.type === "catch");
+    const yesterdayCatchesRows = yesterdayRows.filter((row) => row.type === "catch");
+    const todayMisses = todayRows.length - todayCatchesRows.length;
+    const yesterdayMisses = yesterdayRows.length - yesterdayCatchesRows.length;
+    const todayTotalFish = todayCatchesRows.reduce((sum, row) => sum + (row.fishAmount || 0), 0);
+    const yesterdayTotalFish = yesterdayCatchesRows.reduce((sum, row) => sum + (row.fishAmount || 0), 0);
+
+    const computeSuccessRate = (catchCount: number, missCount: number) =>
+      catchCount + missCount > 0 ? (catchCount / (catchCount + missCount)) * 100 : 0;
+
+    const elapsedDayMs = Math.max(1, now.getTime() - startOfDay.getTime());
+    const fullDayMs = endOfDay.getTime() - startOfDay.getTime() + 1;
+    const projectedTotalFishToday = todayTotalFish > 0 ? (todayTotalFish / elapsedDayMs) * fullDayMs : 0;
+    const projectedCatchesToday = todayCatchesRows.length > 0 ? Math.round((todayCatchesRows.length / elapsedDayMs) * fullDayMs) : 0;
+    const elapsedDayPercent = Math.min(100, (elapsedDayMs / fullDayMs) * 100);
+
+    const windows = [
+      { key: "5m" as const, label: "5 min", durationMs: 5 * 60 * 1000 },
+      { key: "15m" as const, label: "15 min", durationMs: 15 * 60 * 1000 },
+      { key: "1h" as const, label: "1 hora", durationMs: 60 * 60 * 1000 },
+      { key: "24h" as const, label: "24 horas", durationMs: 24 * 60 * 60 * 1000 },
+    ].map((windowDef) => {
+      const cutoff = now.getTime() - windowDef.durationMs;
+      const rows = chronological.filter((row) => new Date(row.timestamp as any).getTime() >= cutoff);
+      const windowCatches = rows.filter((row) => row.type === "catch");
+      const windowMisses = rows.length - windowCatches.length;
+      const totalFish = windowCatches.reduce((sum, row) => sum + (row.fishAmount || 0), 0);
+      const catchCount = windowCatches.length;
+      return {
+        key: windowDef.key,
+        label: windowDef.label,
+        catches: catchCount,
+        misses: windowMisses,
+        totalFish,
+        successRate: computeSuccessRate(catchCount, windowMisses),
+        fishPerHour: totalFish * (60 * 60 * 1000 / windowDef.durationMs),
+        avgFishPerCatch: catchCount > 0 ? totalFish / catchCount : 0,
+      };
+    });
+
+    let currentCatch = 0;
+    let currentMiss = 0;
+    let maxCatch = 0;
+    let maxMiss = 0;
+    let runningCatch = 0;
+    let runningMiss = 0;
+    for (const row of chronological) {
+      if (row.type === "catch") {
+        runningCatch += 1;
+        runningMiss = 0;
+      } else {
+        runningMiss += 1;
+        runningCatch = 0;
+      }
+      maxCatch = Math.max(maxCatch, runningCatch);
+      maxMiss = Math.max(maxMiss, runningMiss);
+    }
+    for (let i = chronological.length - 1; i >= 0; i--) {
+      const row = chronological[i];
+      if (!row) continue;
+      if (row.type === "catch") {
+        if (currentMiss > 0) break;
+        currentCatch += 1;
+      } else {
+        if (currentCatch > 0) break;
+        currentMiss += 1;
+      }
+    }
+
+    const hourlySeries = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      label: `${hour.toString().padStart(2, "0")}:00`,
+      fish: 0,
+      catches: 0,
+      cumulativeFish: 0,
+    }));
+
+    for (const row of todayCatchesRows) {
+      const ts = new Date(row.timestamp);
+      const bucket = hourlySeries[ts.getHours()];
+      if (!bucket) continue;
+      bucket.fish += row.fishAmount || 0;
+      bucket.catches += 1;
+    }
+
+    let cumulativeFish = 0;
+    for (const bucket of hourlySeries) {
+      cumulativeFish += bucket.fish;
+      bucket.cumulativeFish = cumulativeFish;
+    }
+
+    const grouped = new Map<string, { amount: number; timestamps: number[]; totalFish: number; count: number }>();
+    for (const row of catches) {
+      const amount = Number((row.fishAmount || 0).toFixed(3));
+      const key = amount.toFixed(3);
+      if (!grouped.has(key)) {
+        grouped.set(key, { amount, timestamps: [], totalFish: 0, count: 0 });
+      }
+      const group = grouped.get(key)!;
+      group.count += 1;
+      group.totalFish += row.fishAmount || 0;
+      group.timestamps.push(new Date(row.timestamp as any).getTime());
+    }
+
+    const fishTypes: FishTypeAnalytics[] = Array.from(grouped.values())
+      .map((group) => {
+        const timestamps = [...group.timestamps].sort((a, b) => a - b);
+        const gaps: number[] = [];
+        for (let i = 1; i < timestamps.length; i++) {
+          gaps.push((timestamps[i] ?? 0) - (timestamps[i - 1] ?? 0));
+        }
+
+        const averageGapMs = gaps.length > 0
+          ? gaps.reduce((sum, value) => sum + value, 0) / gaps.length
+          : null;
+        const maxGapMs = gaps.length > 0 ? Math.max(...gaps) : null;
+        const lastTimestamp = timestamps.length > 0 ? timestamps[timestamps.length - 1]! : null;
+        const lastSeenAt = lastTimestamp !== null ? new Date(lastTimestamp) : null;
+        const timeSinceLastMs = lastSeenAt ? now.getTime() - lastSeenAt.getTime() : null;
+        const overdueRatio = averageGapMs && timeSinceLastMs !== null ? timeSinceLastMs / averageGapMs : null;
+
+        let status: FishTypeAnalytics["status"] = "insufficient_data";
+        if (group.count >= 2 && overdueRatio !== null) {
+          if (overdueRatio >= 1.5) status = "late";
+          else if (overdueRatio >= 1) status = "attention";
+          else status = "normal";
+        }
+
+        return {
+          amount: group.amount,
+          amountLabel: group.amount.toFixed(3),
+          count: group.count,
+          totalFish: group.totalFish,
+          probability: catches.length > 0 ? (group.count / catches.length) * 100 : 0,
+          lastSeenAt,
+          averageGapMs,
+          maxGapMs,
+          timeSinceLastMs,
+          overdueRatio,
+          status,
+        };
+      })
+      .sort((a, b) => {
+        if (b.amount !== a.amount) return b.amount - a.amount;
+        return b.count - a.count;
+      })
+      .slice(0, 8);
+
+    return {
+      sampledCatches: catches.length,
+      sampledMisses: misses,
+      sampledTotalFish,
+      windows,
+      todayCatches: todayCatchesRows.length,
+      todayMisses,
+      todayTotalFish,
+      yesterdayCatches: yesterdayCatchesRows.length,
+      yesterdayMisses,
+      yesterdayTotalFish,
+      comparison: {
+        fishDelta: todayTotalFish - yesterdayTotalFish,
+        fishDeltaPercent: yesterdayTotalFish > 0 ? ((todayTotalFish - yesterdayTotalFish) / yesterdayTotalFish) * 100 : null,
+        catchesDelta: todayCatchesRows.length - yesterdayCatchesRows.length,
+        successRateDelta:
+          computeSuccessRate(todayCatchesRows.length, todayMisses) -
+          computeSuccessRate(yesterdayCatchesRows.length, yesterdayMisses),
+      },
+      projectedTotalFishToday,
+      projectedCatchesToday,
+      elapsedDayPercent,
+      streaks: {
+        currentCatch,
+        currentMiss,
+        maxCatch,
+        maxMiss,
+      },
+      hourlySeries,
+      fishTypes,
+    };
+  }
+
   /**
    * Obtém estatísticas globais
    */
@@ -1211,23 +1549,70 @@ export class BotManager {
     }
   }
 
+  private async enforcePerWalletRetention(
+    tableName: "logs" | "cast_results" | "bot_history",
+    limitPerWallet: number
+  ): Promise<number> {
+    if (limitPerWallet <= 0) {
+      return 0;
+    }
+
+    const result = runSql(`
+      DELETE FROM ${tableName}
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (
+              PARTITION BY wallet_pubkey
+              ORDER BY timestamp DESC, id DESC
+            ) AS row_num
+          FROM ${tableName}
+        )
+        WHERE row_num > ${limitPerWallet}
+      )
+    `);
+
+    return result.changes;
+  }
+
   /**
-   * Limpeza periódica de dados antigos
-   * Remove logs, castResults e botHistory com mais de maxAgeDays dias
+   * Limpeza periódica de dados antigos.
+   * Remove dados velhos, limita volume por wallet e compacta o SQLite/WAL.
    */
-  async cleanupOldData(maxAgeDays: number = 3): Promise<{ logsDeleted: number; resultsDeleted: number; historyDeleted: number }> {
+  async cleanupOldData(
+    maxAgeDays: number = 3,
+    limits: {
+      maxLogsPerWallet?: number;
+      maxResultsPerWallet?: number;
+      maxHistoryPerWallet?: number;
+    } = {}
+  ): Promise<{ logsDeleted: number; resultsDeleted: number; historyDeleted: number }> {
+    dbBatcher.flush();
+
     const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+    const maxLogsPerWallet = limits.maxLogsPerWallet ?? 6000;
+    const maxResultsPerWallet = limits.maxResultsPerWallet ?? 6000;
+    const maxHistoryPerWallet = limits.maxHistoryPerWallet ?? 6000;
 
-    const logsResult = await db.delete(logs).where(lt(logs.timestamp, cutoff));
-    const resultsResult = await db.delete(castResults).where(lt(castResults.timestamp, cutoff));
-    const historyResult = await db.delete(botHistory).where(lt(botHistory.timestamp, cutoff));
+    const logsResult = runSql(`DELETE FROM logs WHERE timestamp < ${cutoff.getTime()}`);
+    const resultsResult = runSql(`DELETE FROM cast_results WHERE timestamp < ${cutoff.getTime()}`);
+    const historyResult = runSql(`DELETE FROM bot_history WHERE timestamp < ${cutoff.getTime()}`);
 
-    const logsDeleted = logsResult.changes;
-    const resultsDeleted = resultsResult.changes;
-    const historyDeleted = historyResult.changes;
+    const extraLogsDeleted = await this.enforcePerWalletRetention("logs", maxLogsPerWallet);
+    const extraResultsDeleted = await this.enforcePerWalletRetention("cast_results", maxResultsPerWallet);
+    const extraHistoryDeleted = await this.enforcePerWalletRetention("bot_history", maxHistoryPerWallet);
+
+    const logsDeleted = logsResult.changes + extraLogsDeleted;
+    const resultsDeleted = resultsResult.changes + extraResultsDeleted;
+    const historyDeleted = historyResult.changes + extraHistoryDeleted;
 
     if (logsDeleted > 0 || resultsDeleted > 0 || historyDeleted > 0) {
-      console.log(`🧹 Cleanup: ${logsDeleted} logs, ${resultsDeleted} results, ${historyDeleted} history (>${maxAgeDays} dias)`);
+      runDatabaseMaintenance();
+      console.log(
+        `🧹 Cleanup: ${logsDeleted} logs, ${resultsDeleted} results, ${historyDeleted} history ` +
+        `(>${maxAgeDays} dias | caps: logs=${maxLogsPerWallet}, results=${maxResultsPerWallet}, history=${maxHistoryPerWallet})`
+      );
     }
 
     return { logsDeleted, resultsDeleted, historyDeleted };
@@ -1263,6 +1648,9 @@ export class BotManager {
     config: {
       delayMin?: number; delayMax?: number; proxy?: string;
       autoRepair?: boolean; autoRepairMin?: number; autoRepairMax?: number;
+      autoRepairWaitMinMinutes?: number; autoRepairWaitMaxMinutes?: number;
+      autoWaitDurability?: boolean; autoWaitDurabilityMin?: number; autoWaitDurabilityMax?: number;
+      autoWaitMinutesMin?: number; autoWaitMinutesMax?: number;
       autoUpgrade?: boolean; autoRestartMinutes?: number;
       autoBuyBait?: boolean; autoBuyBaitIds?: string; autoUseBaitId?: number; autoBuyBaitThreshold?: number;
       autoUseBaitOrder?: string; autoBuyBaitQty?: string;
@@ -1276,6 +1664,13 @@ export class BotManager {
       if (config.autoRepair !== undefined) updateData.autoRepair = config.autoRepair;
       if (config.autoRepairMin !== undefined) updateData.autoRepairMin = config.autoRepairMin;
       if (config.autoRepairMax !== undefined) updateData.autoRepairMax = config.autoRepairMax;
+      if (config.autoRepairWaitMinMinutes !== undefined) updateData.autoRepairWaitMinMinutes = config.autoRepairWaitMinMinutes;
+      if (config.autoRepairWaitMaxMinutes !== undefined) updateData.autoRepairWaitMaxMinutes = config.autoRepairWaitMaxMinutes;
+      if (config.autoWaitDurability !== undefined) updateData.autoWaitDurability = config.autoWaitDurability;
+      if (config.autoWaitDurabilityMin !== undefined) updateData.autoWaitDurabilityMin = config.autoWaitDurabilityMin;
+      if (config.autoWaitDurabilityMax !== undefined) updateData.autoWaitDurabilityMax = config.autoWaitDurabilityMax;
+      if (config.autoWaitMinutesMin !== undefined) updateData.autoWaitMinutesMin = config.autoWaitMinutesMin;
+      if (config.autoWaitMinutesMax !== undefined) updateData.autoWaitMinutesMax = config.autoWaitMinutesMax;
       if (config.autoUpgrade !== undefined) updateData.autoUpgrade = config.autoUpgrade;
       if (config.autoRestartMinutes !== undefined) updateData.autoRestartMinutes = config.autoRestartMinutes;
       if (config.autoBuyBait !== undefined) updateData.autoBuyBait = config.autoBuyBait;
@@ -1303,6 +1698,13 @@ export class BotManager {
         if (config.autoRepair !== undefined) instance.autoRepair = config.autoRepair;
         if (config.autoRepairMin !== undefined) instance.autoRepairMin = config.autoRepairMin;
         if (config.autoRepairMax !== undefined) instance.autoRepairMax = config.autoRepairMax;
+        if (config.autoRepairWaitMinMinutes !== undefined) instance.autoRepairWaitMinMinutes = config.autoRepairWaitMinMinutes;
+        if (config.autoRepairWaitMaxMinutes !== undefined) instance.autoRepairWaitMaxMinutes = config.autoRepairWaitMaxMinutes;
+        if (config.autoWaitDurability !== undefined) instance.autoWaitDurability = config.autoWaitDurability;
+        if (config.autoWaitDurabilityMin !== undefined) instance.autoWaitDurabilityMin = config.autoWaitDurabilityMin;
+        if (config.autoWaitDurabilityMax !== undefined) instance.autoWaitDurabilityMax = config.autoWaitDurabilityMax;
+        if (config.autoWaitMinutesMin !== undefined) instance.autoWaitMinutesMin = config.autoWaitMinutesMin;
+        if (config.autoWaitMinutesMax !== undefined) instance.autoWaitMinutesMax = config.autoWaitMinutesMax;
         if (config.autoUpgrade !== undefined) instance.autoUpgrade = config.autoUpgrade;
         if (config.autoRestartMinutes !== undefined) instance.autoRestartMinutes = config.autoRestartMinutes;
         if (config.autoBuyBait !== undefined) instance.autoBuyBait = config.autoBuyBait;

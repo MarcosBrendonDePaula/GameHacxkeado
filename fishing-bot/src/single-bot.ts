@@ -64,21 +64,26 @@ Exemplo:
   }
 
   const keypairPath = args[0];
+  if (!keypairPath) {
+    throw new Error("Caminho da keypair não informado");
+  }
 
   // Parse opções
   let delay = BOT_CONFIG.autocast_delay;
-  let rpcEndpoint = BOT_CONFIG.rpc_endpoint;
+  let rpcEndpoint: string = BOT_CONFIG.rpc_endpoint;
   let proxyUrl = BOT_CONFIG.proxy_url;
 
   for (let i = 1; i < args.length; i++) {
-    if (args[i] === "--delay" && args[i + 1]) {
-      delay = parseInt(args[i + 1]);
+    const currentArg = args[i];
+    const nextArg = args[i + 1];
+    if (currentArg === "--delay" && nextArg) {
+      delay = parseInt(nextArg);
       i++;
-    } else if (args[i] === "--rpc" && args[i + 1]) {
-      rpcEndpoint = args[i + 1];
+    } else if (currentArg === "--rpc" && nextArg) {
+      rpcEndpoint = nextArg;
       i++;
-    } else if (args[i] === "--proxy" && args[i + 1]) {
-      proxyUrl = args[i + 1];
+    } else if (currentArg === "--proxy" && nextArg) {
+      proxyUrl = nextArg;
       i++;
     }
   }

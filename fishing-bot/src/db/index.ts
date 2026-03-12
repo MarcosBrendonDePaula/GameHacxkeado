@@ -5,14 +5,15 @@ import { resolve, dirname, basename } from "path";
 import { mkdirSync, existsSync } from "fs";
 
 // Detecta se está rodando como executável compilado
-const exeName = basename(Bun.argv[0]).toLowerCase();
+const entryArg = Bun.argv[0] ?? "";
+const exeName = basename(entryArg).toLowerCase();
 const isExecutable =
   import.meta.path.includes("~BUN") ||
   (exeName.endsWith(".exe") && !exeName.includes("bun")) ||
   process.env.FISHING_BOT_PROD === "1";
 
 // Em dev: relativo ao source. Em prod: relativo ao executável
-const appDir = process.env.APP_DIR || (isExecutable ? dirname(Bun.argv[0]) : resolve(import.meta.dir, "../.."));
+const appDir = process.env.APP_DIR || (isExecutable ? dirname(entryArg || process.cwd()) : resolve(import.meta.dir, "../.."));
 const dataDir = resolve(appDir, "data");
 if (!existsSync(dataDir)) {
   mkdirSync(dataDir, { recursive: true });
@@ -24,6 +25,8 @@ const sqlite = new Database(DB_PATH, { create: true });
 
 // Habilitar WAL mode para melhor performance
 sqlite.exec("PRAGMA journal_mode = WAL;");
+sqlite.exec("PRAGMA synchronous = NORMAL;");
+sqlite.exec("PRAGMA foreign_keys = ON;");
 
 // Criar instância do Drizzle ORM
 export const db = drizzle(sqlite, { schema });
@@ -44,4 +47,17 @@ export function isDatabaseReady(): boolean {
   } catch {
     return false;
   }
+}
+
+export function runDatabaseMaintenance() {
+  sqlite.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+  try {
+    sqlite.exec("VACUUM;");
+  } catch (error: any) {
+    console.warn(`Aviso: falha ao executar VACUUM no SQLite: ${error.message}`);
+  }
+}
+
+export function runSql(sql: string) {
+  return sqlite.run(sql);
 }

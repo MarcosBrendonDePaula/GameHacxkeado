@@ -70,9 +70,10 @@ export const authMiddleware = new Elysia({ name: "auth" })
  */
 export const requireAuth = new Elysia({ name: "require-auth" })
   .use(authMiddleware)
-  .onBeforeHandle(({ auth, set }) => {
+  .onBeforeHandle((ctx) => {
+    const auth = (ctx as typeof ctx & { auth?: AuthContext }).auth;
     if (!auth || !auth.authenticated) {
-      set.status = 401;
+      ctx.set.status = 401;
       return {
         error: "Nao autorizado",
         message: auth?.error || "Assinatura invalida ou ausente",

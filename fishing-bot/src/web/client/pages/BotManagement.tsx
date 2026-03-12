@@ -62,8 +62,9 @@ export default function BotManagement() {
   }
 
   function handleEdit(index: number) {
-    setEditingIndex(index)
     const bot = bots[index]
+    if (!bot) return
+    setEditingIndex(index)
     setFormData({ ...bot })
     // Detecta qual modo usar baseado nos dados
     if (bot.keypair) {
@@ -74,7 +75,9 @@ export default function BotManagement() {
   }
 
   function handleDelete(index: number) {
-    if (confirm(`Tem certeza que deseja deletar o bot "${bots[index].name}"?`)) {
+    const bot = bots[index]
+    if (!bot) return
+    if (confirm(`Tem certeza que deseja deletar o bot "${bot.name}"?`)) {
       const newBots = [...bots]
       newBots.splice(index, 1)
       setBots(newBots)
@@ -141,9 +144,11 @@ export default function BotManagement() {
     let newBots: BotConfig[]
     const isEditing = editingIndex !== null
     if (isEditing) {
+      const targetIndex = editingIndex
+      if (targetIndex === null) return
       // Editando bot existente
       newBots = [...bots]
-      newBots[editingIndex] = botData
+      newBots[targetIndex] = botData
     } else {
       // Adicionando novo bot
       newBots = [...bots, botData]

@@ -38,9 +38,17 @@ import { generateRandomNonce, Logger, sleep } from "../utils/helpers";
 import { createCapabilityInstruction } from "../utils/capability";
 import { sendTransactionViaPaymaster, getSponsor } from "../utils/paymaster";
 import { FOGO_FISHING_IDL } from "../config/idl";
-import { PlayerState, GlobalState, RiverFishState } from "../types";
+import type { PlayerState, GlobalState, RiverFishState } from "../types";
 import { createProxyAgent, checkProxyIP } from "../utils/proxy";
 import { CastLogMonitor } from "./log-monitor";
+
+type ProgramAccountMap = {
+  globalState: { fetch(address: PublicKey): Promise<any> };
+  playerState: { fetch(address: PublicKey): Promise<any> };
+  riverFishState: { fetch(address: PublicKey): Promise<any> };
+  riverFishConfig: { fetch(address: PublicKey): Promise<any> };
+  config: { fetch(address: PublicKey): Promise<any> };
+};
 
 export class FishingService {
   private connection: Connection;
@@ -153,7 +161,7 @@ export class FishingService {
 
     try {
       const [globalStatePDA] = getGlobalStatePDA();
-      const gs = await this.program.account.globalState.fetch(globalStatePDA);
+      const gs = await (this.program.account as unknown as ProgramAccountMap).globalState.fetch(globalStatePDA);
       this.dynamicFishMint = gs.fishMint as PublicKey;
       this.dynamicFogoMint = gs.fogoMint as PublicKey;
       this.logger.info(`🔗 Mints carregados do GlobalState: FISH=${this.dynamicFishMint.toBase58().slice(0, 8)}... FOGO=${this.dynamicFogoMint.toBase58().slice(0, 8)}...`);
@@ -184,7 +192,7 @@ export class FishingService {
   async fetchGlobalState(): Promise<GlobalState | null> {
     try {
       const [globalStatePDA] = getGlobalStatePDA();
-      const globalState = await this.program.account.globalState.fetch(
+      const globalState = await (this.program.account as unknown as ProgramAccountMap).globalState.fetch(
         globalStatePDA
       );
 
@@ -222,7 +230,7 @@ export class FishingService {
   async fetchPlayerState(): Promise<PlayerState | null> {
     try {
       const [playerStatePDA] = getPlayerStatePDA(this.walletPublicKey);
-      const playerState = await this.program.account.playerState.fetch(
+      const playerState = await (this.program.account as unknown as ProgramAccountMap).playerState.fetch(
         playerStatePDA
       );
 
@@ -673,7 +681,7 @@ export class FishingService {
   async fetchRiverFishState(): Promise<RiverFishState | null> {
     try {
       const [riverFishStatePDA] = getRiverFishStatePDA(this.walletPublicKey);
-      const state = await this.program.account.riverFishState.fetch(riverFishStatePDA);
+      const state = await (this.program.account as unknown as ProgramAccountMap).riverFishState.fetch(riverFishStatePDA);
 
       return {
         owner: (state.owner as PublicKey).toBase58(),
@@ -732,8 +740,8 @@ export class FishingService {
       const [riverFishConfigPDA] = getRiverFishConfigPDA();
       const [globalStatePDA] = getGlobalStatePDA();
       const [config, globalState] = await Promise.all([
-        this.program.account.riverFishConfig.fetch(riverFishConfigPDA),
-        this.program.account.globalState.fetch(globalStatePDA),
+        (this.program.account as unknown as ProgramAccountMap).riverFishConfig.fetch(riverFishConfigPDA),
+        (this.program.account as unknown as ProgramAccountMap).globalState.fetch(globalStatePDA),
       ]);
 
       const diffRef = Number((config as any).difficultyRef.toString());

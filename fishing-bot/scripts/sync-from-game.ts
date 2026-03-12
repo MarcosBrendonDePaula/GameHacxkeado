@@ -86,7 +86,11 @@ function extractCULimits(src: string): Record<string, number> {
   const entryRegex = /(\w+):\s*([0-9e]+)/g;
   let m: RegExpExecArray | null;
   while ((m = entryRegex.exec(block)) !== null) {
-    limits[m[1]] = parseFloat(m[2]);
+    const key = m[1];
+    const value = m[2];
+    if (key && value) {
+      limits[key] = parseFloat(value);
+    }
   }
 
   return limits;
@@ -99,16 +103,16 @@ function extractEndpoints(src: string): Record<string, string> {
   const endpoints: Record<string, string> = {};
 
   const capMatch = src.match(/CAPABILITY_URL\s*=\s*"([^"]+)"/);
-  if (capMatch) endpoints.capability = capMatch[1];
+  if (capMatch?.[1]) endpoints.capability = capMatch[1];
 
   const statsMatch = src.match(/STATS_API_URL\s*=\s*"([^"]+)"/);
-  if (statsMatch) endpoints.stats = statsMatch[1].replace(/\/+$/, "");
+  if (statsMatch?.[1]) endpoints.stats = statsMatch[1].replace(/\/+$/, "");
 
   const epochsMatch = src.match(/EPOCHS_API_URL\s*=\s*"([^"]+)"/);
-  if (epochsMatch) endpoints.epochs = epochsMatch[1].replace(/\/+$/, "");
+  if (epochsMatch?.[1]) endpoints.epochs = epochsMatch[1].replace(/\/+$/, "");
 
   const pmMatch = src.match(/Mainnet\]:\s*"([^"]+dourolabs-paymaster[^"]+)"/);
-  if (pmMatch) endpoints.paymaster = pmMatch[1] + "/api/sponsor_and_send";
+  if (pmMatch?.[1]) endpoints.paymaster = pmMatch[1] + "/api/sponsor_and_send";
 
   endpoints.paymaster_domain = "https://fogofishing.com";
   endpoints.rpc = "https://eu.fogo.fluxrpc.com/?key=74a5f926-d7b0-4c72-9a5c-0eaec1a57781";
@@ -132,7 +136,7 @@ function findMatchingBracket(src: string, startAfter: number, open: string, clos
 }
 
 function formatCULimits(limits: Record<string, number>): string {
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0] ?? "";
   const lines = Object.entries(limits).map(([k, v]) => {
     const formatted = v.toLocaleString("en-US").replace(/,/g, "_");
     return `  ${k}: ${formatted},`;
@@ -153,7 +157,7 @@ function formatCULimits(limits: Record<string, number>): string {
 }
 
 function formatEndpoints(endpoints: Record<string, string>): string {
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0] ?? "";
   const entries = Object.entries(endpoints)
     .map(([k, v]) => `  ${k}: "${v}",`)
     .join("\n");
@@ -173,7 +177,7 @@ function formatEndpoints(endpoints: Record<string, string>): string {
 }
 
 function formatIDL(idl: any): string {
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0] ?? "";
   return [
     `// IDL extraida automaticamente do game source`,
     `// Gerado por: bun run scripts/sync-from-game.ts`,
