@@ -84,7 +84,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      <main className="container" style={{ flex: 1, paddingTop: '32px', paddingBottom: '32px' }}>
+      <main className="page-shell" style={{ flex: 1, paddingTop: '32px', paddingBottom: '32px' }}>
         {children}
       </main>
 
