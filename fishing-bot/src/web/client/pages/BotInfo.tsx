@@ -290,6 +290,7 @@ export default function BotInfo() {
   const [autoBuyBaitIds, setAutoBuyBaitIds] = useState('')
   const [autoUseBaitId, setAutoUseBaitId] = useState(0)
   const [autoBuyBaitThreshold, setAutoBuyBaitThreshold] = useState(100)
+  const [autoBuyBaitThresholds, setAutoBuyBaitThresholds] = useState('')
   const [autoUseBaitOrder, setAutoUseBaitOrder] = useState('')
   const [autoBuyBaitQty, setAutoBuyBaitQty] = useState('')
   const [baitCosts, setBaitCosts] = useState<Record<number, BaitCostInfo>>({})
@@ -363,6 +364,7 @@ export default function BotInfo() {
           if (data.bot?.autoBuyBaitIds !== undefined) setAutoBuyBaitIds(data.bot.autoBuyBaitIds || '')
           if (data.bot?.autoUseBaitId !== undefined) setAutoUseBaitId(coerceNumber(data.bot.autoUseBaitId, 0))
           if (data.bot?.autoBuyBaitThreshold !== undefined) setAutoBuyBaitThreshold(coerceNumber(data.bot.autoBuyBaitThreshold, 100))
+          if (data.bot?.autoBuyBaitThresholds !== undefined) setAutoBuyBaitThresholds(data.bot.autoBuyBaitThresholds || '')
           if (data.bot?.autoUseBaitOrder !== undefined) setAutoUseBaitOrder(data.bot.autoUseBaitOrder || '')
           if (data.bot?.autoBuyBaitQty !== undefined) setAutoBuyBaitQty(data.bot.autoBuyBaitQty || '')
         }
@@ -654,13 +656,28 @@ export default function BotInfo() {
     }
   }
 
-  // Atualiza threshold de auto-buy
-  const handleThresholdChange = async (value: number) => {
-    setAutoBuyBaitThreshold(value)
+  // Helper: parse per-bait thresholds map from string "1:100,3:50"
+  const parseThresholdsMap = (): Record<number, number> => {
+    const map: Record<number, number> = {}
+    if (autoBuyBaitThresholds) {
+      autoBuyBaitThresholds.split(',').forEach(entry => {
+        const [id, t] = entry.split(':').map(Number)
+        if (id !== undefined && t !== undefined && id >= 1 && id <= 10 && t > 0) map[id] = t
+      })
+    }
+    return map
+  }
+
+  // Atualiza threshold individual por bait
+  const handleBaitThresholdChange = async (baitId: number, value: number) => {
+    const map = parseThresholdsMap()
+    map[baitId] = value
+    const newValue = Object.entries(map).map(([id, t]) => `${id}:${t}`).join(',')
+    setAutoBuyBaitThresholds(newValue)
     try {
-      await updateBotConfig({ autoBuyBaitThreshold: value })
+      await updateBotConfig({ autoBuyBaitThresholds: newValue })
     } catch (err: any) {
-      // revert silently
+      setAutoBuyBaitThresholds(autoBuyBaitThresholds)
     }
   }
 
@@ -2924,35 +2941,7 @@ export default function BotInfo() {
 
           {autoBuyBait && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Threshold com display grande */}
-              <div style={{
-                padding: '12px',
-                borderRadius: '10px',
-                background: 'rgba(210, 153, 34, 0.06)',
-                border: '1px solid rgba(210, 153, 34, 0.12)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Comprar quando casts restantes menor que</span>
-                  <span style={{
-                    padding: '2px 10px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 700,
-                    background: 'rgba(210, 153, 34, 0.15)', color: 'var(--warning)',
-                  }}>{autoBuyBaitThreshold}</span>
-                </div>
-                <input
-                  type="range"
-                  min={10} max={500} step={10}
-                  value={autoBuyBaitThreshold}
-                  onChange={(e) => handleThresholdChange(parseInt(e.target.value))}
-                  style={{ width: '100%', accentColor: 'var(--warning)' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  <span>10</span>
-                  <span>250</span>
-                  <span>500</span>
-                </div>
-              </div>
-
-              {/* Iscas selecionaveis com quantidade */}
+              {/* Iscas selecionaveis com threshold e quantidade individuais */}
               <div style={{
                 padding: '10px',
                 borderRadius: '10px',
@@ -2967,67 +2956,107 @@ export default function BotInfo() {
                     const isSelected = autoBuyBaitIds.split(',').filter(Boolean).map(Number).includes(id)
                     const qtyMap = parseBuyQtyMap()
                     const qty = qtyMap[id] || 1
+                    const thresholdsMap = parseThresholdsMap()
+                    const baitThreshold = thresholdsMap[id] ?? autoBuyBaitThreshold
                     const costInfo = baitCosts[id]
                     const casts = baitInventory?.remainingCasts?.[id - 1] || 0
                     const isUnlocked = playerData ? playerData.rodLevel >= (costInfo?.unlockLevel || 0) : true
                     return (
                       <div key={id} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '6px 8px',
                         borderRadius: '8px',
                         background: isSelected ? 'rgba(210, 153, 34, 0.08)' : 'transparent',
                         border: `1px solid ${isSelected ? 'rgba(210, 153, 34, 0.15)' : 'transparent'}`,
                         opacity: isUnlocked ? 1 : 0.3,
                         transition: 'all 0.15s ease',
+                        overflow: 'hidden',
                       }}>
-                        {/* Checkbox visual */}
-                        <div
-                          onClick={() => isUnlocked && handleAutoBuyBaitIdsChange(id)}
-                          style={{
-                            width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
-                            border: `2px solid ${isSelected ? 'var(--warning)' : 'var(--border)'}`,
-                            background: isSelected ? 'var(--warning)' : 'transparent',
-                            cursor: isUnlocked ? 'pointer' : 'not-allowed',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            transition: 'all 0.15s ease',
-                          }}
-                        >
-                          {isSelected && <span style={{ color: '#000', fontSize: '0.65rem', fontWeight: 800 }}>{'\u2713'}</span>}
+                        {/* Linha principal: checkbox + nome + info */}
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                          padding: '6px 8px',
+                        }}>
+                          {/* Checkbox visual */}
+                          <div
+                            onClick={() => isUnlocked && handleAutoBuyBaitIdsChange(id)}
+                            style={{
+                              width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
+                              border: `2px solid ${isSelected ? 'var(--warning)' : 'var(--border)'}`,
+                              background: isSelected ? 'var(--warning)' : 'transparent',
+                              cursor: isUnlocked ? 'pointer' : 'not-allowed',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            {isSelected && <span style={{ color: '#000', fontSize: '0.65rem', fontWeight: 800 }}>{'\u2713'}</span>}
+                          </div>
+
+                          {/* Nome + info */}
+                          <div
+                            onClick={() => isUnlocked && handleAutoBuyBaitIdsChange(id)}
+                            style={{ flex: 1, minWidth: 0, cursor: isUnlocked ? 'pointer' : 'not-allowed' }}
+                          >
+                            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                              {BAIT_NAMES[id]}
+                            </div>
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', gap: '6px' }}>
+                              <span>{casts} casts</span>
+                              {costInfo && <span>| {formatFish(Math.round(costInfo.fishCost))} FISH + {costInfo.usdcFee.toFixed(2)} USDC</span>}
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Nome + info */}
-                        <div
-                          onClick={() => isUnlocked && handleAutoBuyBaitIdsChange(id)}
-                          style={{ flex: 1, minWidth: 0, cursor: isUnlocked ? 'pointer' : 'not-allowed' }}
-                        >
-                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                            {BAIT_NAMES[id]}
-                          </div>
-                          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'flex', gap: '6px' }}>
-                            <span>{casts} casts</span>
-                            {costInfo && <span>| {formatFish(Math.round(costInfo.fishCost))} FISH + {costInfo.usdcFee.toFixed(2)} USDC</span>}
-                          </div>
-                        </div>
-
-                        {/* Qty input */}
+                        {/* Sub-seção expandida: threshold slider + qty */}
                         {isSelected && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                            <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>x</span>
-                            <input
-                              type="number"
-                              min={1} max={100}
-                              value={qty}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => handleBuyQtyChange(id, parseInt(e.target.value) || 1)}
-                              style={{
-                                width: '44px', padding: '4px 6px', fontSize: '0.75rem',
-                                background: 'var(--bg-primary)', color: 'var(--text-primary)',
-                                border: '1px solid var(--border)', borderRadius: '6px', textAlign: 'center',
-                                fontWeight: 600,
-                              }}
-                            />
+                          <div style={{
+                            padding: '8px 12px 10px',
+                            background: 'rgba(210, 153, 34, 0.04)',
+                            borderTop: '1px solid rgba(210, 153, 34, 0.1)',
+                            display: 'flex', flexDirection: 'column', gap: '8px',
+                          }}>
+                            {/* Threshold slider */}
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Comprar quando &lt; casts</span>
+                                <span style={{
+                                  padding: '1px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700,
+                                  background: 'rgba(210, 153, 34, 0.15)', color: 'var(--warning)',
+                                }}>{baitThreshold}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={10} max={500} step={10}
+                                value={baitThreshold}
+                                onChange={(e) => handleBaitThresholdChange(id, parseInt(e.target.value))}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ width: '100%', accentColor: 'var(--warning)' }}
+                              />
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                                <span>10</span>
+                                <span>250</span>
+                                <span>500</span>
+                              </div>
+                            </div>
+
+                            {/* Qty input */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Quantidade por compra</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>x</span>
+                                <input
+                                  type="number"
+                                  min={1} max={100}
+                                  value={qty}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => handleBuyQtyChange(id, parseInt(e.target.value) || 1)}
+                                  style={{
+                                    width: '48px', padding: '4px 6px', fontSize: '0.75rem',
+                                    background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                                    border: '1px solid var(--border)', borderRadius: '6px', textAlign: 'center',
+                                    fontWeight: 600,
+                                  }}
+                                />
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>

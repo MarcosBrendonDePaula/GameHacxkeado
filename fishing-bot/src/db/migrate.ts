@@ -341,6 +341,15 @@ try {
   }
 }
 
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_buy_bait_thresholds TEXT DEFAULT '';`);
+  console.log("  ✓ Coluna 'auto_buy_bait_thresholds' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_buy_bait_thresholds:", e.message);
+  }
+}
+
 sqlite.close();
 
 console.log(`✅ Migração concluída com sucesso!`);

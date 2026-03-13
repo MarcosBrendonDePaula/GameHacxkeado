@@ -125,6 +125,11 @@ const publicApi = new Elysia({ prefix: "/api" })
     }
   })
 
+  // Monitoring dashboard (público, sem auth)
+  .get("/monitoring", async () => {
+    return botManager.getMonitoringData();
+  })
+
   // Busca Config e GlobalState do programa on-chain (público)
   .get("/game-config", async () => {
     try {
@@ -381,7 +386,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
   // Atualiza configurações do bot
   .patch("/bot", async ({ walletPubkey, body }) => {
     const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoRepairWaitMinMinutes, autoRepairWaitMaxMinutes, autoWaitDurability, autoWaitDurabilityMin, autoWaitDurabilityMax, autoWaitMinutesMin, autoWaitMinutesMax, autoUpgrade, autoRestartMinutes,
-      autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoUseBaitOrder, autoBuyBaitQty } = body as any;
+      autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoBuyBaitThresholds, autoUseBaitOrder, autoBuyBaitQty } = body as any;
 
     const result = await botManager.updateBotConfig(walletPubkey!, {
       delayMin,
@@ -403,6 +408,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
       autoBuyBaitIds,
       autoUseBaitId,
       autoBuyBaitThreshold,
+      autoBuyBaitThresholds,
       autoUseBaitOrder,
       autoBuyBaitQty,
     });
@@ -634,6 +640,10 @@ async function startServer() {
       `🧹 DB cleanup ativo: >${cleanupDays} dias a cada ${cleanupIntervalMinutes}min ` +
       `(logs=${cleanupLimits.maxLogsPerWallet}, results=${cleanupLimits.maxResultsPerWallet}, history=${cleanupLimits.maxHistoryPerWallet})`
     );
+
+    // Inicia coletor de métricas para monitoring dashboard
+    botManager.startMetricsCollector();
+    console.log(`📊 Metrics collector ativo (a cada 10s, retém 24h)`);
 
     // Auto-inicia bots que estavam ligados antes do restart
     botManager.autoStartBots().catch((err) => {

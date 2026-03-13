@@ -301,6 +301,7 @@ export async function updateBotConfig(params: {
   autoBuyBaitIds?: string;
   autoUseBaitId?: number;
   autoBuyBaitThreshold?: number;
+  autoBuyBaitThresholds?: string;
   autoUseBaitOrder?: string;
   autoBuyBaitQty?: string;
 }) {
@@ -565,6 +566,48 @@ export async function equipBait(baitType: number) {
     method: "POST",
     body: { baitType },
   });
+}
+
+/**
+ * Dados do monitoring dashboard (público, sem auth)
+ */
+export async function getMonitoring() {
+  return apiRequest<{
+    activeBots: number;
+    pausedBots: number;
+    offlineBots: number;
+    totalCatches: number;
+    totalMisses: number;
+    totalFish: number;
+    castsPerSecond: number;
+    cpuPercent: number;
+    memoryMB: number;
+    uptimeSeconds: number;
+    bots: Array<{
+      wallet: string;
+      status: "online" | "paused" | "offline";
+      catches: number;
+      misses: number;
+      fish: number;
+      uptime: string;
+      durability: number;
+      rodLevel: number;
+      pendingCasts: number;
+    }>;
+    hourlyHistory: Array<{
+      hour: string;
+      activeBots: number;
+      castsPerMinute: number;
+      totalFish: number;
+    }>;
+    recentMetrics: Array<{
+      timestamp: number;
+      activeBots: number;
+      castsPerSecond: number;
+      cpuPercent: number;
+      memoryMB: number;
+    }>;
+  }>("/monitoring", { requiresAuth: false });
 }
 
 /**

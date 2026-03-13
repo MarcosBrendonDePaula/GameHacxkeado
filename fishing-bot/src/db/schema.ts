@@ -38,7 +38,8 @@ export const bots = sqliteTable("bots", {
   autoBuyBaitIds: text("auto_buy_bait_ids").default(""), // IDs das iscas para auto-compra (ex: "1,3,7")
   autoUseBaitId: integer("auto_use_bait_id").default(0), // ID da isca para auto-equipar (0 = desativado) - DEPRECATED, usar autoUseBaitOrder
   autoUseBaitOrder: text("auto_use_bait_order").default(""), // Ordem de prioridade das iscas para auto-equipar (ex: "1,5,3")
-  autoBuyBaitThreshold: integer("auto_buy_bait_threshold").default(100), // Compra quando casts restantes < threshold
+  autoBuyBaitThreshold: integer("auto_buy_bait_threshold").default(100), // DEPRECATED: fallback global quando threshold individual nao definido
+  autoBuyBaitThresholds: text("auto_buy_bait_thresholds").default(""), // Threshold individual por isca (ex: "1:100,3:50,7:200")
   autoBuyBaitQty: text("auto_buy_bait_qty").default(""), // Quantidade por isca para auto-compra (ex: "1:5,3:10")
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })

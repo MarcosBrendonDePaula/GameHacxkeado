@@ -6,6 +6,7 @@ import BotInfo from './pages/BotInfo'
 import Logs from './pages/Logs'
 import AddWallet from './pages/AddWallet'
 import GameConfig from './pages/GameConfig'
+import Monitor from './pages/Monitor'
 
 function WalletStatus() {
   return (
@@ -20,6 +21,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: <DashboardIcon /> },
+    { path: '/monitor', label: 'Monitor', icon: <MonitorIcon /> },
     { path: '/game', label: 'On-Chain', icon: <ChainIcon /> },
   ]
 
@@ -107,6 +109,7 @@ function App() {
           <Layout>
             <Routes>
               <Route path="/" element={<BotInfo />} />
+              <Route path="/monitor" element={<Monitor />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/game" element={<GameConfig />} />
               <Route path="/config" element={<AddWallet />} />
@@ -139,6 +142,17 @@ function DashboardIcon() {
       <rect x="14" y="3" width="7" height="7"/>
       <rect x="14" y="14" width="7" height="7"/>
       <rect x="3" y="14" width="7" height="7"/>
+    </svg>
+  )
+}
+
+function MonitorIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v18h18" />
+      <path d="M18 17V9" />
+      <path d="M13 17V5" />
+      <path d="M8 17v-3" />
     </svg>
   )
 }

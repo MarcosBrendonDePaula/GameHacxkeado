@@ -253,6 +253,7 @@ class BotInstance {
     public autoBuyBaitIds: string = "",
     public autoUseBaitId: number = 0,
     public autoBuyBaitThreshold: number = 100,
+    public autoBuyBaitThresholds: string = "",
     public autoUseBaitOrder: string = "",
     public autoBuyBaitQty: string = ""
   ) {
@@ -653,7 +654,7 @@ class BotInstance {
                   }
                 }
 
-                // Auto-buy: compra iscas quando casts restantes < threshold
+                // Auto-buy: compra iscas quando casts restantes < threshold individual
                 if (this.autoBuyBait && this.autoBuyBaitIds && Date.now() >= this.autoBaitNextRetry) {
                   const baitIds = this.autoBuyBaitIds.split(",").map(Number).filter(n => n >= 1 && n <= 10);
                   // Parse per-bait quantities (format: "1:5,3:10")
@@ -666,11 +667,22 @@ class BotInstance {
                       }
                     });
                   }
+                  // Parse per-bait thresholds (format: "1:100,3:50")
+                  const thresholdMap: Record<number, number> = {};
+                  if (this.autoBuyBaitThresholds) {
+                    this.autoBuyBaitThresholds.split(",").forEach(entry => {
+                      const [id, t] = entry.split(":").map(Number);
+                      if (id !== undefined && t !== undefined && id >= 1 && id <= 10 && t > 0) {
+                        thresholdMap[id] = t;
+                      }
+                    });
+                  }
                   // Busca custos dinâmicos on-chain (escalados por dificuldade)
                   const dynamicCosts = await this.service!.fetchBaitDynamicCosts();
                   for (const baitId of baitIds) {
                     const remaining = baitState.remainingCasts[baitId - 1] || 0;
-                    if (remaining < this.autoBuyBaitThreshold) {
+                    const baitThreshold = thresholdMap[baitId] ?? this.autoBuyBaitThreshold;
+                    if (remaining < baitThreshold) {
                       const buyQty = qtyMap[baitId] || 1;
                       const unitFishCost = dynamicCosts?.[baitId]?.fishCost ?? BAIT_FISH_COST[baitId] ?? 0;
                       const unitUsdcCost = dynamicCosts?.[baitId]?.usdcFee ?? BAIT_USDC_COST[baitId] ?? 0;
@@ -690,7 +702,7 @@ class BotInstance {
                           break;
                         }
                       }
-                      this.addLog("info", `🪱 Auto-buy: ${buyQty}x ${BAIT_NAMES[baitId] || `tipo ${baitId}`} (${remaining} casts < ${this.autoBuyBaitThreshold}) custo: ${Math.round(totalFishCost).toLocaleString()} FISH + ${totalUsdcCost.toFixed(2)} USDC...`);
+                      this.addLog("info", `🪱 Auto-buy: ${buyQty}x ${BAIT_NAMES[baitId] || `tipo ${baitId}`} (${remaining} casts < ${baitThreshold}) custo: ${Math.round(totalFishCost).toLocaleString()} FISH + ${totalUsdcCost.toFixed(2)} USDC...`);
                       try {
                         const sig = await this.service!.buyRiverBait(baitId, buyQty);
                         if (sig) {
@@ -985,7 +997,232 @@ export class BotManager {
   // Bots em execução (em memória)
   private runningBots: Map<string, BotInstance> = new Map();
 
+  // Metricas de monitoramento (ultimas 24h, coleta a cada 10s)
+  private metricsHistory: Array<{
+    timestamp: number;
+    activeBots: number;
+    pausedBots: number;
+    totalCasts: number;
+    totalFish: number;
+    cpuPercent: number;
+    memoryMB: number;
+  }> = [];
+  private lastCastSnapshot = 0;
+  private lastCpuUsage = process.cpuUsage();
+  private lastMetricsTime = Date.now();
+  private metricsCollectorStarted = false;
+
   constructor() {}
+
+  startMetricsCollector() {
+    if (this.metricsCollectorStarted) return;
+    this.metricsCollectorStarted = true;
+    this.lastCpuUsage = process.cpuUsage();
+    this.lastMetricsTime = Date.now();
+
+    setInterval(() => {
+      try {
+        this.collectMetrics();
+      } catch (e) {
+        // silently ignore metrics errors
+      }
+    }, 10_000);
+  }
+
+  private collectMetrics() {
+    const now = Date.now();
+    const deltaMs = now - this.lastMetricsTime;
+    if (deltaMs < 1000) return;
+
+    let activeBots = 0;
+    let pausedBots = 0;
+    let totalCasts = 0;
+    let totalFish = 0;
+
+    for (const instance of this.runningBots.values()) {
+      const isPaused = instance.getAutomationState().isDurabilityPauseActive;
+      if (isPaused) {
+        pausedBots++;
+      } else {
+        activeBots++;
+      }
+      totalCasts += instance.stats.catches + instance.stats.misses;
+      totalFish += instance.stats.totalFish;
+    }
+
+    // CPU %
+    const currentCpu = process.cpuUsage(this.lastCpuUsage);
+    const cpuTotalMicros = currentCpu.user + currentCpu.system;
+    const cpuPercent = Math.min(100, (cpuTotalMicros / (deltaMs * 1000)) * 100);
+    this.lastCpuUsage = process.cpuUsage();
+    this.lastMetricsTime = now;
+
+    // RAM
+    const memoryMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+
+    this.metricsHistory.push({
+      timestamp: now,
+      activeBots,
+      pausedBots,
+      totalCasts,
+      totalFish,
+      cpuPercent: Math.round(cpuPercent * 10) / 10,
+      memoryMB,
+    });
+
+    // Trunca > 24h (8640 entradas a cada 10s)
+    const maxAge = 24 * 60 * 60 * 1000;
+    while (this.metricsHistory.length > 0 && this.metricsHistory[0]!.timestamp < now - maxAge) {
+      this.metricsHistory.shift();
+    }
+
+    this.lastCastSnapshot = totalCasts;
+  }
+
+  async getMonitoringData() {
+    const now = Date.now();
+
+    // Snapshot atual dos bots
+    let activeBots = 0;
+    let pausedBots = 0;
+    let totalCatches = 0;
+    let totalMisses = 0;
+    let totalFish = 0;
+    const botList: Array<{
+      wallet: string;
+      status: "online" | "paused" | "offline";
+      catches: number;
+      misses: number;
+      fish: number;
+      uptime: string;
+      durability: number;
+      rodLevel: number;
+      pendingCasts: number;
+    }> = [];
+
+    for (const instance of this.runningBots.values()) {
+      const isPaused = instance.getAutomationState().isDurabilityPauseActive;
+      if (isPaused) pausedBots++;
+      else activeBots++;
+
+      totalCatches += instance.stats.catches;
+      totalMisses += instance.stats.misses;
+      totalFish += instance.stats.totalFish;
+
+      botList.push({
+        wallet: instance.stats.walletPubkey.slice(0, 8),
+        status: isPaused ? "paused" : "online",
+        catches: instance.stats.catches,
+        misses: instance.stats.misses,
+        fish: Math.round(instance.stats.totalFish * 100) / 100,
+        uptime: instance.stats.uptime || "0m",
+        durability: instance.stats.durability?.percent ?? 0,
+        rodLevel: instance.stats.rodLevel ?? 0,
+        pendingCasts: instance.getPendingCount(),
+      });
+    }
+
+    // Total bots no banco
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(bots);
+    const totalBotsDb = countResult[0]?.count || 0;
+
+    // Casts/s dos ultimos 20s
+    const recentWindow = this.metricsHistory.filter(m => m.timestamp > now - 20_000);
+    let castsPerSecond = 0;
+    if (recentWindow.length >= 2) {
+      const oldest = recentWindow[0]!;
+      const newest = recentWindow[recentWindow.length - 1]!;
+      const castDelta = newest.totalCasts - oldest.totalCasts;
+      const timeDelta = (newest.timestamp - oldest.timestamp) / 1000;
+      if (timeDelta > 0) castsPerSecond = Math.round((castDelta / timeDelta) * 100) / 100;
+    }
+
+    // CPU/RAM atual
+    const lastMetric = this.metricsHistory.length > 0 ? this.metricsHistory[this.metricsHistory.length - 1]! : null;
+    const cpuPercent = lastMetric?.cpuPercent ?? 0;
+    const memoryMB = lastMetric?.memoryMB ?? Math.round(process.memoryUsage().rss / 1024 / 1024);
+
+    // Historico por hora (ultimas 24h)
+    const hourlyHistory: Array<{
+      hour: string;
+      activeBots: number;
+      castsPerMinute: number;
+      totalFish: number;
+    }> = [];
+
+    const hoursBack = 24;
+    for (let h = hoursBack - 1; h >= 0; h--) {
+      const hourStart = new Date(now);
+      hourStart.setMinutes(0, 0, 0);
+      hourStart.setHours(hourStart.getHours() - h);
+      const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
+
+      const hourMetrics = this.metricsHistory.filter(
+        m => m.timestamp >= hourStart.getTime() && m.timestamp < hourEnd.getTime()
+      );
+
+      if (hourMetrics.length >= 2) {
+        const avgBots = hourMetrics.reduce((s, m) => s + m.activeBots, 0) / hourMetrics.length;
+        const castsDelta = hourMetrics[hourMetrics.length - 1]!.totalCasts - hourMetrics[0]!.totalCasts;
+        const timeDelta = (hourMetrics[hourMetrics.length - 1]!.timestamp - hourMetrics[0]!.timestamp) / 60_000;
+        const fishDelta = hourMetrics[hourMetrics.length - 1]!.totalFish - hourMetrics[0]!.totalFish;
+
+        hourlyHistory.push({
+          hour: `${String(hourStart.getHours()).padStart(2, "0")}:00`,
+          activeBots: Math.round(avgBots * 10) / 10,
+          castsPerMinute: timeDelta > 0 ? Math.round((castsDelta / timeDelta) * 10) / 10 : 0,
+          totalFish: Math.round(fishDelta * 100) / 100,
+        });
+      } else {
+        hourlyHistory.push({
+          hour: `${String(hourStart.getHours()).padStart(2, "0")}:00`,
+          activeBots: 0,
+          castsPerMinute: 0,
+          totalFish: 0,
+        });
+      }
+    }
+
+    // Metricas recentes (ultimos 30min) para grafico CPU/RAM
+    const thirtyMinAgo = now - 30 * 60 * 1000;
+    const recentMetrics = this.metricsHistory
+      .filter(m => m.timestamp > thirtyMinAgo)
+      .map(m => {
+        // Recalcular casts/s local
+        const idx = this.metricsHistory.indexOf(m);
+        let cps = 0;
+        if (idx > 0) {
+          const prev = this.metricsHistory[idx - 1]!;
+          const dt = (m.timestamp - prev.timestamp) / 1000;
+          if (dt > 0) cps = Math.round(((m.totalCasts - prev.totalCasts) / dt) * 100) / 100;
+        }
+        return {
+          timestamp: m.timestamp,
+          activeBots: m.activeBots,
+          castsPerSecond: cps,
+          cpuPercent: m.cpuPercent,
+          memoryMB: m.memoryMB,
+        };
+      });
+
+    return {
+      activeBots,
+      pausedBots,
+      offlineBots: Math.max(0, totalBotsDb - activeBots - pausedBots),
+      totalCatches,
+      totalMisses,
+      totalFish: Math.round(totalFish * 100) / 100,
+      castsPerSecond,
+      cpuPercent,
+      memoryMB,
+      uptimeSeconds: Math.round(process.uptime()),
+      bots: botList,
+      hourlyHistory,
+      recentMetrics,
+    };
+  }
 
   /**
    * Obtém o bot de uma wallet do banco
@@ -1104,6 +1341,7 @@ export class BotManager {
         bot.autoBuyBaitIds ?? "",
         bot.autoUseBaitId ?? 0,
         bot.autoBuyBaitThreshold ?? 100,
+        bot.autoBuyBaitThresholds ?? "",
         bot.autoUseBaitOrder ?? "",
         bot.autoBuyBaitQty ?? ""
       );
@@ -1767,7 +2005,7 @@ export class BotManager {
       autoWaitMinutesMin?: number; autoWaitMinutesMax?: number;
       autoUpgrade?: boolean; autoRestartMinutes?: number;
       autoBuyBait?: boolean; autoBuyBaitIds?: string; autoUseBaitId?: number; autoBuyBaitThreshold?: number;
-      autoUseBaitOrder?: string; autoBuyBaitQty?: string;
+      autoBuyBaitThresholds?: string; autoUseBaitOrder?: string; autoBuyBaitQty?: string;
     }
   ): Promise<{ success: boolean; error?: string }> {
     try {
@@ -1795,6 +2033,7 @@ export class BotManager {
       if (config.autoBuyBaitIds !== undefined) updateData.autoBuyBaitIds = config.autoBuyBaitIds;
       if (config.autoUseBaitId !== undefined) updateData.autoUseBaitId = config.autoUseBaitId;
       if (config.autoBuyBaitThreshold !== undefined) updateData.autoBuyBaitThreshold = config.autoBuyBaitThreshold;
+      if (config.autoBuyBaitThresholds !== undefined) updateData.autoBuyBaitThresholds = config.autoBuyBaitThresholds;
       if (config.autoUseBaitOrder !== undefined) updateData.autoUseBaitOrder = config.autoUseBaitOrder;
       if (config.autoBuyBaitQty !== undefined) updateData.autoBuyBaitQty = config.autoBuyBaitQty;
 
@@ -1830,6 +2069,7 @@ export class BotManager {
         if (config.autoBuyBaitIds !== undefined) instance.autoBuyBaitIds = config.autoBuyBaitIds;
         if (config.autoUseBaitId !== undefined) instance.autoUseBaitId = config.autoUseBaitId;
         if (config.autoBuyBaitThreshold !== undefined) instance.autoBuyBaitThreshold = config.autoBuyBaitThreshold;
+        if (config.autoBuyBaitThresholds !== undefined) instance.autoBuyBaitThresholds = config.autoBuyBaitThresholds;
         if (config.autoUseBaitOrder !== undefined) instance.autoUseBaitOrder = config.autoUseBaitOrder;
         if (config.autoBuyBaitQty !== undefined) instance.autoBuyBaitQty = config.autoBuyBaitQty;
       }
