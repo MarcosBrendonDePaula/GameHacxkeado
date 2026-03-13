@@ -748,8 +748,11 @@ class BotInstance {
       this.autoRestartTimer = undefined;
     }
 
+    // Fecha o logMonitor mas aguarda um tick para que o castLoop
+    // perceba isRunning=false antes de perder a referencia
     if (this.logMonitor) {
       this.logMonitor.close();
+      await Bun.sleep(50);
       this.logMonitor = undefined;
     }
   }
@@ -794,16 +797,25 @@ class BotInstance {
         }
 
         if (this.durabilityPauseUntil > Date.now()) {
-          await Bun.sleep(Math.min(this.durabilityPauseUntil - Date.now(), 1000));
+          const remaining = this.durabilityPauseUntil - Date.now();
+          await Bun.sleep(Math.min(remaining, 30_000));
           continue;
         }
 
         if (this.durabilityPauseUntil !== 0) {
           await this.clearDurabilityPauseState();
           this.addLog("info", `⏳ Pausa por durabilidade concluída, retomando casts`, "repair");
+          // Re-verifica condições: stateUpdateLoop pode ter setado nova pausa durante o await
+          continue;
         }
 
         const signature = await this.service.castLine(false);
+
+        // Após o await, verifica se o bot foi parado durante o cast
+        if (!this.isRunning || !this.logMonitor) {
+          this.addLog("info", `🛑 Bot parado durante cast, descartando resultado`, "cast");
+          break;
+        }
 
         if (signature) {
           // Cast bem-sucedido - reseta contador de erros
