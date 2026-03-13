@@ -30,6 +30,8 @@ export const bots = sqliteTable("bots", {
   autoWaitDurabilityMax: integer("auto_wait_durability_max").default(25), // Durabilidade maxima da range (%)
   autoWaitMinutesMin: integer("auto_wait_minutes_min").default(0), // Espera minima quando entrar no modo pausa (min)
   autoWaitMinutesMax: integer("auto_wait_minutes_max").default(0), // Espera maxima quando entrar no modo pausa (min)
+  currentWaitThreshold: integer("current_wait_threshold").default(0), // Threshold sorteado atual para a pausa por durabilidade
+  durabilityPauseUntil: integer("durability_pause_until", { mode: "timestamp" }), // Quando a pausa atual termina
   autoUpgrade: integer("auto_upgrade", { mode: "boolean" }).default(false), // Auto-upgrade da vara
   autoRestartMinutes: integer("auto_restart_minutes").default(240), // Auto-restart a cada X minutos (0 = desabilitado)
   autoBuyBait: integer("auto_buy_bait", { mode: "boolean" }).default(false), // Auto-compra de iscas

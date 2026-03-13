@@ -171,6 +171,7 @@ interface BotAnalytics {
     successRate: number;
     fishPerHour: number;
     avgFishPerCatch: number;
+    observedMinutes: number;
   }>;
   todayCatches: number;
   todayMisses: number;
@@ -244,6 +245,8 @@ class BotInstance {
     public autoWaitDurabilityMax: number = 25,
     public autoWaitMinutesMin: number = 0,
     public autoWaitMinutesMax: number = 0,
+    restoredCurrentWaitThreshold: number = 0,
+    restoredDurabilityPauseUntil: number = 0,
     public autoUpgrade: boolean = false,
     public autoRestartMinutes: number = 240,
     public autoBuyBait: boolean = false,
@@ -255,7 +258,8 @@ class BotInstance {
   ) {
     // Sorteia threshold inicial dentro da range
     this.currentRepairThreshold = this.randomThreshold();
-    this.currentWaitThreshold = this.randomWaitThreshold();
+    this.currentWaitThreshold = restoredCurrentWaitThreshold > 0 ? restoredCurrentWaitThreshold : this.randomWaitThreshold();
+    this.durabilityPauseUntil = restoredDurabilityPauseUntil > Date.now() ? restoredDurabilityPauseUntil : 0;
 
     this.stats = {
       walletPubkey,
@@ -304,6 +308,35 @@ class BotInstance {
     const min = Math.min(this.autoWaitMinutesMin, this.autoWaitMinutesMax);
     const max = Math.max(this.autoWaitMinutesMin, this.autoWaitMinutesMax);
     return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  getAutomationState() {
+    const durabilityPauseRemainingMs = Math.max(0, this.durabilityPauseUntil - Date.now());
+
+    return {
+      currentRepairThreshold: this.currentRepairThreshold,
+      currentWaitThreshold: this.currentWaitThreshold,
+      durabilityPauseUntil: this.durabilityPauseUntil || null,
+      durabilityPauseRemainingMs,
+      isDurabilityPauseActive: durabilityPauseRemainingMs > 0,
+    };
+  }
+
+  private async persistDurabilityPauseState() {
+    await db
+      .update(bots)
+      .set({
+        currentWaitThreshold: this.currentWaitThreshold,
+        durabilityPauseUntil: this.durabilityPauseUntil > 0 ? new Date(this.durabilityPauseUntil) : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(bots.walletPubkey, this.walletPubkey));
+  }
+
+  async clearDurabilityPauseState(resetThreshold: boolean = true) {
+    this.durabilityPauseUntil = 0;
+    this.currentWaitThreshold = resetThreshold ? this.randomWaitThreshold() : 0;
+    await this.persistDurabilityPauseState();
   }
 
   async start() {
@@ -470,6 +503,7 @@ class BotInstance {
 
             if (waitMinutes > 0) {
               this.durabilityPauseUntil = Date.now() + waitMinutes * 60 * 1000;
+              await this.persistDurabilityPauseState();
               this.addLog(
                 "warn",
                 `⏳ Durabilidade ${durabilityPercent}% entrou na faixa de espera. Pausando casts por ${waitMinutes} min sem reparar. Próxima faixa em ~${this.currentWaitThreshold}%`,
@@ -765,7 +799,7 @@ class BotInstance {
         }
 
         if (this.durabilityPauseUntil !== 0) {
-          this.durabilityPauseUntil = 0;
+          await this.clearDurabilityPauseState();
           this.addLog("info", `⏳ Pausa por durabilidade concluída, retomando casts`, "repair");
         }
 
@@ -1050,6 +1084,8 @@ export class BotManager {
         bot.autoWaitDurabilityMax ?? 25,
         bot.autoWaitMinutesMin ?? 0,
         bot.autoWaitMinutesMax ?? 0,
+        bot.currentWaitThreshold ?? 0,
+        bot.durabilityPauseUntil ? new Date(bot.durabilityPauseUntil as any).getTime() : 0,
         bot.autoUpgrade ?? false,
         bot.autoRestartMinutes ?? 240,
         bot.autoBuyBait ?? false,
@@ -1160,6 +1196,11 @@ export class BotManager {
     };
 
     return instance.stats;
+  }
+
+  getBotAutomationState(walletPubkey: string) {
+    const instance = this.runningBots.get(walletPubkey);
+    return instance ? instance.getAutomationState() : null;
   }
 
   /**
@@ -1293,8 +1334,7 @@ export class BotManager {
 
     const elapsedDayMs = Math.max(1, now.getTime() - startOfDay.getTime());
     const fullDayMs = endOfDay.getTime() - startOfDay.getTime() + 1;
-    const projectedTotalFishToday = todayTotalFish > 0 ? (todayTotalFish / elapsedDayMs) * fullDayMs : 0;
-    const projectedCatchesToday = todayCatchesRows.length > 0 ? Math.round((todayCatchesRows.length / elapsedDayMs) * fullDayMs) : 0;
+    const remainingDayMs = Math.max(0, endOfDay.getTime() - now.getTime());
     const elapsedDayPercent = Math.min(100, (elapsedDayMs / fullDayMs) * 100);
 
     const windows = [
@@ -1309,6 +1349,10 @@ export class BotManager {
       const windowMisses = rows.length - windowCatches.length;
       const totalFish = windowCatches.reduce((sum, row) => sum + (row.fishAmount || 0), 0);
       const catchCount = windowCatches.length;
+      const firstTimestamp = rows.length > 0 ? new Date(rows[0]!.timestamp as any).getTime() : null;
+      const observedDurationMs = firstTimestamp !== null
+        ? Math.max(60_000, now.getTime() - firstTimestamp)
+        : windowDef.durationMs;
       return {
         key: windowDef.key,
         label: windowDef.label,
@@ -1316,10 +1360,68 @@ export class BotManager {
         misses: windowMisses,
         totalFish,
         successRate: computeSuccessRate(catchCount, windowMisses),
-        fishPerHour: totalFish * (60 * 60 * 1000 / windowDef.durationMs),
+        fishPerHour: totalFish * (60 * 60 * 1000 / observedDurationMs),
         avgFishPerCatch: catchCount > 0 ? totalFish / catchCount : 0,
+        observedMinutes: Math.max(1, Math.round(observedDurationMs / 60_000)),
       };
     });
+
+    const todayFirstTimestamp = todayRows.length > 0
+      ? new Date(todayRows[0]!.timestamp as any).getTime()
+      : null;
+    const todayObservedMs = todayFirstTimestamp !== null
+      ? Math.max(60_000, now.getTime() - todayFirstTimestamp)
+      : elapsedDayMs;
+    const todayObservedFishPerHour = todayTotalFish > 0
+      ? todayTotalFish * (60 * 60 * 1000 / todayObservedMs)
+      : 0;
+    const todayObservedCatchesPerHour = todayCatchesRows.length > 0
+      ? todayCatchesRows.length * (60 * 60 * 1000 / todayObservedMs)
+      : 0;
+
+    const blendCandidates: Array<{ rate: number; weight: number }> = [];
+    const window15m = windows.find((windowStat) => windowStat.key === "15m");
+    const window1h = windows.find((windowStat) => windowStat.key === "1h");
+    const window24h = windows.find((windowStat) => windowStat.key === "24h");
+
+    if (window15m && window15m.catches >= 2) {
+      blendCandidates.push({ rate: window15m.fishPerHour, weight: 0.35 });
+    }
+    if (window1h && window1h.catches >= 3) {
+      blendCandidates.push({ rate: window1h.fishPerHour, weight: 0.4 });
+    }
+    if (todayCatchesRows.length >= 5) {
+      blendCandidates.push({ rate: todayObservedFishPerHour, weight: 0.25 });
+    }
+    if (window24h && window24h.catches >= 10) {
+      blendCandidates.push({ rate: window24h.fishPerHour, weight: 0.1 });
+    }
+
+    const projectedFishPerHour = blendCandidates.length > 0
+      ? blendCandidates.reduce((sum, item) => sum + item.rate * item.weight, 0) /
+        blendCandidates.reduce((sum, item) => sum + item.weight, 0)
+      : todayTotalFish > 0
+        ? todayObservedFishPerHour
+        : 0;
+
+    const catchRateCandidates: Array<{ rate: number; weight: number }> = [];
+    if (window15m && window15m.catches + window15m.misses >= 5) {
+      catchRateCandidates.push({ rate: window15m.catches * (60 * 60 * 1000 / (window15m.observedMinutes * 60_000)), weight: 0.35 });
+    }
+    if (window1h && window1h.catches + window1h.misses >= 10) {
+      catchRateCandidates.push({ rate: window1h.catches * (60 * 60 * 1000 / (window1h.observedMinutes * 60_000)), weight: 0.4 });
+    }
+    if (todayCatchesRows.length >= 5) {
+      catchRateCandidates.push({ rate: todayObservedCatchesPerHour, weight: 0.25 });
+    }
+
+    const projectedCatchesPerHour = catchRateCandidates.length > 0
+      ? catchRateCandidates.reduce((sum, item) => sum + item.rate * item.weight, 0) /
+        catchRateCandidates.reduce((sum, item) => sum + item.weight, 0)
+      : todayObservedCatchesPerHour;
+
+    const projectedTotalFishToday = todayTotalFish + projectedFishPerHour * (remainingDayMs / (60 * 60 * 1000));
+    const projectedCatchesToday = Math.round(todayCatchesRows.length + projectedCatchesPerHour * (remainingDayMs / (60 * 60 * 1000)));
 
     let currentCatch = 0;
     let currentMiss = 0;
@@ -1671,6 +1773,10 @@ export class BotManager {
       if (config.autoWaitDurabilityMax !== undefined) updateData.autoWaitDurabilityMax = config.autoWaitDurabilityMax;
       if (config.autoWaitMinutesMin !== undefined) updateData.autoWaitMinutesMin = config.autoWaitMinutesMin;
       if (config.autoWaitMinutesMax !== undefined) updateData.autoWaitMinutesMax = config.autoWaitMinutesMax;
+      if (config.autoWaitDurability === false) {
+        updateData.currentWaitThreshold = 0;
+        updateData.durabilityPauseUntil = null;
+      }
       if (config.autoUpgrade !== undefined) updateData.autoUpgrade = config.autoUpgrade;
       if (config.autoRestartMinutes !== undefined) updateData.autoRestartMinutes = config.autoRestartMinutes;
       if (config.autoBuyBait !== undefined) updateData.autoBuyBait = config.autoBuyBait;
@@ -1705,6 +1811,7 @@ export class BotManager {
         if (config.autoWaitDurabilityMax !== undefined) instance.autoWaitDurabilityMax = config.autoWaitDurabilityMax;
         if (config.autoWaitMinutesMin !== undefined) instance.autoWaitMinutesMin = config.autoWaitMinutesMin;
         if (config.autoWaitMinutesMax !== undefined) instance.autoWaitMinutesMax = config.autoWaitMinutesMax;
+        if (config.autoWaitDurability === false) await instance.clearDurabilityPauseState(false);
         if (config.autoUpgrade !== undefined) instance.autoUpgrade = config.autoUpgrade;
         if (config.autoRestartMinutes !== undefined) instance.autoRestartMinutes = config.autoRestartMinutes;
         if (config.autoBuyBait !== undefined) instance.autoBuyBait = config.autoBuyBait;

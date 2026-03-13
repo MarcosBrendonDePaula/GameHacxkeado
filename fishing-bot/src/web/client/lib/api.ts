@@ -252,6 +252,13 @@ export async function getBot() {
     bot?: any;
     isRunning?: boolean;
     stats?: any;
+    automationState?: {
+      currentRepairThreshold: number;
+      currentWaitThreshold: number;
+      durabilityPauseUntil: number | null;
+      durabilityPauseRemainingMs: number;
+      isDurabilityPauseActive: boolean;
+    } | null;
   }>("/bot");
 }
 
@@ -297,10 +304,16 @@ export async function updateBotConfig(params: {
   autoUseBaitOrder?: string;
   autoBuyBaitQty?: string;
 }) {
-  return apiRequest<{ success: boolean; error?: string }>("/bot", {
+  const result = await apiRequest<{ success: boolean; error?: string }>("/bot", {
     method: "PATCH",
     body: params,
   });
+
+  if (!result.success) {
+    throw new Error(result.error || "Erro ao atualizar configuracao do bot");
+  }
+
+  return result;
 }
 
 /**
@@ -370,6 +383,7 @@ export async function getAnalytics() {
       successRate: number;
       fishPerHour: number;
       avgFishPerCatch: number;
+      observedMinutes: number;
     }>;
     todayCatches: number;
     todayMisses: number;

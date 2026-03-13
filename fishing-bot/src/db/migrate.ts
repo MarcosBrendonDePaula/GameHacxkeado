@@ -323,6 +323,24 @@ try {
   }
 }
 
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN current_wait_threshold INTEGER DEFAULT 0;`);
+  console.log("  ✓ Coluna 'current_wait_threshold' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna current_wait_threshold:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN durability_pause_until INTEGER;`);
+  console.log("  ✓ Coluna 'durability_pause_until' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna durability_pause_until:", e.message);
+  }
+}
+
 sqlite.close();
 
 console.log(`✅ Migração concluída com sucesso!`);

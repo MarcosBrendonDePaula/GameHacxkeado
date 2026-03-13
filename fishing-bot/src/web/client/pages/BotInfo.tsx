@@ -34,6 +34,14 @@ interface BotInfo {
   updatedAt: Date | null
 }
 
+interface BotAutomationState {
+  currentRepairThreshold: number
+  currentWaitThreshold: number
+  durabilityPauseUntil: number | null
+  durabilityPauseRemainingMs: number
+  isDurabilityPauseActive: boolean
+}
+
 interface CastResult {
   id: number
   type: 'catch' | 'miss'
@@ -79,6 +87,7 @@ interface BotAnalytics {
     successRate: number
     fishPerHour: number
     avgFishPerCatch: number
+    observedMinutes: number
   }>
   todayCatches: number
   todayMisses: number
@@ -173,6 +182,17 @@ function normalizeAnalytics(data: Partial<BotAnalytics> | null | undefined): Bot
   }
 }
 
+function coerceNumber(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
+}
+
 // Nomes dos baits (1-10)
 const BAIT_NAMES: Record<number, string> = {
   1: "Mudwiggler", 2: "Skitterbug", 3: "River Scraps",
@@ -191,6 +211,23 @@ interface BaitCostInfo {
 }
 
 // Formata números grandes: 75000 -> "75K", 1600000 -> "1.6M"
+interface AutomationConfig {
+  autoUpgrade: boolean
+  autoRepair: boolean
+  autoRepairMin: number
+  autoRepairMax: number
+  autoWaitDurability: boolean
+  autoWaitDurabilityMin: number
+  autoWaitDurabilityMax: number
+  autoWaitMinutesMin: number
+  autoWaitMinutesMax: number
+  autoRestartMinutes: number
+}
+
+function buildAutomationSnapshot(config: AutomationConfig): string {
+  return JSON.stringify(config)
+}
+
 function formatFish(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`
@@ -227,6 +264,7 @@ export default function BotInfo() {
   const [results, setResults] = useState<CastResult[]>([])
   const [history, setHistory] = useState<HistoryPoint[]>([])
   const [analytics, setAnalytics] = useState<BotAnalytics | null>(null)
+  const [automationState, setAutomationState] = useState<BotAutomationState | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [upgradeLoading, setUpgradeLoading] = useState(false)
@@ -256,6 +294,9 @@ export default function BotInfo() {
   const [autoBuyBaitQty, setAutoBuyBaitQty] = useState('')
   const [baitCosts, setBaitCosts] = useState<Record<number, BaitCostInfo>>({})
   const fetchAttemptsRef = useRef(0)
+  const hydratedConfigWalletRef = useRef<string | null>(null)
+  const lastAutomationSnapshotRef = useRef('')
+  const [automationSyncReady, setAutomationSyncReady] = useState(false)
   const [isBanned, setIsBanned] = useState(false)
   const [banCertainty, setBanCertainty] = useState(0)
 
@@ -284,26 +325,47 @@ export default function BotInfo() {
       if (data.exists) {
         setBotInfo(data.bot)
         setBotStats(data.stats)
+        setAutomationState(data.automationState || null)
         setIsRunning(data.isRunning || false)
 
-        // Busca configs de automacao do bot
-        if (data.bot?.autoUpgrade !== undefined) setAutoUpgrade(data.bot.autoUpgrade)
-        if (data.bot?.autoRepair !== undefined) setAutoRepair(data.bot.autoRepair)
-        if (data.bot?.autoRepairMin !== undefined) setAutoRepairMin(data.bot.autoRepairMin || 15)
-        if (data.bot?.autoRepairMax !== undefined) setAutoRepairMax(data.bot.autoRepairMax || 25)
-        if (data.bot?.autoWaitDurability !== undefined) setAutoWaitDurability(data.bot.autoWaitDurability)
-        if (data.bot?.autoWaitDurabilityMin !== undefined) setAutoWaitDurabilityMin(data.bot.autoWaitDurabilityMin || 15)
-        if (data.bot?.autoWaitDurabilityMax !== undefined) setAutoWaitDurabilityMax(data.bot.autoWaitDurabilityMax || 25)
-        if (data.bot?.autoWaitMinutesMin !== undefined) setAutoWaitMinutesMin(data.bot.autoWaitMinutesMin || 0)
-        if (data.bot?.autoWaitMinutesMax !== undefined) setAutoWaitMinutesMax(data.bot.autoWaitMinutesMax || 0)
-        if (data.bot?.autoRestartMinutes !== undefined) setAutoRestartMinutes(data.bot.autoRestartMinutes || 240)
-        // Busca config de auto-bait do bot
-        if (data.bot?.autoBuyBait !== undefined) setAutoBuyBait(data.bot.autoBuyBait)
-        if (data.bot?.autoBuyBaitIds !== undefined) setAutoBuyBaitIds(data.bot.autoBuyBaitIds || '')
-        if (data.bot?.autoUseBaitId !== undefined) setAutoUseBaitId(data.bot.autoUseBaitId || 0)
-        if (data.bot?.autoBuyBaitThreshold !== undefined) setAutoBuyBaitThreshold(data.bot.autoBuyBaitThreshold || 100)
-        if (data.bot?.autoUseBaitOrder !== undefined) setAutoUseBaitOrder(data.bot.autoUseBaitOrder || '')
-        if (data.bot?.autoBuyBaitQty !== undefined) setAutoBuyBaitQty(data.bot.autoBuyBaitQty || '')
+        if (walletPubkey && hydratedConfigWalletRef.current !== walletPubkey) {
+          hydratedConfigWalletRef.current = walletPubkey
+
+          const hydratedAutomationConfig: AutomationConfig = {
+            autoUpgrade: data.bot?.autoUpgrade ?? false,
+            autoRepair: data.bot?.autoRepair ?? false,
+            autoRepairMin: coerceNumber(data.bot?.autoRepairMin, 15),
+            autoRepairMax: coerceNumber(data.bot?.autoRepairMax, 25),
+            autoWaitDurability: data.bot?.autoWaitDurability ?? false,
+            autoWaitDurabilityMin: coerceNumber(data.bot?.autoWaitDurabilityMin, 15),
+            autoWaitDurabilityMax: coerceNumber(data.bot?.autoWaitDurabilityMax, 25),
+            autoWaitMinutesMin: coerceNumber(data.bot?.autoWaitMinutesMin, 0),
+            autoWaitMinutesMax: coerceNumber(data.bot?.autoWaitMinutesMax, 0),
+            autoRestartMinutes: coerceNumber(data.bot?.autoRestartMinutes, 240),
+          }
+
+          // Busca configs de automacao do bot apenas na hidratacao inicial da wallet
+          setAutoUpgrade(hydratedAutomationConfig.autoUpgrade)
+          setAutoRepair(hydratedAutomationConfig.autoRepair)
+          setAutoRepairMin(hydratedAutomationConfig.autoRepairMin)
+          setAutoRepairMax(hydratedAutomationConfig.autoRepairMax)
+          setAutoWaitDurability(hydratedAutomationConfig.autoWaitDurability)
+          setAutoWaitDurabilityMin(hydratedAutomationConfig.autoWaitDurabilityMin)
+          setAutoWaitDurabilityMax(hydratedAutomationConfig.autoWaitDurabilityMax)
+          setAutoWaitMinutesMin(hydratedAutomationConfig.autoWaitMinutesMin)
+          setAutoWaitMinutesMax(hydratedAutomationConfig.autoWaitMinutesMax)
+          setAutoRestartMinutes(hydratedAutomationConfig.autoRestartMinutes)
+          lastAutomationSnapshotRef.current = buildAutomationSnapshot(hydratedAutomationConfig)
+          setAutomationSyncReady(true)
+
+          // Busca config de auto-bait apenas uma vez para nao sobrescrever edicao local
+          if (data.bot?.autoBuyBait !== undefined) setAutoBuyBait(data.bot.autoBuyBait)
+          if (data.bot?.autoBuyBaitIds !== undefined) setAutoBuyBaitIds(data.bot.autoBuyBaitIds || '')
+          if (data.bot?.autoUseBaitId !== undefined) setAutoUseBaitId(coerceNumber(data.bot.autoUseBaitId, 0))
+          if (data.bot?.autoBuyBaitThreshold !== undefined) setAutoBuyBaitThreshold(coerceNumber(data.bot.autoBuyBaitThreshold, 100))
+          if (data.bot?.autoUseBaitOrder !== undefined) setAutoUseBaitOrder(data.bot.autoUseBaitOrder || '')
+          if (data.bot?.autoBuyBaitQty !== undefined) setAutoBuyBaitQty(data.bot.autoBuyBaitQty || '')
+        }
 
         // Busca resultados, historico, dados do player, balances, bait inventory, bait config e game config
         const [resultsData, historyData, analyticsData, playerStateData, balancesData, baitData, baitConfigData, gameConfigData] = await Promise.all([
@@ -661,8 +723,43 @@ export default function BotInfo() {
     if (isConnected && walletPubkey) {
       setLoading(true)
       fetchAttemptsRef.current = 0
+      hydratedConfigWalletRef.current = null
+      lastAutomationSnapshotRef.current = ''
+      setAutomationSyncReady(false)
     }
   }, [isConnected, walletPubkey])
+
+  const automationConfig: AutomationConfig = {
+    autoUpgrade,
+    autoRepair,
+    autoRepairMin,
+    autoRepairMax,
+    autoWaitDurability,
+    autoWaitDurabilityMin,
+    autoWaitDurabilityMax,
+    autoWaitMinutesMin,
+    autoWaitMinutesMax,
+    autoRestartMinutes,
+  }
+
+  const automationSnapshot = buildAutomationSnapshot(automationConfig)
+
+  useEffect(() => {
+    if (!isConnected || !walletPubkey || !botExists || !automationSyncReady) return
+    if (automationSnapshot === lastAutomationSnapshotRef.current) return
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        await updateBotConfig(automationConfig)
+        lastAutomationSnapshotRef.current = automationSnapshot
+        setActionError(null)
+      } catch (err) {
+        setActionError(getErrorMessage(err, 'Erro ao salvar automacao'))
+      }
+    }, 400)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [automationConfig, automationSnapshot, automationSyncReady, botExists, isConnected, walletPubkey])
 
   useEffect(() => {
     fetchData()
@@ -750,6 +847,9 @@ export default function BotInfo() {
   // Calcula cor da durabilidade
   const durabilityPercent = durability?.percent || 0
   const durabilityColor = durabilityPercent <= 20 ? 'var(--danger)' : durabilityPercent <= 50 ? 'var(--warning)' : 'var(--success)'
+  const waitThresholdPercent = autoWaitDurability ? Math.max(0, Math.min(100, automationState?.currentWaitThreshold ?? autoWaitDurabilityMax)) : null
+  const isDurabilityPauseActive = automationState?.isDurabilityPauseActive ?? false
+  const durabilityPauseRemainingSeconds = Math.max(0, Math.ceil((automationState?.durabilityPauseRemainingMs ?? 0) / 1000))
 
   // Helper para formatar tempo
   const formatTime = (totalSeconds: number): string => {
@@ -760,6 +860,14 @@ export default function BotInfo() {
     if (days > 0) return `${days}d ${hours}h ${minutes}m`
     if (hours > 0) return `${hours}h ${minutes}m`
     return `${minutes}m`
+  }
+
+  const formatCountdown = (totalSeconds: number): string => {
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+    return `${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
   }
 
   // Dados de upgrade computados
@@ -1243,6 +1351,7 @@ export default function BotInfo() {
                 background: 'rgba(0, 0, 0, 0.3)',
                 borderRadius: '5px',
                 overflow: 'hidden',
+                position: 'relative',
               }}>
                 <div style={{
                   width: `${durabilityPercent}%`,
@@ -1252,9 +1361,39 @@ export default function BotInfo() {
                   transition: 'width 0.5s ease',
                   boxShadow: `0 0 10px ${durabilityColor}60`,
                 }} />
+                {waitThresholdPercent !== null && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '-2px',
+                      bottom: '-2px',
+                      left: `calc(${waitThresholdPercent}% - 1px)`,
+                      width: '2px',
+                      background: 'var(--danger)',
+                      boxShadow: '0 0 8px rgba(248, 81, 73, 0.85)',
+                      pointerEvents: 'none',
+                    }}
+                    title={`Pausa por durabilidade em ~${waitThresholdPercent}%`}
+                  />
+                )}
               </div>
-              <div style={{ textAlign: 'right', fontSize: '0.75rem', color: durabilityColor, marginTop: '2px' }}>
-                {durabilityPercent}%
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginTop: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  {waitThresholdPercent !== null && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ width: '10px', height: '2px', background: 'var(--danger)', boxShadow: '0 0 6px rgba(248, 81, 73, 0.75)' }} />
+                      Pausa em ~{waitThresholdPercent}%
+                    </span>
+                  )}
+                  {isDurabilityPauseActive && (
+                    <span style={{ color: 'var(--warning)', fontWeight: 600 }}>
+                      Retoma em {formatCountdown(durabilityPauseRemainingSeconds)}
+                    </span>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '0.75rem', color: durabilityColor }}>
+                  {durabilityPercent}%
+                </div>
               </div>
             </div>
 
@@ -1812,6 +1951,9 @@ export default function BotInfo() {
                         <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)' }}>{windowStat.label}</span>
                         <span style={{ fontSize: '0.8rem', color: 'var(--success)', fontWeight: 700 }}>{windowStat.successRate.toFixed(1)}%</span>
                       </div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Baseado em {windowStat.observedMinutes} min observados
+                      </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                         <div>
                           <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fish/h</div>
@@ -1866,7 +2008,11 @@ export default function BotInfo() {
                     <MiniStat label="Catches Hoje" value={analytics.todayCatches.toLocaleString()} color="var(--success)" percent={Math.max(4, analytics.elapsedDayPercent)} />
                   </div>
 
-                  <DailyProjectionChart series={analytics.hourlySeries} />
+                  <DailyProjectionChart
+                    series={analytics.hourlySeries}
+                    todayTotalFish={analytics.todayTotalFish}
+                    projectedTotalFish={analytics.projectedTotalFishToday}
+                  />
 
                   <div style={{
                     display: 'flex',
@@ -2274,8 +2420,11 @@ export default function BotInfo() {
                 background: 'rgba(255, 184, 77, 0.05)',
                 border: '1px solid rgba(255, 184, 77, 0.12)',
               }}>
+                <div style={{ marginBottom: '12px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Quando a durabilidade cair nessa faixa, o bot pausa sem reparar.
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ativar espera abaixo de</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Durabilidade minima</span>
                   <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)' }}>{autoWaitDurabilityMin}%</span>
                 </div>
                 <input
@@ -2293,7 +2442,7 @@ export default function BotInfo() {
                 />
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ate</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Durabilidade maxima</span>
                   <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--warning)' }}>{autoWaitDurabilityMax}%</span>
                 </div>
                 <input
@@ -2320,6 +2469,9 @@ export default function BotInfo() {
                 flexDirection: 'column',
                 gap: '12px',
               }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  Ao entrar nessa faixa, o bot espera esse tempo antes de voltar a castar.
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Tempo de pausa</span>
                   <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--warning)' }}>
@@ -2338,13 +2490,11 @@ export default function BotInfo() {
                       onChange={(e) => {
                         const val = Math.max(0, parseInt(e.target.value || '0', 10))
                         setAutoWaitMinutesMin(val)
-                        if (val > autoWaitMinutesMax) setAutoWaitMinutesMax(val)
                       }}
                       onBlur={async () => {
                         try {
                           await updateBotConfig({
                             autoWaitMinutesMin,
-                            autoWaitMinutesMax: autoWaitMinutesMin > autoWaitMinutesMax ? autoWaitMinutesMin : autoWaitMinutesMax,
                           })
                         } catch {}
                       }}
@@ -2369,12 +2519,10 @@ export default function BotInfo() {
                       onChange={(e) => {
                         const val = Math.max(0, parseInt(e.target.value || '0', 10))
                         setAutoWaitMinutesMax(val)
-                        if (val < autoWaitMinutesMin) setAutoWaitMinutesMin(val)
                       }}
                       onBlur={async () => {
                         try {
                           await updateBotConfig({
-                            autoWaitMinutesMin: autoWaitMinutesMax < autoWaitMinutesMin ? autoWaitMinutesMax : autoWaitMinutesMin,
                             autoWaitMinutesMax,
                           })
                         } catch {}
@@ -3180,15 +3328,42 @@ function ProgressBar({ label, value, unit, color, percent }: { label: string; va
   )
 }
 
-function DailyProjectionChart({ series }: { series: Array<{ label: string; cumulativeFish: number; fish: number }> }) {
+function DailyProjectionChart({
+  series,
+  todayTotalFish,
+  projectedTotalFish,
+}: {
+  series: Array<{ label: string; cumulativeFish: number; fish: number }>
+  todayTotalFish: number
+  projectedTotalFish: number
+}) {
   const width = 680
-  const height = 180
-  const padding = 18
-  const maxValue = Math.max(1, ...series.map(point => point.cumulativeFish))
-  const points = series.map((point, index) => {
-    const x = padding + (index * (width - padding * 2)) / Math.max(1, series.length - 1)
-    const y = height - padding - ((point.cumulativeFish / maxValue) * (height - padding * 2))
-    return `${x},${y}`
+  const height = 220
+  const paddingX = 20
+  const topPadding = 18
+  const bottomPadding = 28
+  const chartHeight = height - topPadding - bottomPadding
+  const nowHour = new Date().getHours()
+  const clampedHour = Math.max(0, Math.min(23, nowHour))
+  const maxBarValue = Math.max(1, ...series.map(point => point.fish))
+  const maxLineValue = Math.max(1, todayTotalFish, projectedTotalFish, ...series.map(point => point.cumulativeFish))
+
+  const getX = (index: number) =>
+    paddingX + (index * (width - paddingX * 2)) / Math.max(1, series.length - 1)
+  const getBarHeight = (value: number) => (value / maxBarValue) * (chartHeight * 0.45)
+  const getLineY = (value: number) => topPadding + (1 - value / maxLineValue) * chartHeight
+
+  const realPoints = series
+    .map((point, index) => `${getX(index)},${getLineY(point.cumulativeFish)}`)
+    .join(' ')
+
+  const currentPointX = getX(clampedHour)
+  const currentPointY = getLineY(todayTotalFish)
+  const projectionPoints = Array.from({ length: 24 - clampedHour }, (_, offset) => {
+    const hourIndex = clampedHour + offset
+    const progress = offset / Math.max(1, 23 - clampedHour)
+    const projectedValue = todayTotalFish + (projectedTotalFish - todayTotalFish) * progress
+    return `${getX(hourIndex)},${getLineY(projectedValue)}`
   }).join(' ')
 
   return (
@@ -3198,24 +3373,45 @@ function DailyProjectionChart({ series }: { series: Array<{ label: string; cumul
       border: '1px solid var(--border)',
       background: 'linear-gradient(180deg, rgba(17, 24, 39, 0.45) 0%, rgba(0, 0, 0, 0.15) 100%)'
     }}>
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '160px', display: 'block' }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: '220px', display: 'block' }}>
         <defs>
           <linearGradient id="dailyFishLine" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor="var(--warning)" />
             <stop offset="100%" stopColor="var(--accent)" />
           </linearGradient>
+          <linearGradient id="dailyFishBars" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(88, 166, 255, 0.65)" />
+            <stop offset="100%" stopColor="rgba(88, 166, 255, 0.12)" />
+          </linearGradient>
         </defs>
         {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
-          const y = height - padding - ratio * (height - padding * 2)
+          const y = topPadding + ratio * chartHeight
           return (
             <line
               key={index}
-              x1={padding}
+              x1={paddingX}
               y1={y}
-              x2={width - padding}
+              x2={width - paddingX}
               y2={y}
               stroke="rgba(255,255,255,0.08)"
               strokeDasharray="4 6"
+            />
+          )
+        })}
+        {series.map((point, index) => {
+          const barHeight = getBarHeight(point.fish)
+          const x = getX(index) - 8
+          const y = height - bottomPadding - barHeight
+          return (
+            <rect
+              key={`${point.label}-bar`}
+              x={x}
+              y={y}
+              width="16"
+              height={barHeight}
+              rx="5"
+              fill="url(#dailyFishBars)"
+              stroke="rgba(88, 166, 255, 0.18)"
             />
           )
         })}
@@ -3225,16 +3421,28 @@ function DailyProjectionChart({ series }: { series: Array<{ label: string; cumul
           strokeWidth="3"
           strokeLinejoin="round"
           strokeLinecap="round"
-          points={points}
+          points={realPoints}
         />
-        {series.filter((_, index) => index % 4 === 0 || index === series.length - 1).map((point, index, filtered) => {
+        {projectionPoints.length > 0 && (
+          <polyline
+            fill="none"
+            stroke="rgba(251, 191, 36, 0.9)"
+            strokeWidth="3"
+            strokeDasharray="8 8"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            points={`${currentPointX},${currentPointY} ${projectionPoints}`}
+          />
+        )}
+        <circle cx={currentPointX} cy={currentPointY} r="4.5" fill="var(--accent)" stroke="white" strokeWidth="1.5" />
+        {series.filter((_, index) => index % 4 === 0 || index === series.length - 1).map((point, index) => {
           const originalIndex = series.findIndex(item => item.label === point.label)
-          const x = padding + (originalIndex * (width - padding * 2)) / Math.max(1, series.length - 1)
+          const x = getX(originalIndex)
           return (
             <text
               key={`${point.label}-${index}`}
               x={x}
-              y={height - 2}
+              y={height - 6}
               textAnchor="middle"
               fill="var(--text-muted)"
               fontSize="10"
@@ -3244,9 +3452,9 @@ function DailyProjectionChart({ series }: { series: Array<{ label: string; cumul
           )
         })}
       </svg>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-        <span>Acumulado horario de fish no dia</span>
-        <span>Pico: {maxValue.toFixed(2)} fish</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '0.76rem', color: 'var(--text-secondary)', flexWrap: 'wrap', gap: '10px' }}>
+        <span>Barras: fish por hora | Linha: acumulado real | Tracejado: projeção</span>
+        <span>Hoje: {todayTotalFish.toFixed(2)} | Estimado: {projectedTotalFish.toFixed(2)}</span>
       </div>
     </div>
   )

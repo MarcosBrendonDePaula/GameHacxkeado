@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { createServer } from "http";
 import path from "path";
 import fs from "fs";
+import "../db/migrate";
 import { botManager } from "./bot-manager-db";
 import { verifySignedRequest, ensureAccountExists, type AuthHeaders } from "../auth";
 import { db, accounts } from "../db";
@@ -317,6 +318,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
     const isRunning = botManager.isRunning(walletPubkey!);
     // Stats em tempo real quando rodando
     const stats = isRunning ? botManager.getBotStats(walletPubkey!) : null;
+    const automationState = isRunning ? botManager.getBotAutomationState(walletPubkey!) : null;
 
     return {
       exists: true,
@@ -347,6 +349,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
       },
       isRunning,
       stats,
+      automationState,
     };
   })
 
