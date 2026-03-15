@@ -387,7 +387,7 @@ export default function Monitor() {
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'var(--accent)' }}>Bot {i + 1}</td>
+                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'var(--accent)' }}>Bot {bot.id}</td>
                     <td style={{ padding: '10px 12px' }}><StatusBadge status={bot.status} /></td>
                     <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>Lv{bot.rodLevel}</td>
                     <td style={{ padding: '10px 12px', color: 'var(--success)', fontVariantNumeric: 'tabular-nums' }}>{bot.catches.toLocaleString()}</td>

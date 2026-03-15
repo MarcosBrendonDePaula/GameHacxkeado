@@ -1109,8 +1109,9 @@ export class BotManager {
     let totalCatches = 0;
     let totalMisses = 0;
     let totalFish = 0;
+    let botIndex = 0;
     const botList: Array<{
-      wallet: string;
+      id: number;
       status: "online" | "paused" | "offline";
       catches: number;
       misses: number;
@@ -1130,8 +1131,9 @@ export class BotManager {
       totalMisses += instance.stats.misses;
       totalFish += instance.stats.totalFish;
 
+      botIndex++;
       botList.push({
-        wallet: instance.stats.walletPubkey.slice(0, 8),
+        id: botIndex,
         status: isPaused ? "paused" : "online",
         catches: instance.stats.catches,
         misses: instance.stats.misses,

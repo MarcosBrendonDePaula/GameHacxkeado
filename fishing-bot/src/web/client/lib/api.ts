@@ -593,7 +593,7 @@ export async function getMonitoring() {
     memoryMB: number;
     uptimeSeconds: number;
     bots: Array<{
-      wallet: string;
+      id: number;
       status: "online" | "paused" | "offline";
       catches: number;
       misses: number;
