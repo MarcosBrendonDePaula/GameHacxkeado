@@ -323,7 +323,15 @@ const protectedApi = new Elysia({ prefix: "/api" })
     const isRunning = botManager.isRunning(walletPubkey!);
     // Stats em tempo real quando rodando
     const stats = isRunning ? botManager.getBotStats(walletPubkey!) : null;
-    const automationState = isRunning ? botManager.getBotAutomationState(walletPubkey!) : null;
+    const automationState = isRunning
+      ? botManager.getBotAutomationState(walletPubkey!)
+      : {
+          currentRepairThreshold: 0,
+          currentWaitThreshold: bot.currentWaitThreshold ?? 0,
+          durabilityPauseUntil: null,
+          durabilityPauseRemainingMs: 0,
+          isDurabilityPauseActive: false,
+        };
 
     return {
       exists: true,
@@ -429,6 +437,11 @@ const protectedApi = new Elysia({ prefix: "/api" })
   // Para bot
   .post("/bot/stop", async ({ walletPubkey }) => {
     return botManager.stopBot(walletPubkey!);
+  })
+
+  // Resorteia threshold de espera por durabilidade
+  .post("/bot/reshuffle-wait", async ({ walletPubkey }) => {
+    return botManager.reshuffleWaitThreshold(walletPubkey!);
   })
 
   // Inicia upgrade da vara

@@ -345,6 +345,15 @@ export async function stopBot() {
 }
 
 /**
+ * Resorteia threshold de espera por durabilidade
+ */
+export async function reshuffleWaitThreshold() {
+  return apiRequest<{ success: boolean; newThreshold?: number; error?: string }>("/bot/reshuffle-wait", {
+    method: "POST",
+  });
+}
+
+/**
  * Obtém resultados do bot
  */
 export async function getResults(params?: { limit?: number; offset?: number }) {

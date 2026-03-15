@@ -1,6 +1,6 @@
 {
   "name": "fishing-bot",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Bot automatizado para Fogo Fishing - executa casts de pesca automaticamente",
   "module": "src/index.ts",
   "type": "module",

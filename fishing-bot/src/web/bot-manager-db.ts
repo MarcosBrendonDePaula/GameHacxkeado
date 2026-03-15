@@ -228,6 +228,7 @@ class BotInstance {
   private autoUpgradeStartNextRetry = 0; // Cooldown para auto-start upgrade (timestamp)
   private autoBaitNextRetry = 0; // Cooldown para auto-bait (timestamp)
   private durabilityPauseUntil = 0;
+  private lastPauseCastTime = 0;
 
   constructor(
     public walletPubkey: string,
@@ -337,6 +338,11 @@ class BotInstance {
   async clearDurabilityPauseState(resetThreshold: boolean = true) {
     this.durabilityPauseUntil = 0;
     this.currentWaitThreshold = resetThreshold ? this.randomWaitThreshold() : 0;
+    await this.persistDurabilityPauseState();
+  }
+
+  async reshuffleWaitThreshold() {
+    this.currentWaitThreshold = this.randomWaitThreshold();
     await this.persistDurabilityPauseState();
   }
 
@@ -499,18 +505,16 @@ class BotInstance {
             durabilityPercent <= this.currentWaitThreshold &&
             this.durabilityPauseUntil === 0
           ) {
-            const waitMinutes = this.randomDurabilityWaitMinutes();
+            const waitMinutes = Math.max(1, this.randomDurabilityWaitMinutes());
+            this.durabilityPauseUntil = Date.now() + waitMinutes * 60 * 1000;
+            const oldThreshold = this.currentWaitThreshold;
             this.currentWaitThreshold = this.randomWaitThreshold();
-
-            if (waitMinutes > 0) {
-              this.durabilityPauseUntil = Date.now() + waitMinutes * 60 * 1000;
-              await this.persistDurabilityPauseState();
-              this.addLog(
-                "warn",
-                `⏳ Durabilidade ${durabilityPercent}% entrou na faixa de espera. Pausando casts por ${waitMinutes} min sem reparar. Próxima faixa em ~${this.currentWaitThreshold}%`,
-                "repair"
-              );
-            }
+            await this.persistDurabilityPauseState();
+            this.addLog(
+              "warn",
+              `⏳ Durabilidade ${durabilityPercent}% atingiu threshold ${oldThreshold}%. Pausando casts por ${waitMinutes} min sem reparar. Próxima faixa em ~${this.currentWaitThreshold}%`,
+              "repair"
+            );
           }
 
           // Calcula progresso do upgrade para stats
@@ -735,7 +739,8 @@ class BotInstance {
           }
         }
 
-        await Bun.sleep(updateInterval);
+        const isPaused = this.durabilityPauseUntil > Date.now();
+        await Bun.sleep(isPaused ? 60_000 : updateInterval);
       } catch (error: any) {
         consecutiveErrors++;
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
@@ -809,12 +814,28 @@ class BotInstance {
         }
 
         if (this.durabilityPauseUntil > Date.now()) {
+          const PAUSE_CAST_INTERVAL = 60_000; // 1 cast a cada 60s para atualizar blockchain
+          const timeSinceLastPauseCast = Date.now() - this.lastPauseCastTime;
+
+          if (timeSinceLastPauseCast >= PAUSE_CAST_INTERVAL && this.service) {
+            try {
+              const sig = await this.service.castLine(false);
+              if (sig && this.logMonitor) {
+                this.logMonitor.registerCast(sig);
+                this.pendingCount++;
+                this.lastPauseCastTime = Date.now();
+                this.addLog("info", `🔄 Cast de manutenção (pausa ativa) Sig: ${sig.slice(0, 12)}...`, "cast");
+              }
+            } catch {}
+          }
+
           const remaining = this.durabilityPauseUntil - Date.now();
           await Bun.sleep(Math.min(remaining, 30_000));
           continue;
         }
 
         if (this.durabilityPauseUntil !== 0) {
+          this.lastPauseCastTime = 0;
           await this.clearDurabilityPauseState();
           this.addLog("info", `⏳ Pausa por durabilidade concluída, retomando casts`, "repair");
           // Re-verifica condições: stateUpdateLoop pode ter setado nova pausa durante o await
@@ -1451,6 +1472,29 @@ export class BotManager {
   getBotAutomationState(walletPubkey: string) {
     const instance = this.runningBots.get(walletPubkey);
     return instance ? instance.getAutomationState() : null;
+  }
+
+  async reshuffleWaitThreshold(walletPubkey: string) {
+    const instance = this.runningBots.get(walletPubkey);
+    if (instance) {
+      await instance.reshuffleWaitThreshold();
+      return { success: true, newThreshold: instance.getAutomationState().currentWaitThreshold };
+    }
+
+    // Bot parado: calcula direto do banco
+    const bot = await this.getBot(walletPubkey);
+    if (!bot) return { success: false, error: "Bot não encontrado" };
+
+    const min = Math.min(bot.autoWaitDurabilityMin ?? 15, bot.autoWaitDurabilityMax ?? 25);
+    const max = Math.max(bot.autoWaitDurabilityMin ?? 15, bot.autoWaitDurabilityMax ?? 25);
+    const newThreshold = Math.floor(Math.random() * (max - min + 1)) + min;
+
+    await db
+      .update(bots)
+      .set({ currentWaitThreshold: newThreshold, updatedAt: new Date() })
+      .where(eq(bots.walletPubkey, walletPubkey));
+
+    return { success: true, newThreshold };
   }
 
   /**

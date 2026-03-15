@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
-import { getBot, getResults, getHistory, getAnalytics, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances, getBaitInventory, buyBait, equipBait, getBaitConfig, getGameConfig } from '../lib/api'
+import { getBot, getResults, getHistory, getAnalytics, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances, getBaitInventory, buyBait, equipBait, getBaitConfig, getGameConfig, reshuffleWaitThreshold } from '../lib/api'
 import LogsTab from './Logs'
 import ConfigTab from './AddWallet'
 
@@ -943,8 +943,12 @@ export default function BotInfo() {
           }}>
             Dashboard
           </h2>
-          <span className={`status-badge ${isRunning ? 'online' : 'offline'}`}>
-            {isRunning ? 'Online' : 'Offline'}
+          <span className={`status-badge ${isRunning ? (isDurabilityPauseActive ? 'paused' : 'online') : 'offline'}`} style={isDurabilityPauseActive ? {
+            background: 'rgba(210, 153, 34, 0.15)',
+            color: 'var(--warning)',
+            border: '1px solid rgba(210, 153, 34, 0.3)',
+          } : undefined}>
+            {isRunning ? (isDurabilityPauseActive ? 'Pausado' : 'Online') : 'Offline'}
           </span>
           {isBanned && (
             <span style={{
@@ -1400,6 +1404,35 @@ export default function BotInfo() {
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ width: '10px', height: '2px', background: 'var(--danger)', boxShadow: '0 0 6px rgba(248, 81, 73, 0.75)' }} />
                       Pausa em ~{waitThresholdPercent}%
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await reshuffleWaitThreshold()
+                            if (res.success) {
+                              setAutomationState(prev => prev ? { ...prev, currentWaitThreshold: res.newThreshold! } : prev)
+                            }
+                          } catch {}
+                        }}
+                        title="Sortear novo threshold de espera"
+                        style={{
+                          background: 'rgba(248, 81, 73, 0.12)',
+                          border: '1px solid rgba(248, 81, 73, 0.25)',
+                          borderRadius: '4px',
+                          color: 'var(--danger)',
+                          cursor: 'pointer',
+                          padding: '1px 5px',
+                          fontSize: '0.68rem',
+                          lineHeight: 1.2,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
+                          <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                        </svg>
+                      </button>
                     </span>
                   )}
                   {isDurabilityPauseActive && (
@@ -2555,6 +2588,104 @@ export default function BotInfo() {
                     />
                   </label>
                 </div>
+              </div>
+
+              {/* Status atual: durabilidade + threshold + reshuffle */}
+              <div style={{
+                padding: '14px',
+                borderRadius: '10px',
+                background: 'rgba(255, 184, 77, 0.08)',
+                border: '1px solid rgba(255, 184, 77, 0.18)',
+              }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--warning)', marginBottom: '12px' }}>
+                  Status atual
+                </div>
+
+                {/* Mini barra de durabilidade com marcador do threshold */}
+                <div style={{ position: 'relative', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', overflow: 'visible', marginBottom: '8px' }}>
+                  <div style={{
+                    width: `${durabilityPercent}%`,
+                    height: '100%',
+                    borderRadius: '4px',
+                    background: durabilityColor,
+                    transition: 'width 0.5s ease',
+                  }} />
+                  {waitThresholdPercent !== null && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '-3px',
+                        bottom: '-3px',
+                        left: `calc(${waitThresholdPercent}% - 1px)`,
+                        width: '3px',
+                        background: 'var(--danger)',
+                        borderRadius: '2px',
+                        boxShadow: '0 0 8px rgba(248, 81, 73, 0.85)',
+                      }}
+                      title={`Vai pausar em ~${waitThresholdPercent}%`}
+                    />
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Durabilidade</span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: durabilityColor }}>{durabilityPercent}%</span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '10px', height: '3px', background: 'var(--danger)', borderRadius: '2px', boxShadow: '0 0 6px rgba(248, 81, 73, 0.75)' }} />
+                    Vai pausar em
+                  </span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--danger)' }}>~{waitThresholdPercent ?? '-'}%</span>
+                </div>
+
+                {isDurabilityPauseActive && (
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px',
+                    padding: '8px 10px', borderRadius: '8px',
+                    background: 'rgba(210, 153, 34, 0.1)', border: '1px solid rgba(210, 153, 34, 0.2)',
+                  }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--warning)', fontWeight: 600 }}>Pausado - retoma em</span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--warning)' }}>{formatCountdown(durabilityPauseRemainingSeconds)}</span>
+                  </div>
+                )}
+
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await reshuffleWaitThreshold()
+                      if (res.success) {
+                        setAutomationState(prev => prev ? { ...prev, currentWaitThreshold: res.newThreshold! } : prev)
+                      }
+                    } catch {}
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: 'rgba(248, 81, 73, 0.1)',
+                    border: '1px solid rgba(248, 81, 73, 0.25)',
+                    color: 'var(--danger)',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248, 81, 73, 0.18)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(248, 81, 73, 0.1)' }}
+                  title="Sortear novo ponto de pausa dentro da faixa configurada"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
+                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                  </svg>
+                  Sortear novo ponto de pausa
+                </button>
               </div>
             </div>
           )}

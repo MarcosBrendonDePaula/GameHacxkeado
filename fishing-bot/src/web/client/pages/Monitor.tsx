@@ -370,7 +370,7 @@ export default function Monitor() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Wallet', 'Status', 'Rod', 'Catches', 'Misses', 'Fish', 'Durability', 'Uptime', 'Pending'].map(h => (
+                  {['#', 'Status', 'Rod', 'Catches', 'Misses', 'Fish', 'Durability', 'Uptime', 'Pending'].map(h => (
                     <th key={h} style={{
                       padding: '10px 12px', textAlign: 'left', color: 'var(--text-muted)',
                       fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
@@ -387,7 +387,7 @@ export default function Monitor() {
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'var(--accent)' }}>{bot.wallet}...</td>
+                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'var(--accent)' }}>Bot {i + 1}</td>
                     <td style={{ padding: '10px 12px' }}><StatusBadge status={bot.status} /></td>
                     <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>Lv{bot.rodLevel}</td>
                     <td style={{ padding: '10px 12px', color: 'var(--success)', fontVariantNumeric: 'tabular-nums' }}>{bot.catches.toLocaleString()}</td>
