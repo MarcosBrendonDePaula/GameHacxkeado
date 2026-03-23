@@ -259,7 +259,8 @@ class BotInstance {
     public autoBuyBaitThresholds: string = "",
     public autoUseBaitOrder: string = "",
     public autoBuyBaitQty: string = "",
-    public autoBuyBaitStock: string = ""
+    public autoBuyBaitStock: string = "",
+    public autoStockEnabled: boolean = false
   ) {
     // Sorteia threshold inicial dentro da range
     this.currentRepairThreshold = this.randomThreshold();
@@ -704,7 +705,7 @@ class BotInstance {
 
                     // Decide se precisa comprar: threshold normal OU modo estoque
                     const needsBuyThreshold = remaining < baitThreshold;
-                    const needsBuyStock = stockTarget > 0 && remaining < stockTarget;
+                    const needsBuyStock = this.autoStockEnabled && stockTarget > 0 && remaining < stockTarget;
 
                     if (needsBuyThreshold || needsBuyStock) {
                       const buyQty = qtyMap[baitId] || 1;
@@ -1399,7 +1400,8 @@ export class BotManager {
         bot.autoBuyBaitThresholds ?? "",
         bot.autoUseBaitOrder ?? "",
         bot.autoBuyBaitQty ?? "",
-        bot.autoBuyBaitStock ?? ""
+        bot.autoBuyBaitStock ?? "",
+        bot.autoStockEnabled ?? false
       );
 
       // Configura callback de restart
@@ -2084,7 +2086,7 @@ export class BotManager {
       autoWaitMinutesMin?: number; autoWaitMinutesMax?: number;
       autoUpgrade?: boolean; autoRestartMinutes?: number;
       autoBuyBait?: boolean; autoBuyBaitIds?: string; autoUseBaitId?: number; autoBuyBaitThreshold?: number;
-      autoBuyBaitThresholds?: string; autoUseBaitOrder?: string; autoBuyBaitQty?: string; autoBuyBaitStock?: string;
+      autoBuyBaitThresholds?: string; autoUseBaitOrder?: string; autoBuyBaitQty?: string; autoBuyBaitStock?: string; autoStockEnabled?: boolean;
     }
   ): Promise<{ success: boolean; error?: string }> {
     try {
@@ -2116,6 +2118,7 @@ export class BotManager {
       if (config.autoUseBaitOrder !== undefined) updateData.autoUseBaitOrder = config.autoUseBaitOrder;
       if (config.autoBuyBaitQty !== undefined) updateData.autoBuyBaitQty = config.autoBuyBaitQty;
       if (config.autoBuyBaitStock !== undefined) updateData.autoBuyBaitStock = config.autoBuyBaitStock;
+      if (config.autoStockEnabled !== undefined) updateData.autoStockEnabled = config.autoStockEnabled;
 
       await db
         .update(bots)
@@ -2153,6 +2156,7 @@ export class BotManager {
         if (config.autoUseBaitOrder !== undefined) instance.autoUseBaitOrder = config.autoUseBaitOrder;
         if (config.autoBuyBaitQty !== undefined) instance.autoBuyBaitQty = config.autoBuyBaitQty;
         if (config.autoBuyBaitStock !== undefined) instance.autoBuyBaitStock = config.autoBuyBaitStock;
+        if (config.autoStockEnabled !== undefined) instance.autoStockEnabled = config.autoStockEnabled;
       }
 
       return { success: true };
@@ -2202,6 +2206,7 @@ export class BotManager {
     autoBuyBaitThresholds: string;
     autoBuyBaitQty: string;
     autoUseBaitOrder: string;
+    autoBuyBaitStock?: string;
   }): Promise<{ success: boolean; preset?: BaitPreset; error?: string }> {
     try {
       const existing = await db
@@ -2222,6 +2227,7 @@ export class BotManager {
           autoBuyBaitThresholds: data.autoBuyBaitThresholds,
           autoBuyBaitQty: data.autoBuyBaitQty,
           autoUseBaitOrder: data.autoUseBaitOrder,
+          autoBuyBaitStock: data.autoBuyBaitStock || "",
         })
         .returning();
 
@@ -2237,6 +2243,7 @@ export class BotManager {
     autoBuyBaitThresholds?: string;
     autoBuyBaitQty?: string;
     autoUseBaitOrder?: string;
+    autoBuyBaitStock?: string;
   }): Promise<{ success: boolean; error?: string }> {
     try {
       const updateData: Record<string, any> = { updatedAt: new Date() };
@@ -2245,6 +2252,7 @@ export class BotManager {
       if (data.autoBuyBaitThresholds !== undefined) updateData.autoBuyBaitThresholds = data.autoBuyBaitThresholds;
       if (data.autoBuyBaitQty !== undefined) updateData.autoBuyBaitQty = data.autoBuyBaitQty;
       if (data.autoUseBaitOrder !== undefined) updateData.autoUseBaitOrder = data.autoUseBaitOrder;
+      if (data.autoBuyBaitStock !== undefined) updateData.autoBuyBaitStock = data.autoBuyBaitStock;
 
       await db
         .update(baitPresets)
@@ -2338,6 +2346,7 @@ export class BotManager {
         autoBuyBaitThresholds: source.autoBuyBaitThresholds,
         autoBuyBaitQty: source.autoBuyBaitQty,
         autoUseBaitOrder: source.autoUseBaitOrder,
+        autoBuyBaitStock: source.autoBuyBaitStock,
       });
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -2363,6 +2372,7 @@ export class BotManager {
         autoBuyBaitThresholds: preset.autoBuyBaitThresholds,
         autoBuyBaitQty: preset.autoBuyBaitQty,
         autoUseBaitOrder: preset.autoUseBaitOrder,
+        autoBuyBaitStock: preset.autoBuyBaitStock,
       });
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -2588,6 +2598,7 @@ export class BotManager {
         autoBuyBaitThresholds: bot.autoBuyBaitThresholds || "",
         autoBuyBaitQty: bot.autoBuyBaitQty || "",
         autoUseBaitOrder: bot.autoUseBaitOrder || "",
+        autoBuyBaitStock: bot.autoBuyBaitStock || "",
       });
     } catch (error: any) {
       return { success: false, error: error.message };

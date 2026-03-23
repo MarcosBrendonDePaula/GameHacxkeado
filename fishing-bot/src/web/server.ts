@@ -360,6 +360,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
         autoBuyBaitQty: bot.autoBuyBaitQty,
         autoBuyBaitStock: bot.autoBuyBaitStock,
         autoBuyBaitThresholds: bot.autoBuyBaitThresholds,
+        autoStockEnabled: bot.autoStockEnabled,
         enabled: bot.enabled,
         createdAt: bot.createdAt,
         updatedAt: bot.updatedAt,
@@ -398,7 +399,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
   // Atualiza configurações do bot
   .patch("/bot", async ({ walletPubkey, body }) => {
     const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoRepairWaitMinMinutes, autoRepairWaitMaxMinutes, autoWaitDurability, autoWaitDurabilityMin, autoWaitDurabilityMax, autoWaitMinutesMin, autoWaitMinutesMax, autoUpgrade, autoRestartMinutes,
-      autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoBuyBaitThresholds, autoUseBaitOrder, autoBuyBaitQty, autoBuyBaitStock } = body as any;
+      autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoBuyBaitThresholds, autoUseBaitOrder, autoBuyBaitQty, autoBuyBaitStock, autoStockEnabled } = body as any;
 
     const result = await botManager.updateBotConfig(walletPubkey!, {
       delayMin,
@@ -424,6 +425,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
       autoUseBaitOrder,
       autoBuyBaitQty,
       autoBuyBaitStock,
+      autoStockEnabled,
     });
 
     return result;
@@ -495,7 +497,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
 
   // Cria preset manualmente
   .post("/presets", async ({ walletPubkey, body }) => {
-    const { name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder } = body as any;
+    const { name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder, autoBuyBaitStock } = body as any;
     if (!name || typeof name !== "string") {
       return { success: false, error: "Nome obrigatório" };
     }
@@ -505,6 +507,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
       autoBuyBaitThresholds: autoBuyBaitThresholds || "",
       autoBuyBaitQty: autoBuyBaitQty || "",
       autoUseBaitOrder: autoUseBaitOrder || "",
+      autoBuyBaitStock: autoBuyBaitStock || "",
     });
   })
 
@@ -532,9 +535,9 @@ const protectedApi = new Elysia({ prefix: "/api" })
     if (isNaN(presetId)) {
       return { success: false, error: "ID inválido" };
     }
-    const { name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder } = body as any;
+    const { name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder, autoBuyBaitStock } = body as any;
     return botManager.updatePreset(walletPubkey!, presetId, {
-      name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder,
+      name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder, autoBuyBaitStock,
     });
   })
 

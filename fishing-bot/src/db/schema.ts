@@ -42,6 +42,7 @@ export const bots = sqliteTable("bots", {
   autoBuyBaitThresholds: text("auto_buy_bait_thresholds").default(""), // Threshold individual por isca (ex: "1:100,3:50,7:200")
   autoBuyBaitQty: text("auto_buy_bait_qty").default(""), // Quantidade por isca para auto-compra (ex: "1:5,3:10")
   autoBuyBaitStock: text("auto_buy_bait_stock").default(""), // Manter estoque por isca (ex: "1:500,3:1000") - compra quando cair abaixo
+  autoStockEnabled: integer("auto_stock_enabled", { mode: "boolean" }).default(false), // Toggle para habilitar modo estoque
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
@@ -105,6 +106,7 @@ export const baitPresets = sqliteTable("bait_presets", {
   autoBuyBaitThresholds: text("auto_buy_bait_thresholds").notNull().default(""), // thresholds (para auto-buy config)
   autoBuyBaitQty: text("auto_buy_bait_qty").notNull().default(""),         // Meta: quanto comprar (ex: "1:10,6:50")
   autoUseBaitOrder: text("auto_use_bait_order").notNull().default(""),     // Ordem de prioridade
+  autoBuyBaitStock: text("auto_buy_bait_stock").notNull().default(""),     // Manter estoque (ex: "1:500,3:1000")
   // Execução do carrinho
   purchasedQty: text("purchased_qty").notNull().default(""),               // Progresso: quanto já comprou (ex: "1:3,6:12")
   status: text("status", { enum: ["idle", "running", "done", "error"] }).notNull().default("idle"),

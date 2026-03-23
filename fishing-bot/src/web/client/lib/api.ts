@@ -588,6 +588,7 @@ export interface BaitPreset {
   autoBuyBaitThresholds: string;
   autoBuyBaitQty: string;
   autoUseBaitOrder: string;
+  autoBuyBaitStock: string;
   purchasedQty: string;
   status: "idle" | "running" | "done" | "error";
   statusMessage: string | null;
@@ -606,6 +607,7 @@ export async function createPreset(data: {
   autoBuyBaitThresholds: string;
   autoBuyBaitQty: string;
   autoUseBaitOrder: string;
+  autoBuyBaitStock?: string;
 }) {
   return apiRequest<{ success: boolean; preset?: BaitPreset; error?: string }>("/presets", {
     method: "POST",

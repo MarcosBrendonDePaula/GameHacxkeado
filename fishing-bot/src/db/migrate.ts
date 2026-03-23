@@ -416,6 +416,26 @@ try {
   }
 }
 
+// Migração: Adicionar coluna auto_buy_bait_stock ao bait_presets
+try {
+  sqlite.exec(`ALTER TABLE bait_presets ADD COLUMN auto_buy_bait_stock TEXT NOT NULL DEFAULT '';`);
+  console.log("  ✓ Coluna 'auto_buy_bait_stock' adicionada à tabela bait_presets");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_buy_bait_stock em bait_presets:", e.message);
+  }
+}
+
+// Migração: Adicionar coluna auto_stock_enabled à tabela bots
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_stock_enabled INTEGER NOT NULL DEFAULT 0;`);
+  console.log("  ✓ Coluna 'auto_stock_enabled' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_stock_enabled:", e.message);
+  }
+}
+
 sqlite.close();
 
 console.log(`✅ Migração concluída com sucesso!`);

@@ -296,6 +296,7 @@ export default function BotInfo() {
   const [autoUseBaitOrder, setAutoUseBaitOrder] = useState('')
   const [autoBuyBaitQty, setAutoBuyBaitQty] = useState('')
   const [autoBuyBaitStock, setAutoBuyBaitStock] = useState('')
+  const [autoStockEnabled, setAutoStockEnabled] = useState(false)
   const [baitCosts, setBaitCosts] = useState<Record<number, BaitCostInfo>>({})
   const fetchAttemptsRef = useRef(0)
   const hydratedConfigWalletRef = useRef<string | null>(null)
@@ -380,6 +381,7 @@ export default function BotInfo() {
           if (data.bot?.autoUseBaitOrder !== undefined) setAutoUseBaitOrder(data.bot.autoUseBaitOrder || '')
           if (data.bot?.autoBuyBaitQty !== undefined) setAutoBuyBaitQty(data.bot.autoBuyBaitQty || '')
           if (data.bot?.autoBuyBaitStock !== undefined) setAutoBuyBaitStock(data.bot.autoBuyBaitStock || '')
+          if (data.bot?.autoStockEnabled !== undefined) setAutoStockEnabled(data.bot.autoStockEnabled)
 
           // Busca presets na hidratação inicial
           listPresets().then(res => setPresets(res.presets || [])).catch(() => {})
@@ -585,6 +587,16 @@ export default function BotInfo() {
       await updateBotConfig({ autoBuyBait: newValue })
     } catch (err: any) {
       setAutoBuyBait(!newValue)
+    }
+  }
+
+  const handleToggleAutoStock = async () => {
+    const newValue = !autoStockEnabled
+    setAutoStockEnabled(newValue)
+    try {
+      await updateBotConfig({ autoStockEnabled: newValue })
+    } catch (err: any) {
+      setAutoStockEnabled(!newValue)
     }
   }
 
@@ -3301,6 +3313,38 @@ export default function BotInfo() {
                   </div>
                 </div>
               )}
+              {/* Toggle: Manter Estoque */}
+              <div
+                onClick={handleToggleAutoStock}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', borderRadius: '10px', cursor: 'pointer',
+                  background: autoStockEnabled ? 'rgba(63, 185, 80, 0.06)' : 'rgba(0,0,0,0.1)',
+                  border: `1px solid ${autoStockEnabled ? 'rgba(63, 185, 80, 0.2)' : 'var(--border)'}`,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: autoStockEnabled ? 'var(--success)' : 'var(--text-secondary)' }}>
+                    Manter Estoque
+                  </div>
+                  <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', marginTop: '1px' }}>
+                    Compra automaticamente quando cair abaixo do alvo
+                  </div>
+                </div>
+                <div style={{
+                  width: '32px', height: '18px', borderRadius: '9px',
+                  background: autoStockEnabled ? 'var(--success)' : 'rgba(255,255,255,0.15)',
+                  position: 'relative', transition: 'background 0.2s ease', flexShrink: 0,
+                }}>
+                  <div style={{
+                    width: '14px', height: '14px', borderRadius: '50%', background: 'white',
+                    position: 'absolute', top: '2px', left: autoStockEnabled ? '16px' : '2px',
+                    transition: 'left 0.2s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }} />
+                </div>
+              </div>
+
               {/* Iscas selecionaveis com threshold e quantidade individuais */}
               <div style={{
                 padding: '10px',
@@ -3421,6 +3465,7 @@ export default function BotInfo() {
                             </div>
 
                             {/* Manter estoque */}
+                            {autoStockEnabled && (
                             <div style={{
                               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                               padding: '6px 0', borderTop: '1px solid rgba(210, 153, 34, 0.08)',
@@ -3455,6 +3500,7 @@ export default function BotInfo() {
                                 )}
                               </div>
                             </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -3589,6 +3635,14 @@ export default function BotInfo() {
               {presets.map(preset => {
                 const baitIds = preset.autoBuyBaitIds.split(',').filter(Boolean).map(Number)
                 const orderIds = preset.autoUseBaitOrder.split(',').filter(Boolean).map(Number)
+                const stockEntries: { id: number; stock: number }[] = []
+                if (preset.autoBuyBaitStock) {
+                  preset.autoBuyBaitStock.split(',').filter(Boolean).forEach(entry => {
+                    const parts = entry.split(':')
+                    const id = Number(parts[0]), stock = Number(parts[1])
+                    if (id && stock > 0) stockEntries.push({ id, stock })
+                  })
+                }
 
                 // Parse qty targets and purchased progress
                 const qtyMap: Record<number, number> = {}
@@ -3644,6 +3698,7 @@ export default function BotInfo() {
                             ? `Compra: ${baitIds.map(id => BAIT_NAMES[id] || `#${id}`).join(', ')}`
                             : 'Nenhuma isca configurada'}
                           {orderIds.length > 0 && ` | Ordem: ${orderIds.map(id => BAIT_NAMES[id] || `#${id}`).join(' > ')}`}
+                          {stockEntries.length > 0 && ` | Estoque: ${stockEntries.map(s => `${BAIT_NAMES[s.id] || `#${s.id}`}: ${s.stock.toLocaleString()}`).join(', ')}`}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '4px', flexShrink: 0, marginLeft: '8px' }}>
