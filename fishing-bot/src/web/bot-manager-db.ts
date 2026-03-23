@@ -5,8 +5,8 @@ import { CastLogMonitor } from "../services/log-monitor";
 import { getPlayerStatePDA } from "../utils/pda";
 import { BOT_CONFIG } from "../config/constants";
 import { BAIT_NAMES } from "../types";
-import { db, bots, castResults, botHistory, logs, accounts, runDatabaseMaintenance, runSql } from "../db";
-import type { Bot, NewBot, NewCastResult, NewBotHistory, NewLog } from "../db";
+import { db, bots, castResults, botHistory, logs, accounts, baitPresets, runDatabaseMaintenance, runSql } from "../db";
+import type { Bot, NewBot, NewCastResult, NewBotHistory, NewLog, BaitPreset } from "../db";
 import * as path from "path";
 
 // Requisitos de casts por nível para upgrade (L2-L60)
@@ -210,7 +210,7 @@ interface BotAnalytics {
  */
 class BotInstance {
   public stats: BotStats;
-  private service?: FishingService;
+  public service?: FishingService;
   private logMonitor?: CastLogMonitor;
   private isRunning = false;
   private startTime?: Date;
@@ -227,6 +227,8 @@ class BotInstance {
   private currentWaitThreshold: number = 20; // Threshold atual da automação de espera
   private autoUpgradeStartNextRetry = 0; // Cooldown para auto-start upgrade (timestamp)
   private autoBaitNextRetry = 0; // Cooldown para auto-bait (timestamp)
+  private autoBaitDisabled = false; // Desabilitado por erro fatal (precisa recriar sessão)
+  private autoBaitConsecutiveErrors = 0; // Contador de erros consecutivos
   private durabilityPauseUntil = 0;
   private lastPauseCastTime = 0;
 
@@ -256,7 +258,8 @@ class BotInstance {
     public autoBuyBaitThreshold: number = 100,
     public autoBuyBaitThresholds: string = "",
     public autoUseBaitOrder: string = "",
-    public autoBuyBaitQty: string = ""
+    public autoBuyBaitQty: string = "",
+    public autoBuyBaitStock: string = ""
   ) {
     // Sorteia threshold inicial dentro da range
     this.currentRepairThreshold = this.randomThreshold();
@@ -321,6 +324,7 @@ class BotInstance {
       durabilityPauseUntil: this.durabilityPauseUntil || null,
       durabilityPauseRemainingMs,
       isDurabilityPauseActive: durabilityPauseRemainingMs > 0,
+      autoBuyDisabled: this.autoBaitDisabled,
     };
   }
 
@@ -658,8 +662,8 @@ class BotInstance {
                   }
                 }
 
-                // Auto-buy: compra iscas quando casts restantes < threshold individual
-                if (this.autoBuyBait && this.autoBuyBaitIds && Date.now() >= this.autoBaitNextRetry) {
+                // Auto-buy: compra iscas quando casts restantes < threshold individual ou < estoque alvo
+                if (this.autoBuyBait && this.autoBuyBaitIds && !this.autoBaitDisabled && Date.now() >= this.autoBaitNextRetry) {
                   const baitIds = this.autoBuyBaitIds.split(",").map(Number).filter(n => n >= 1 && n <= 10);
                   // Parse per-bait quantities (format: "1:5,3:10")
                   const qtyMap: Record<number, number> = {};
@@ -681,12 +685,28 @@ class BotInstance {
                       }
                     });
                   }
+                  // Parse per-bait stock targets (format: "1:500,3:1000")
+                  const stockMap: Record<number, number> = {};
+                  if (this.autoBuyBaitStock) {
+                    this.autoBuyBaitStock.split(",").forEach(entry => {
+                      const [id, stock] = entry.split(":").map(Number);
+                      if (id !== undefined && stock !== undefined && id >= 1 && id <= 10 && stock > 0) {
+                        stockMap[id] = stock;
+                      }
+                    });
+                  }
                   // Busca custos dinâmicos on-chain (escalados por dificuldade)
                   const dynamicCosts = await this.service!.fetchBaitDynamicCosts();
                   for (const baitId of baitIds) {
                     const remaining = baitState.remainingCasts[baitId - 1] || 0;
                     const baitThreshold = thresholdMap[baitId] ?? this.autoBuyBaitThreshold;
-                    if (remaining < baitThreshold) {
+                    const stockTarget = stockMap[baitId] || 0;
+
+                    // Decide se precisa comprar: threshold normal OU modo estoque
+                    const needsBuyThreshold = remaining < baitThreshold;
+                    const needsBuyStock = stockTarget > 0 && remaining < stockTarget;
+
+                    if (needsBuyThreshold || needsBuyStock) {
                       const buyQty = qtyMap[baitId] || 1;
                       const unitFishCost = dynamicCosts?.[baitId]?.fishCost ?? BAIT_FISH_COST[baitId] ?? 0;
                       const unitUsdcCost = dynamicCosts?.[baitId]?.usdcFee ?? BAIT_USDC_COST[baitId] ?? 0;
@@ -706,16 +726,28 @@ class BotInstance {
                           break;
                         }
                       }
-                      this.addLog("info", `🪱 Auto-buy: ${buyQty}x ${BAIT_NAMES[baitId] || `tipo ${baitId}`} (${remaining} casts < ${baitThreshold}) custo: ${Math.round(totalFishCost).toLocaleString()} FISH + ${totalUsdcCost.toFixed(2)} USDC...`);
+                      const reason = needsBuyStock && !needsBuyThreshold
+                        ? `estoque ${remaining}/${stockTarget}`
+                        : `${remaining} casts < ${baitThreshold}`;
+                      this.addLog("info", `🪱 Auto-buy: ${buyQty}x ${BAIT_NAMES[baitId] || `tipo ${baitId}`} (${reason}) custo: ${Math.round(totalFishCost).toLocaleString()} FISH + ${totalUsdcCost.toFixed(2)} USDC...`);
                       try {
                         const sig = await this.service!.buyRiverBait(baitId, buyQty);
                         if (sig) {
                           this.addLog("success", `🪱 ${buyQty}x ${BAIT_NAMES[baitId] || `Isca ${baitId}`} comprada!`);
                           this.autoBaitNextRetry = 0;
+                          this.autoBaitConsecutiveErrors = 0;
                         }
                       } catch (buyErr: any) {
-                        this.addLog("error", `🪱 Falha na compra de ${BAIT_NAMES[baitId]}: ${buyErr.message}`);
-                        this.autoBaitNextRetry = Date.now() + 30_000;
+                        this.autoBaitConsecutiveErrors++;
+                        const errMsg = buyErr.message || "";
+                        const isFatalError = errMsg.includes("Custom:4000000000") || errMsg.includes("InstructionError");
+                        if (isFatalError || this.autoBaitConsecutiveErrors >= 3) {
+                          this.autoBaitDisabled = true;
+                          this.addLog("error", `🪱 Auto-compra DESABILITADA após ${this.autoBaitConsecutiveErrors} erro(s). Recrie a sessão do bot para corrigir.`);
+                        } else {
+                          this.addLog("error", `🪱 Falha na compra de ${BAIT_NAMES[baitId]}: ${errMsg} (tentativa ${this.autoBaitConsecutiveErrors}/3)`);
+                          this.autoBaitNextRetry = Date.now() + 30_000;
+                        }
                       }
                       break; // Compra uma por ciclo para nao sobrecarregar
                     }
@@ -899,7 +931,7 @@ class BotInstance {
     dbBatcher.addResult(this.walletPubkey, type, fishAmount);
   }
 
-  private addLog(level: "info" | "success" | "warn" | "error", message: string, category: "general" | "websocket" | "cast" | "repair" = "general") {
+  addLog(level: "info" | "success" | "warn" | "error", message: string, category: "general" | "websocket" | "cast" | "repair" = "general") {
     const botName = `BOT [${this.walletPubkey.slice(0, 8)}...]`;
     const levelEmoji = level === "success" ? "✅" : level === "warn" ? "⚠️" : level === "error" ? "❌" : "ℹ️";
     console.log(`${botName} ${levelEmoji} ${message}`);
@@ -1366,7 +1398,8 @@ export class BotManager {
         bot.autoBuyBaitThreshold ?? 100,
         bot.autoBuyBaitThresholds ?? "",
         bot.autoUseBaitOrder ?? "",
-        bot.autoBuyBaitQty ?? ""
+        bot.autoBuyBaitQty ?? "",
+        bot.autoBuyBaitStock ?? ""
       );
 
       // Configura callback de restart
@@ -2051,7 +2084,7 @@ export class BotManager {
       autoWaitMinutesMin?: number; autoWaitMinutesMax?: number;
       autoUpgrade?: boolean; autoRestartMinutes?: number;
       autoBuyBait?: boolean; autoBuyBaitIds?: string; autoUseBaitId?: number; autoBuyBaitThreshold?: number;
-      autoBuyBaitThresholds?: string; autoUseBaitOrder?: string; autoBuyBaitQty?: string;
+      autoBuyBaitThresholds?: string; autoUseBaitOrder?: string; autoBuyBaitQty?: string; autoBuyBaitStock?: string;
     }
   ): Promise<{ success: boolean; error?: string }> {
     try {
@@ -2082,6 +2115,7 @@ export class BotManager {
       if (config.autoBuyBaitThresholds !== undefined) updateData.autoBuyBaitThresholds = config.autoBuyBaitThresholds;
       if (config.autoUseBaitOrder !== undefined) updateData.autoUseBaitOrder = config.autoUseBaitOrder;
       if (config.autoBuyBaitQty !== undefined) updateData.autoBuyBaitQty = config.autoBuyBaitQty;
+      if (config.autoBuyBaitStock !== undefined) updateData.autoBuyBaitStock = config.autoBuyBaitStock;
 
       await db
         .update(bots)
@@ -2118,6 +2152,7 @@ export class BotManager {
         if (config.autoBuyBaitThresholds !== undefined) instance.autoBuyBaitThresholds = config.autoBuyBaitThresholds;
         if (config.autoUseBaitOrder !== undefined) instance.autoUseBaitOrder = config.autoUseBaitOrder;
         if (config.autoBuyBaitQty !== undefined) instance.autoBuyBaitQty = config.autoBuyBaitQty;
+        if (config.autoBuyBaitStock !== undefined) instance.autoBuyBaitStock = config.autoBuyBaitStock;
       }
 
       return { success: true };
@@ -2140,6 +2175,423 @@ export class BotManager {
       return { success: false, error: "Bot não está rodando" };
     }
     return instance.equipBait(baitType);
+  }
+
+  // ===================== BAIT PRESETS =====================
+
+  private generateShareCode(): string {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Sem I/O/0/1 (ambíguos)
+    let code = "";
+    for (let i = 0; i < 6; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return code;
+  }
+
+  async listPresets(walletPubkey: string): Promise<BaitPreset[]> {
+    return db
+      .select()
+      .from(baitPresets)
+      .where(eq(baitPresets.walletPubkey, walletPubkey))
+      .orderBy(desc(baitPresets.updatedAt));
+  }
+
+  async createPreset(walletPubkey: string, data: {
+    name: string;
+    autoBuyBaitIds: string;
+    autoBuyBaitThresholds: string;
+    autoBuyBaitQty: string;
+    autoUseBaitOrder: string;
+  }): Promise<{ success: boolean; preset?: BaitPreset; error?: string }> {
+    try {
+      const existing = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(baitPresets)
+        .where(eq(baitPresets.walletPubkey, walletPubkey));
+
+      if ((existing[0]?.count ?? 0) >= 20) {
+        return { success: false, error: "Limite de 20 presets atingido" };
+      }
+
+      const [preset] = await db
+        .insert(baitPresets)
+        .values({
+          walletPubkey,
+          name: data.name.slice(0, 50),
+          autoBuyBaitIds: data.autoBuyBaitIds,
+          autoBuyBaitThresholds: data.autoBuyBaitThresholds,
+          autoBuyBaitQty: data.autoBuyBaitQty,
+          autoUseBaitOrder: data.autoUseBaitOrder,
+        })
+        .returning();
+
+      return { success: true, preset };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updatePreset(walletPubkey: string, presetId: number, data: {
+    name?: string;
+    autoBuyBaitIds?: string;
+    autoBuyBaitThresholds?: string;
+    autoBuyBaitQty?: string;
+    autoUseBaitOrder?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (data.name !== undefined) updateData.name = data.name.slice(0, 50);
+      if (data.autoBuyBaitIds !== undefined) updateData.autoBuyBaitIds = data.autoBuyBaitIds;
+      if (data.autoBuyBaitThresholds !== undefined) updateData.autoBuyBaitThresholds = data.autoBuyBaitThresholds;
+      if (data.autoBuyBaitQty !== undefined) updateData.autoBuyBaitQty = data.autoBuyBaitQty;
+      if (data.autoUseBaitOrder !== undefined) updateData.autoUseBaitOrder = data.autoUseBaitOrder;
+
+      await db
+        .update(baitPresets)
+        .set(updateData)
+        .where(and(
+          eq(baitPresets.id, presetId),
+          eq(baitPresets.walletPubkey, walletPubkey)
+        ));
+
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async deletePreset(walletPubkey: string, presetId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      await db
+        .delete(baitPresets)
+        .where(and(
+          eq(baitPresets.id, presetId),
+          eq(baitPresets.walletPubkey, walletPubkey)
+        ));
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async generatePresetShareCode(walletPubkey: string, presetId: number): Promise<{ success: boolean; shareCode?: string; error?: string }> {
+    try {
+      const [preset] = await db
+        .select()
+        .from(baitPresets)
+        .where(and(
+          eq(baitPresets.id, presetId),
+          eq(baitPresets.walletPubkey, walletPubkey)
+        ));
+
+      if (!preset) {
+        return { success: false, error: "Preset não encontrado" };
+      }
+
+      if (preset.shareCode) {
+        return { success: true, shareCode: preset.shareCode };
+      }
+
+      let code: string = "";
+      let attempts = 0;
+      do {
+        code = this.generateShareCode();
+        attempts++;
+        const [exists] = await db
+          .select({ id: baitPresets.id })
+          .from(baitPresets)
+          .where(eq(baitPresets.shareCode, code))
+          .limit(1);
+        if (!exists) break;
+      } while (attempts < 10);
+
+      if (attempts >= 10) {
+        return { success: false, error: "Não foi possível gerar código único" };
+      }
+
+      await db
+        .update(baitPresets)
+        .set({ shareCode: code, updatedAt: new Date() })
+        .where(eq(baitPresets.id, presetId));
+
+      return { success: true, shareCode: code };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async importPresetByShareCode(walletPubkey: string, shareCode: string): Promise<{ success: boolean; preset?: BaitPreset; error?: string }> {
+    try {
+      const [source] = await db
+        .select()
+        .from(baitPresets)
+        .where(eq(baitPresets.shareCode, shareCode.toUpperCase()))
+        .limit(1);
+
+      if (!source) {
+        return { success: false, error: "Código não encontrado" };
+      }
+
+      return this.createPreset(walletPubkey, {
+        name: `${source.name} (importado)`,
+        autoBuyBaitIds: source.autoBuyBaitIds,
+        autoBuyBaitThresholds: source.autoBuyBaitThresholds,
+        autoBuyBaitQty: source.autoBuyBaitQty,
+        autoUseBaitOrder: source.autoUseBaitOrder,
+      });
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async applyPreset(walletPubkey: string, presetId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      const [preset] = await db
+        .select()
+        .from(baitPresets)
+        .where(and(
+          eq(baitPresets.id, presetId),
+          eq(baitPresets.walletPubkey, walletPubkey)
+        ));
+
+      if (!preset) {
+        return { success: false, error: "Preset não encontrado" };
+      }
+
+      return this.updateBotConfig(walletPubkey, {
+        autoBuyBaitIds: preset.autoBuyBaitIds,
+        autoBuyBaitThresholds: preset.autoBuyBaitThresholds,
+        autoBuyBaitQty: preset.autoBuyBaitQty,
+        autoUseBaitOrder: preset.autoUseBaitOrder,
+      });
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Map de execuções de carrinho ativas
+  private runningCarts: Map<string, boolean> = new Map(); // key: "wallet:presetId"
+
+  private parseQtyMap(str: string): Record<number, number> {
+    const map: Record<number, number> = {};
+    if (str) {
+      str.split(",").forEach(entry => {
+        const [id, qty] = entry.split(":").map(Number);
+        if (id !== undefined && qty !== undefined && id >= 1 && id <= 10 && qty > 0) map[id] = qty;
+      });
+    }
+    return map;
+  }
+
+  private serializeQtyMap(map: Record<number, number>): string {
+    return Object.entries(map)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, qty]) => `${id}:${qty}`)
+      .join(",");
+  }
+
+  async executeCart(walletPubkey: string, presetId: number): Promise<{ success: boolean; error?: string }> {
+    const cartKey = `${walletPubkey}:${presetId}`;
+
+    if (this.runningCarts.get(cartKey)) {
+      return { success: false, error: "Este carrinho já está em execução" };
+    }
+
+    const instance = this.runningBots.get(walletPubkey);
+    if (!instance || !instance.service) {
+      return { success: false, error: "Bot não está rodando" };
+    }
+
+    const [preset] = await db
+      .select()
+      .from(baitPresets)
+      .where(and(eq(baitPresets.id, presetId), eq(baitPresets.walletPubkey, walletPubkey)));
+
+    if (!preset) {
+      return { success: false, error: "Carrinho não encontrado" };
+    }
+
+    const targetQty = this.parseQtyMap(preset.autoBuyBaitQty);
+    if (Object.keys(targetQty).length === 0) {
+      return { success: false, error: "Carrinho vazio - defina quantidades primeiro" };
+    }
+
+    // Marca como running
+    this.runningCarts.set(cartKey, true);
+    await db.update(baitPresets).set({
+      status: "running", statusMessage: null, purchasedQty: preset.purchasedQty || "", updatedAt: new Date(),
+    }).where(eq(baitPresets.id, presetId));
+
+    // Executa em background
+    this.executeCartLoop(walletPubkey, presetId, cartKey, instance).catch(err => {
+      console.error(`Erro fatal no carrinho ${cartKey}:`, err);
+    });
+
+    return { success: true };
+  }
+
+  private async executeCartLoop(
+    walletPubkey: string,
+    presetId: number,
+    cartKey: string,
+    instance: BotInstance,
+  ) {
+    try {
+      while (this.runningCarts.get(cartKey)) {
+        // Recarrega preset do banco para pegar estado atualizado
+        const [preset] = await db.select().from(baitPresets)
+          .where(and(eq(baitPresets.id, presetId), eq(baitPresets.walletPubkey, walletPubkey)));
+
+        if (!preset || preset.status !== "running") break;
+
+        const targetQty = this.parseQtyMap(preset.autoBuyBaitQty);
+        const purchasedQty = this.parseQtyMap(preset.purchasedQty);
+
+        // Encontra proximo item a comprar
+        let nextBaitId: number | null = null;
+        let nextRemaining = 0;
+        for (const [idStr, target] of Object.entries(targetQty)) {
+          const id = Number(idStr);
+          const purchased = purchasedQty[id] || 0;
+          if (purchased < target) {
+            nextBaitId = id;
+            nextRemaining = target - purchased;
+            break;
+          }
+        }
+
+        // Se nao tem mais nada para comprar, carrinho concluido
+        if (nextBaitId === null) {
+          await db.update(baitPresets).set({
+            status: "done", statusMessage: "Todas as compras concluidas!", updatedAt: new Date(),
+          }).where(eq(baitPresets.id, presetId));
+          break;
+        }
+
+        // Verifica se o bot ainda esta rodando
+        if (!instance.service) {
+          await db.update(baitPresets).set({
+            status: "error", statusMessage: "Bot parou de rodar", updatedAt: new Date(),
+          }).where(eq(baitPresets.id, presetId));
+          break;
+        }
+
+        // Busca custos dinamicos e saldo
+        try {
+          const dynamicCosts = await instance.service.fetchBaitDynamicCosts();
+          const balances = await instance.service.fetchBalances();
+
+          const unitFishCost = dynamicCosts?.[nextBaitId]?.fishCost ?? BAIT_FISH_COST[nextBaitId] ?? 0;
+          const unitUsdcCost = dynamicCosts?.[nextBaitId]?.usdcFee ?? BAIT_USDC_COST[nextBaitId] ?? 0;
+
+          // Verifica saldo para 1 unidade
+          if (balances) {
+            if (balances.fish < unitFishCost) {
+              await db.update(baitPresets).set({
+                status: "error",
+                statusMessage: `FISH insuficiente para ${BAIT_NAMES[nextBaitId]} (${Math.round(balances.fish).toLocaleString()} < ${Math.round(unitFishCost).toLocaleString()})`,
+                updatedAt: new Date(),
+              }).where(eq(baitPresets.id, presetId));
+              break;
+            }
+            if (balances.usdc < unitUsdcCost) {
+              await db.update(baitPresets).set({
+                status: "error",
+                statusMessage: `USDC insuficiente para ${BAIT_NAMES[nextBaitId]} (${balances.usdc.toFixed(2)} < ${unitUsdcCost.toFixed(2)})`,
+                updatedAt: new Date(),
+              }).where(eq(baitPresets.id, presetId));
+              break;
+            }
+          }
+
+          // Compra 1 unidade
+          const baitName = BAIT_NAMES[nextBaitId] || `tipo ${nextBaitId}`;
+          const purchased = purchasedQty[nextBaitId] || 0;
+          const target = targetQty[nextBaitId] || 0;
+
+          await db.update(baitPresets).set({
+            statusMessage: `Comprando ${baitName}... (${purchased + 1}/${target})`,
+            updatedAt: new Date(),
+          }).where(eq(baitPresets.id, presetId));
+
+          const sig = await instance.service.buyRiverBait(nextBaitId, 1);
+
+          if (sig) {
+            // Atualiza progresso
+            purchasedQty[nextBaitId] = purchased + 1;
+            await db.update(baitPresets).set({
+              purchasedQty: this.serializeQtyMap(purchasedQty),
+              statusMessage: `${baitName} ${purchased + 1}/${target} comprado!`,
+              updatedAt: new Date(),
+            }).where(eq(baitPresets.id, presetId));
+
+            instance.addLog("success", `🛒 Carrinho: ${baitName} ${purchased + 1}/${target} comprado!`, "general");
+          } else {
+            await db.update(baitPresets).set({
+              status: "error",
+              statusMessage: `Falha na transacao de compra de ${baitName}`,
+              updatedAt: new Date(),
+            }).where(eq(baitPresets.id, presetId));
+            break;
+          }
+        } catch (buyErr: any) {
+          await db.update(baitPresets).set({
+            status: "error",
+            statusMessage: `Erro: ${buyErr.message}`,
+            updatedAt: new Date(),
+          }).where(eq(baitPresets.id, presetId));
+          break;
+        }
+
+        // Sleep entre compras (2-4 seg para nao sobrecarregar)
+        await Bun.sleep(2000 + Math.random() * 2000);
+      }
+    } finally {
+      this.runningCarts.delete(cartKey);
+    }
+  }
+
+  async stopCart(walletPubkey: string, presetId: number): Promise<{ success: boolean; error?: string }> {
+    const cartKey = `${walletPubkey}:${presetId}`;
+    this.runningCarts.delete(cartKey);
+
+    await db.update(baitPresets).set({
+      status: "idle", statusMessage: "Parado pelo usuario", updatedAt: new Date(),
+    }).where(and(eq(baitPresets.id, presetId), eq(baitPresets.walletPubkey, walletPubkey)));
+
+    return { success: true };
+  }
+
+  async resetCart(walletPubkey: string, presetId: number): Promise<{ success: boolean; error?: string }> {
+    const cartKey = `${walletPubkey}:${presetId}`;
+    if (this.runningCarts.get(cartKey)) {
+      return { success: false, error: "Pare o carrinho antes de resetar" };
+    }
+
+    await db.update(baitPresets).set({
+      purchasedQty: "", status: "idle", statusMessage: null, updatedAt: new Date(),
+    }).where(and(eq(baitPresets.id, presetId), eq(baitPresets.walletPubkey, walletPubkey)));
+
+    return { success: true };
+  }
+
+  async saveCurrentConfigAsPreset(walletPubkey: string, name: string): Promise<{ success: boolean; preset?: BaitPreset; error?: string }> {
+    try {
+      const bot = await this.getBot(walletPubkey);
+      if (!bot) {
+        return { success: false, error: "Bot não encontrado" };
+      }
+
+      return this.createPreset(walletPubkey, {
+        name,
+        autoBuyBaitIds: bot.autoBuyBaitIds || "",
+        autoBuyBaitThresholds: bot.autoBuyBaitThresholds || "",
+        autoBuyBaitQty: bot.autoBuyBaitQty || "",
+        autoUseBaitOrder: bot.autoUseBaitOrder || "",
+      });
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
   }
 }
 

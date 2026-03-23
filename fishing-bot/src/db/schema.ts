@@ -41,6 +41,7 @@ export const bots = sqliteTable("bots", {
   autoBuyBaitThreshold: integer("auto_buy_bait_threshold").default(100), // DEPRECATED: fallback global quando threshold individual nao definido
   autoBuyBaitThresholds: text("auto_buy_bait_thresholds").default(""), // Threshold individual por isca (ex: "1:100,3:50,7:200")
   autoBuyBaitQty: text("auto_buy_bait_qty").default(""), // Quantidade por isca para auto-compra (ex: "1:5,3:10")
+  autoBuyBaitStock: text("auto_buy_bait_stock").default(""), // Manter estoque por isca (ex: "1:500,3:1000") - compra quando cair abaixo
   enabled: integer("enabled", { mode: "boolean" }).default(false),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
@@ -93,6 +94,30 @@ export const logs = sqliteTable("logs", {
     .$defaultFn(() => new Date()),
 });
 
+// Presets de Isca - Configurações salváveis e compartilháveis
+export const baitPresets = sqliteTable("bait_presets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  walletPubkey: text("wallet_pubkey")
+    .notNull()
+    .references(() => accounts.walletPubkey, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  autoBuyBaitIds: text("auto_buy_bait_ids").notNull().default(""),         // IDs das iscas (ex: "1,3,7")
+  autoBuyBaitThresholds: text("auto_buy_bait_thresholds").notNull().default(""), // thresholds (para auto-buy config)
+  autoBuyBaitQty: text("auto_buy_bait_qty").notNull().default(""),         // Meta: quanto comprar (ex: "1:10,6:50")
+  autoUseBaitOrder: text("auto_use_bait_order").notNull().default(""),     // Ordem de prioridade
+  // Execução do carrinho
+  purchasedQty: text("purchased_qty").notNull().default(""),               // Progresso: quanto já comprou (ex: "1:3,6:12")
+  status: text("status", { enum: ["idle", "running", "done", "error"] }).notNull().default("idle"),
+  statusMessage: text("status_message"),                                   // Mensagem de erro ou info
+  shareCode: text("share_code").unique(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 // Types para TypeScript
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
@@ -104,3 +129,5 @@ export type BotHistory = typeof botHistory.$inferSelect;
 export type NewBotHistory = typeof botHistory.$inferInsert;
 export type Log = typeof logs.$inferSelect;
 export type NewLog = typeof logs.$inferInsert;
+export type BaitPreset = typeof baitPresets.$inferSelect;
+export type NewBaitPreset = typeof baitPresets.$inferInsert;

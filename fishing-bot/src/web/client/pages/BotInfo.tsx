@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
-import { getBot, getResults, getHistory, getAnalytics, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances, getBaitInventory, buyBait, equipBait, getBaitConfig, getGameConfig, reshuffleWaitThreshold } from '../lib/api'
+import { getBot, getResults, getHistory, getAnalytics, startBot, stopBot, getPlayerState, startUpgrade, finishUpgrade, updateBotConfig, getWalletBalances, getBaitInventory, buyBait, equipBait, getBaitConfig, getGameConfig, reshuffleWaitThreshold, listPresets, saveCurrentConfigAsPreset, applyPreset, generateShareCode, importPreset, deletePreset, executeCart, stopCart, resetCart } from '../lib/api'
+import type { BaitPreset } from '../lib/api'
 import LogsTab from './Logs'
 import ConfigTab from './AddWallet'
 
@@ -40,6 +41,7 @@ interface BotAutomationState {
   durabilityPauseUntil: number | null
   durabilityPauseRemainingMs: number
   isDurabilityPauseActive: boolean
+  autoBuyDisabled?: boolean
 }
 
 interface CastResult {
@@ -293,13 +295,23 @@ export default function BotInfo() {
   const [autoBuyBaitThresholds, setAutoBuyBaitThresholds] = useState('')
   const [autoUseBaitOrder, setAutoUseBaitOrder] = useState('')
   const [autoBuyBaitQty, setAutoBuyBaitQty] = useState('')
+  const [autoBuyBaitStock, setAutoBuyBaitStock] = useState('')
   const [baitCosts, setBaitCosts] = useState<Record<number, BaitCostInfo>>({})
   const fetchAttemptsRef = useRef(0)
   const hydratedConfigWalletRef = useRef<string | null>(null)
   const lastAutomationSnapshotRef = useRef('')
+  const stockDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [automationSyncReady, setAutomationSyncReady] = useState(false)
   const [isBanned, setIsBanned] = useState(false)
   const [banCertainty, setBanCertainty] = useState(0)
+  // Preset states
+  const [presets, setPresets] = useState<BaitPreset[]>([])
+  const [showPresetSave, setShowPresetSave] = useState(false)
+  const [presetSaveName, setPresetSaveName] = useState('')
+  const [showPresetImport, setShowPresetImport] = useState(false)
+  const [presetImportCode, setPresetImportCode] = useState('')
+  const [presetActionLoading, setPresetActionLoading] = useState<string | null>(null)
+  const [presetError, setPresetError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!isConnected || !walletPubkey) {
@@ -367,6 +379,10 @@ export default function BotInfo() {
           if (data.bot?.autoBuyBaitThresholds !== undefined) setAutoBuyBaitThresholds(data.bot.autoBuyBaitThresholds || '')
           if (data.bot?.autoUseBaitOrder !== undefined) setAutoUseBaitOrder(data.bot.autoUseBaitOrder || '')
           if (data.bot?.autoBuyBaitQty !== undefined) setAutoBuyBaitQty(data.bot.autoBuyBaitQty || '')
+          if (data.bot?.autoBuyBaitStock !== undefined) setAutoBuyBaitStock(data.bot.autoBuyBaitStock || '')
+
+          // Busca presets na hidratação inicial
+          listPresets().then(res => setPresets(res.presets || [])).catch(() => {})
         }
 
         // Busca resultados, historico, dados do player, balances, bait inventory, bait config e game config
@@ -716,6 +732,191 @@ export default function BotInfo() {
     return qtyMap
   }
 
+  // Helper: parse stock map from string
+  const parseStockMap = (): Record<number, number> => {
+    const stockMap: Record<number, number> = {}
+    if (autoBuyBaitStock) {
+      autoBuyBaitStock.split(',').forEach(entry => {
+        const [id, s] = entry.split(':').map(Number)
+        if (id !== undefined && s !== undefined && id >= 1 && id <= 10 && s > 0) stockMap[id] = s
+      })
+    }
+    return stockMap
+  }
+
+  // Atualiza estoque alvo por bait (formato: "1:500,3:1000")
+  const handleBaitStockChange = (baitId: number, stock: number) => {
+    const stockMap = parseStockMap()
+    if (stock <= 0) {
+      delete stockMap[baitId]
+    } else {
+      stockMap[baitId] = stock
+    }
+    const newValue = Object.entries(stockMap).map(([id, s]) => `${id}:${s}`).join(',')
+    setAutoBuyBaitStock(newValue)
+    // Debounce: só salva após 800ms sem digitar
+    if (stockDebounceRef.current) clearTimeout(stockDebounceRef.current)
+    stockDebounceRef.current = setTimeout(async () => {
+      try {
+        await updateBotConfig({ autoBuyBaitStock: newValue })
+      } catch (err: any) {
+        setAutoBuyBaitStock(autoBuyBaitStock)
+      }
+    }, 800)
+  }
+
+  // ===================== PRESET HANDLERS =====================
+
+  const handleSavePreset = async () => {
+    if (!presetSaveName.trim()) return
+    setPresetActionLoading('save')
+    setPresetError(null)
+    try {
+      const result = await saveCurrentConfigAsPreset(presetSaveName.trim())
+      if (result.success && result.preset) {
+        setPresets(prev => [result.preset!, ...prev])
+        setPresetSaveName('')
+        setShowPresetSave(false)
+      } else {
+        setPresetError(result.error || 'Erro ao salvar preset')
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
+  const handleImportPreset = async () => {
+    if (!presetImportCode.trim()) return
+    setPresetActionLoading('import')
+    setPresetError(null)
+    try {
+      const result = await importPreset(presetImportCode.trim())
+      if (result.success && result.preset) {
+        setPresets(prev => [result.preset!, ...prev])
+        setPresetImportCode('')
+        setShowPresetImport(false)
+      } else {
+        setPresetError(result.error || 'Codigo nao encontrado')
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
+  const handleApplyPreset = async (presetId: number) => {
+    setPresetActionLoading(`apply-${presetId}`)
+    setPresetError(null)
+    try {
+      const result = await applyPreset(presetId)
+      if (result.success) {
+        hydratedConfigWalletRef.current = null
+        fetchData()
+      } else {
+        setPresetError(result.error || 'Erro ao aplicar preset')
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
+  const handleSharePreset = async (presetId: number) => {
+    setPresetActionLoading(`share-${presetId}`)
+    setPresetError(null)
+    try {
+      const result = await generateShareCode(presetId)
+      if (result.success && result.shareCode) {
+        setPresets(prev => prev.map(p =>
+          p.id === presetId ? { ...p, shareCode: result.shareCode! } : p
+        ))
+        navigator.clipboard?.writeText(result.shareCode)
+      } else {
+        setPresetError(result.error || 'Erro ao gerar codigo')
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
+  const handleDeletePreset = async (presetId: number) => {
+    setPresetActionLoading(`delete-${presetId}`)
+    setPresetError(null)
+    try {
+      const result = await deletePreset(presetId)
+      if (result.success) {
+        setPresets(prev => prev.filter(p => p.id !== presetId))
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
+  const handleExecuteCart = async (presetId: number) => {
+    setPresetActionLoading(`exec-${presetId}`)
+    setPresetError(null)
+    try {
+      const result = await executeCart(presetId)
+      if (result.success) {
+        setPresets(prev => prev.map(p =>
+          p.id === presetId ? { ...p, status: 'running' as const } : p
+        ))
+      } else {
+        setPresetError(result.error || 'Erro ao executar carrinho')
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
+  const handleStopCart = async (presetId: number) => {
+    setPresetActionLoading(`stop-${presetId}`)
+    setPresetError(null)
+    try {
+      const result = await stopCart(presetId)
+      if (result.success) {
+        setPresets(prev => prev.map(p =>
+          p.id === presetId ? { ...p, status: 'idle' as const } : p
+        ))
+      } else {
+        setPresetError(result.error || 'Erro ao parar carrinho')
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
+  const handleResetCart = async (presetId: number) => {
+    setPresetActionLoading(`reset-${presetId}`)
+    setPresetError(null)
+    try {
+      const result = await resetCart(presetId)
+      if (result.success) {
+        setPresets(prev => prev.map(p =>
+          p.id === presetId ? { ...p, status: 'idle' as const, purchasedQty: '', statusMessage: null } : p
+        ))
+      } else {
+        setPresetError(result.error || 'Erro ao resetar carrinho')
+      }
+    } catch (err: any) {
+      setPresetError(err.message)
+    } finally {
+      setPresetActionLoading(null)
+    }
+  }
+
   // Finaliza upgrade
   const handleFinishUpgrade = async () => {
     setUpgradeLoading(true)
@@ -783,6 +984,16 @@ export default function BotInfo() {
     const interval = setInterval(fetchData, 3000)
     return () => clearInterval(interval)
   }, [fetchData])
+
+  // Polling de presets quando algum carrinho esta rodando
+  useEffect(() => {
+    const hasRunning = presets.some(p => p.status === 'running')
+    if (!hasRunning) return
+    const interval = setInterval(() => {
+      listPresets().then(res => setPresets(res.presets || [])).catch(() => {})
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [presets])
 
   if (!isConnected) {
     return (
@@ -3072,6 +3283,24 @@ export default function BotInfo() {
 
           {autoBuyBait && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Aviso de auto-compra desabilitada */}
+              {automationState?.autoBuyDisabled && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(248, 81, 73, 0.1)',
+                  border: '1px solid rgba(248, 81, 73, 0.3)',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                }}>
+                  <span style={{ fontSize: '1.2rem' }}>&#9888;</span>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--error)' }}>Auto-compra desabilitada</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      Erro ao comprar iscas. Recrie a sessao do bot para corrigir.
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* Iscas selecionaveis com threshold e quantidade individuais */}
               <div style={{
                 padding: '10px',
@@ -3089,6 +3318,8 @@ export default function BotInfo() {
                     const qty = qtyMap[id] || 1
                     const thresholdsMap = parseThresholdsMap()
                     const baitThreshold = thresholdsMap[id] ?? autoBuyBaitThreshold
+                    const sMap = parseStockMap()
+                    const stockTarget = sMap[id] || 0
                     const costInfo = baitCosts[id]
                     const casts = baitInventory?.remainingCasts?.[id - 1] || 0
                     const isUnlocked = playerData ? playerData.rodLevel >= (costInfo?.unlockLevel || 0) : true
@@ -3188,6 +3419,42 @@ export default function BotInfo() {
                                 />
                               </div>
                             </div>
+
+                            {/* Manter estoque */}
+                            <div style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              padding: '6px 0', borderTop: '1px solid rgba(210, 153, 34, 0.08)',
+                            }}>
+                              <div>
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Manter estoque</span>
+                                <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                                  Compra quando cair abaixo
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input
+                                  type="number"
+                                  min={0} max={99999}
+                                  value={stockTarget || ''}
+                                  placeholder="0"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => handleBaitStockChange(id, parseInt(e.target.value) || 0)}
+                                  style={{
+                                    width: '64px', padding: '4px 6px', fontSize: '0.75rem',
+                                    background: stockTarget > 0 ? 'rgba(63, 185, 80, 0.08)' : 'var(--bg-primary)',
+                                    color: stockTarget > 0 ? 'var(--success)' : 'var(--text-primary)',
+                                    border: `1px solid ${stockTarget > 0 ? 'rgba(63, 185, 80, 0.2)' : 'var(--border)'}`,
+                                    borderRadius: '6px', textAlign: 'center',
+                                    fontWeight: 600,
+                                  }}
+                                />
+                                {stockTarget > 0 && casts < stockTarget && (
+                                  <span style={{ fontSize: '0.55rem', color: 'var(--warning)', whiteSpace: 'nowrap' }}>
+                                    {casts}/{stockTarget}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -3195,6 +3462,337 @@ export default function BotInfo() {
                   })}
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Card: Presets de Isca */}
+        <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h3 style={{
+              margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--accent)',
+              display: 'flex', alignItems: 'center', gap: '8px'
+            }}>
+              <PresetIcon />
+              Presets de Isca
+            </h3>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                onClick={() => { setShowPresetSave(!showPresetSave); setShowPresetImport(false); setPresetError(null) }}
+                style={{
+                  fontSize: '0.65rem', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer',
+                  background: showPresetSave ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+                  color: showPresetSave ? '#000' : 'var(--text-secondary)',
+                  border: `1px solid ${showPresetSave ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >
+                Salvar Atual
+              </button>
+              <button
+                onClick={() => { setShowPresetImport(!showPresetImport); setShowPresetSave(false); setPresetError(null) }}
+                style={{
+                  fontSize: '0.65rem', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer',
+                  background: showPresetImport ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+                  color: showPresetImport ? '#000' : 'var(--text-secondary)',
+                  border: `1px solid ${showPresetImport ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >
+                Importar Codigo
+              </button>
+            </div>
+          </div>
+
+          {/* Form: Salvar config atual como preset */}
+          {showPresetSave && (
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+              <input
+                type="text"
+                placeholder="Nome do preset..."
+                maxLength={50}
+                value={presetSaveName}
+                onChange={(e) => setPresetSaveName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSavePreset()}
+                style={{
+                  flex: 1, padding: '6px 10px', fontSize: '0.75rem',
+                  background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                  border: '1px solid var(--border)', borderRadius: '6px',
+                }}
+              />
+              <button
+                onClick={handleSavePreset}
+                disabled={presetActionLoading === 'save' || !presetSaveName.trim()}
+                style={{
+                  fontSize: '0.7rem', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer',
+                  background: 'var(--accent)', color: '#000', border: 'none', fontWeight: 600,
+                  opacity: presetActionLoading === 'save' || !presetSaveName.trim() ? 0.5 : 1,
+                }}
+              >
+                {presetActionLoading === 'save' ? '...' : 'Salvar'}
+              </button>
+            </div>
+          )}
+
+          {/* Form: Importar por codigo */}
+          {showPresetImport && (
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+              <input
+                type="text"
+                placeholder="Ex: ABC123"
+                maxLength={6}
+                value={presetImportCode}
+                onChange={(e) => setPresetImportCode(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && handleImportPreset()}
+                style={{
+                  width: '120px', padding: '6px 10px', fontSize: '0.85rem',
+                  background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                  border: '1px solid var(--border)', borderRadius: '6px',
+                  textAlign: 'center', letterSpacing: '3px', fontWeight: 700,
+                  fontFamily: 'monospace',
+                }}
+              />
+              <button
+                onClick={handleImportPreset}
+                disabled={presetActionLoading === 'import' || !presetImportCode.trim()}
+                style={{
+                  fontSize: '0.7rem', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer',
+                  background: 'var(--accent)', color: '#000', border: 'none', fontWeight: 600,
+                  opacity: presetActionLoading === 'import' || !presetImportCode.trim() ? 0.5 : 1,
+                }}
+              >
+                {presetActionLoading === 'import' ? '...' : 'Importar'}
+              </button>
+            </div>
+          )}
+
+          {/* Erro */}
+          {presetError && (
+            <div style={{
+              color: 'var(--danger)', fontSize: '0.7rem', marginBottom: '10px',
+              padding: '6px 10px', borderRadius: '6px', background: 'rgba(248, 81, 73, 0.08)',
+              border: '1px solid rgba(248, 81, 73, 0.15)',
+            }}>
+              {presetError}
+            </div>
+          )}
+
+          {/* Lista de presets */}
+          {presets.length === 0 ? (
+            <div style={{
+              fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center',
+              padding: '20px', borderRadius: '10px', background: 'rgba(0,0,0,0.1)',
+              border: '1px dashed var(--border)',
+            }}>
+              Nenhum preset salvo. Salve sua config atual ou importe um codigo.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {presets.map(preset => {
+                const baitIds = preset.autoBuyBaitIds.split(',').filter(Boolean).map(Number)
+                const orderIds = preset.autoUseBaitOrder.split(',').filter(Boolean).map(Number)
+
+                // Parse qty targets and purchased progress
+                const qtyMap: Record<number, number> = {}
+                const purchasedMap: Record<number, number> = {}
+                if (preset.autoBuyBaitQty) {
+                  preset.autoBuyBaitQty.split(',').filter(Boolean).forEach(entry => {
+                    const parts = entry.split(':')
+                    const id = Number(parts[0]), qty = Number(parts[1])
+                    if (id && !isNaN(qty)) qtyMap[id] = qty
+                  })
+                }
+                if (preset.purchasedQty) {
+                  preset.purchasedQty.split(',').filter(Boolean).forEach(entry => {
+                    const parts = entry.split(':')
+                    const id = Number(parts[0]), qty = Number(parts[1])
+                    if (id && !isNaN(qty)) purchasedMap[id] = qty
+                  })
+                }
+                const hasCart = Object.keys(qtyMap).length > 0
+                const totalTarget = Object.values(qtyMap).reduce((a, b) => a + b, 0)
+                const totalPurchased = Object.entries(qtyMap).reduce((sum, [id]) => sum + (purchasedMap[Number(id)] || 0), 0)
+                const progressPct = totalTarget > 0 ? Math.min(100, Math.round((totalPurchased / totalTarget) * 100)) : 0
+
+                const statusColor = preset.status === 'running' ? 'var(--warning)'
+                  : preset.status === 'done' ? 'var(--success)'
+                  : preset.status === 'error' ? 'var(--danger)'
+                  : 'var(--text-muted)'
+                const statusLabel = preset.status === 'running' ? 'Comprando...'
+                  : preset.status === 'done' ? 'Concluido'
+                  : preset.status === 'error' ? 'Erro'
+                  : 'Parado'
+
+                return (
+                  <div key={preset.id} style={{
+                    padding: '10px 12px', borderRadius: '10px',
+                    background: 'rgba(0,0,0,0.1)',
+                    border: `1px solid ${preset.status === 'running' ? 'rgba(210, 153, 34, 0.3)' : 'var(--border)'}`,
+                    transition: 'border-color 0.15s ease',
+                  }}>
+                    {/* Header: nome + botoes */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {preset.name}
+                          {hasCart && (
+                            <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '3px', background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}33` }}>
+                              {statusLabel}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {baitIds.length > 0
+                            ? `Compra: ${baitIds.map(id => BAIT_NAMES[id] || `#${id}`).join(', ')}`
+                            : 'Nenhuma isca configurada'}
+                          {orderIds.length > 0 && ` | Ordem: ${orderIds.map(id => BAIT_NAMES[id] || `#${id}`).join(' > ')}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', flexShrink: 0, marginLeft: '8px' }}>
+                        <button
+                          onClick={() => handleApplyPreset(preset.id)}
+                          disabled={presetActionLoading === `apply-${preset.id}`}
+                          title="Aplicar preset ao bot"
+                          style={{
+                            fontSize: '0.6rem', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer',
+                            background: 'rgba(63, 185, 80, 0.12)', color: 'var(--success)',
+                            border: '1px solid rgba(63, 185, 80, 0.2)',
+                            opacity: presetActionLoading === `apply-${preset.id}` ? 0.5 : 1,
+                          }}
+                        >
+                          {presetActionLoading === `apply-${preset.id}` ? '...' : 'Aplicar'}
+                        </button>
+                        <button
+                          onClick={() => handleSharePreset(preset.id)}
+                          disabled={presetActionLoading === `share-${preset.id}`}
+                          title={preset.shareCode ? `Codigo: ${preset.shareCode} (clique para copiar)` : 'Gerar codigo de compartilhamento'}
+                          style={{
+                            fontSize: '0.6rem', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer',
+                            background: preset.shareCode ? 'rgba(88, 166, 255, 0.12)' : 'rgba(255,255,255,0.06)',
+                            color: preset.shareCode ? 'var(--accent)' : 'var(--text-secondary)',
+                            border: `1px solid ${preset.shareCode ? 'rgba(88, 166, 255, 0.2)' : 'var(--border)'}`,
+                            fontFamily: preset.shareCode ? 'monospace' : 'inherit',
+                            fontWeight: preset.shareCode ? 700 : 400,
+                            letterSpacing: preset.shareCode ? '1px' : '0',
+                            opacity: presetActionLoading === `share-${preset.id}` ? 0.5 : 1,
+                          }}
+                        >
+                          {preset.shareCode || (presetActionLoading === `share-${preset.id}` ? '...' : 'Compartilhar')}
+                        </button>
+                        <button
+                          onClick={() => handleDeletePreset(preset.id)}
+                          disabled={presetActionLoading === `delete-${preset.id}` || preset.status === 'running'}
+                          title="Excluir preset"
+                          style={{
+                            fontSize: '0.6rem', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer',
+                            background: 'rgba(248, 81, 73, 0.08)', color: 'var(--danger)',
+                            border: '1px solid rgba(248, 81, 73, 0.15)',
+                            opacity: (presetActionLoading === `delete-${preset.id}` || preset.status === 'running') ? 0.5 : 1,
+                          }}
+                        >
+                          {presetActionLoading === `delete-${preset.id}` ? '...' : 'X'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Carrinho: progresso por isca */}
+                    {hasCart && (
+                      <div style={{ marginTop: '8px' }}>
+                        {/* Itens do carrinho */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+                          {Object.entries(qtyMap).map(([idStr, target]) => {
+                            const id = Number(idStr)
+                            const bought = purchasedMap[id] || 0
+                            const done = bought >= target
+                            return (
+                              <div key={id} style={{
+                                fontSize: '0.6rem', padding: '2px 6px', borderRadius: '4px',
+                                background: done ? 'rgba(63, 185, 80, 0.1)' : 'rgba(255,255,255,0.04)',
+                                border: `1px solid ${done ? 'rgba(63, 185, 80, 0.2)' : 'var(--border)'}`,
+                                color: done ? 'var(--success)' : 'var(--text-secondary)',
+                              }}>
+                                {BAIT_NAMES[id] || `#${id}`}: <strong>{bought}/{target}</strong>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Barra de progresso */}
+                        <div style={{
+                          height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.06)',
+                          overflow: 'hidden', marginBottom: '6px',
+                        }}>
+                          <div style={{
+                            height: '100%', borderRadius: '2px',
+                            width: `${progressPct}%`,
+                            background: preset.status === 'error' ? 'var(--danger)' : preset.status === 'done' ? 'var(--success)' : 'var(--accent)',
+                            transition: 'width 0.3s ease',
+                          }} />
+                        </div>
+
+                        {/* Status message (erro) */}
+                        {preset.statusMessage && preset.status === 'error' && (
+                          <div style={{
+                            fontSize: '0.55rem', color: 'var(--danger)', marginBottom: '6px',
+                            padding: '3px 6px', borderRadius: '4px', background: 'rgba(248, 81, 73, 0.06)',
+                          }}>
+                            {preset.statusMessage}
+                          </div>
+                        )}
+
+                        {/* Botoes de execucao */}
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          {preset.status === 'running' ? (
+                            <button
+                              onClick={() => handleStopCart(preset.id)}
+                              disabled={presetActionLoading === `stop-${preset.id}`}
+                              style={{
+                                fontSize: '0.6rem', padding: '3px 10px', borderRadius: '4px', cursor: 'pointer',
+                                background: 'rgba(210, 153, 34, 0.12)', color: 'var(--warning)',
+                                border: '1px solid rgba(210, 153, 34, 0.25)',
+                                opacity: presetActionLoading === `stop-${preset.id}` ? 0.5 : 1,
+                              }}
+                            >
+                              {presetActionLoading === `stop-${preset.id}` ? '...' : 'Parar'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleExecuteCart(preset.id)}
+                              disabled={presetActionLoading === `exec-${preset.id}` || preset.status === 'done'}
+                              title={preset.status === 'done' ? 'Carrinho ja concluido. Resete para executar novamente.' : 'Executar carrinho de compras'}
+                              style={{
+                                fontSize: '0.6rem', padding: '3px 10px', borderRadius: '4px', cursor: 'pointer',
+                                background: preset.status === 'done' ? 'rgba(63, 185, 80, 0.08)' : 'rgba(88, 166, 255, 0.12)',
+                                color: preset.status === 'done' ? 'var(--success)' : 'var(--accent)',
+                                border: `1px solid ${preset.status === 'done' ? 'rgba(63, 185, 80, 0.2)' : 'rgba(88, 166, 255, 0.25)'}`,
+                                opacity: (presetActionLoading === `exec-${preset.id}` || preset.status === 'done') ? 0.5 : 1,
+                              }}
+                            >
+                              {presetActionLoading === `exec-${preset.id}` ? '...' : preset.status === 'done' ? 'Concluido' : 'Executar'}
+                            </button>
+                          )}
+                          {(preset.status === 'done' || preset.status === 'error' || totalPurchased > 0) && preset.status !== 'running' && (
+                            <button
+                              onClick={() => handleResetCart(preset.id)}
+                              disabled={presetActionLoading === `reset-${preset.id}`}
+                              title="Resetar progresso do carrinho"
+                              style={{
+                                fontSize: '0.6rem', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer',
+                                background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)',
+                                border: '1px solid var(--border)',
+                                opacity: presetActionLoading === `reset-${preset.id}` ? 0.5 : 1,
+                              }}
+                            >
+                              {presetActionLoading === `reset-${preset.id}` ? '...' : 'Resetar'}
+                            </button>
+                          )}
+                          <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', alignSelf: 'center', marginLeft: '4px' }}>
+                            {totalPurchased}/{totalTarget} ({progressPct}%)
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -3912,6 +4510,16 @@ function BaitIcon() {
       <path d="M12 8v4"/>
       <path d="M9 12c0 3 1.5 6 3 8 1.5-2 3-5 3-8"/>
       <circle cx="12" cy="20" r="2"/>
+    </svg>
+  )
+}
+
+function PresetIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+      <polyline points="17 21 17 13 7 13 7 21"/>
+      <polyline points="7 3 7 8 15 8"/>
     </svg>
   )
 }

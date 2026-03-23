@@ -304,6 +304,7 @@ export async function updateBotConfig(params: {
   autoBuyBaitThresholds?: string;
   autoUseBaitOrder?: string;
   autoBuyBaitQty?: string;
+  autoBuyBaitStock?: string;
 }) {
   const result = await apiRequest<{ success: boolean; error?: string }>("/bot", {
     method: "PATCH",
@@ -574,6 +575,104 @@ export async function equipBait(baitType: number) {
   return apiRequest<{ success: boolean; error?: string }>("/bot/bait/equip", {
     method: "POST",
     body: { baitType },
+  });
+}
+
+// ===================== BAIT PRESETS =====================
+
+export interface BaitPreset {
+  id: number;
+  walletPubkey: string;
+  name: string;
+  autoBuyBaitIds: string;
+  autoBuyBaitThresholds: string;
+  autoBuyBaitQty: string;
+  autoUseBaitOrder: string;
+  purchasedQty: string;
+  status: "idle" | "running" | "done" | "error";
+  statusMessage: string | null;
+  shareCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function listPresets() {
+  return apiRequest<{ presets: BaitPreset[] }>("/presets");
+}
+
+export async function createPreset(data: {
+  name: string;
+  autoBuyBaitIds: string;
+  autoBuyBaitThresholds: string;
+  autoBuyBaitQty: string;
+  autoUseBaitOrder: string;
+}) {
+  return apiRequest<{ success: boolean; preset?: BaitPreset; error?: string }>("/presets", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function saveCurrentConfigAsPreset(name: string) {
+  return apiRequest<{ success: boolean; preset?: BaitPreset; error?: string }>("/presets/from-current", {
+    method: "POST",
+    body: { name },
+  });
+}
+
+export async function updatePreset(id: number, data: {
+  name?: string;
+  autoBuyBaitIds?: string;
+  autoBuyBaitThresholds?: string;
+  autoBuyBaitQty?: string;
+  autoUseBaitOrder?: string;
+}) {
+  return apiRequest<{ success: boolean; error?: string }>(`/presets/${id}`, {
+    method: "PATCH",
+    body: data,
+  });
+}
+
+export async function deletePreset(id: number) {
+  return apiRequest<{ success: boolean; error?: string }>(`/presets/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function generateShareCode(presetId: number) {
+  return apiRequest<{ success: boolean; shareCode?: string; error?: string }>(`/presets/${presetId}/share`, {
+    method: "POST",
+  });
+}
+
+export async function applyPreset(presetId: number) {
+  return apiRequest<{ success: boolean; error?: string }>(`/presets/${presetId}/apply`, {
+    method: "POST",
+  });
+}
+
+export async function importPreset(shareCode: string) {
+  return apiRequest<{ success: boolean; preset?: BaitPreset; error?: string }>("/presets/import", {
+    method: "POST",
+    body: { shareCode },
+  });
+}
+
+export async function executeCart(presetId: number) {
+  return apiRequest<{ success: boolean; error?: string }>(`/presets/${presetId}/execute`, {
+    method: "POST",
+  });
+}
+
+export async function stopCart(presetId: number) {
+  return apiRequest<{ success: boolean; error?: string }>(`/presets/${presetId}/stop`, {
+    method: "POST",
+  });
+}
+
+export async function resetCart(presetId: number) {
+  return apiRequest<{ success: boolean; error?: string }>(`/presets/${presetId}/reset`, {
+    method: "POST",
   });
 }
 

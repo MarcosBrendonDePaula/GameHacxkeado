@@ -350,6 +350,72 @@ try {
   }
 }
 
+// Migração: Criar tabela bait_presets (presets/carrinhos de isca compartilháveis)
+try {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS bait_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      wallet_pubkey TEXT NOT NULL REFERENCES accounts(wallet_pubkey) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      auto_buy_bait_ids TEXT NOT NULL DEFAULT '',
+      auto_buy_bait_thresholds TEXT NOT NULL DEFAULT '',
+      auto_buy_bait_qty TEXT NOT NULL DEFAULT '',
+      auto_use_bait_order TEXT NOT NULL DEFAULT '',
+      purchased_qty TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'done', 'error')),
+      status_message TEXT,
+      share_code TEXT UNIQUE,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+  `);
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_bait_presets_wallet ON bait_presets(wallet_pubkey);`);
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_bait_presets_share_code ON bait_presets(share_code);`);
+  console.log("  ✓ Tabela 'bait_presets' criada com índices");
+} catch (e: any) {
+  if (!e.message?.includes("already exists")) {
+    console.error("  ⚠️ Erro ao criar tabela bait_presets:", e.message);
+  }
+}
+
+// Migração: Adicionar colunas de execução ao bait_presets (para bancos existentes)
+try {
+  sqlite.exec(`ALTER TABLE bait_presets ADD COLUMN purchased_qty TEXT NOT NULL DEFAULT '';`);
+  console.log("  ✓ Coluna 'purchased_qty' adicionada à tabela bait_presets");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna purchased_qty:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bait_presets ADD COLUMN status TEXT NOT NULL DEFAULT 'idle';`);
+  console.log("  ✓ Coluna 'status' adicionada à tabela bait_presets");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna status:", e.message);
+  }
+}
+
+try {
+  sqlite.exec(`ALTER TABLE bait_presets ADD COLUMN status_message TEXT;`);
+  console.log("  ✓ Coluna 'status_message' adicionada à tabela bait_presets");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna status_message:", e.message);
+  }
+}
+
+// Migração: adicionar coluna auto_buy_bait_stock (manter estoque por isca)
+try {
+  sqlite.exec(`ALTER TABLE bots ADD COLUMN auto_buy_bait_stock TEXT DEFAULT '';`);
+  console.log("  ✓ Coluna 'auto_buy_bait_stock' adicionada à tabela bots");
+} catch (e: any) {
+  if (!e.message?.includes("duplicate column name")) {
+    console.error("  ⚠️ Erro ao adicionar coluna auto_buy_bait_stock:", e.message);
+  }
+}
+
 sqlite.close();
 
 console.log(`✅ Migração concluída com sucesso!`);

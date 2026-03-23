@@ -343,6 +343,8 @@ const protectedApi = new Elysia({ prefix: "/api" })
         autoRepair: bot.autoRepair,
         autoRepairMin: bot.autoRepairMin,
         autoRepairMax: bot.autoRepairMax,
+        autoRepairWaitMinMinutes: bot.autoRepairWaitMinMinutes,
+        autoRepairWaitMaxMinutes: bot.autoRepairWaitMaxMinutes,
         autoWaitDurability: bot.autoWaitDurability,
         autoWaitDurabilityMin: bot.autoWaitDurabilityMin,
         autoWaitDurabilityMax: bot.autoWaitDurabilityMax,
@@ -356,6 +358,8 @@ const protectedApi = new Elysia({ prefix: "/api" })
         autoBuyBaitThreshold: bot.autoBuyBaitThreshold,
         autoUseBaitOrder: bot.autoUseBaitOrder,
         autoBuyBaitQty: bot.autoBuyBaitQty,
+        autoBuyBaitStock: bot.autoBuyBaitStock,
+        autoBuyBaitThresholds: bot.autoBuyBaitThresholds,
         enabled: bot.enabled,
         createdAt: bot.createdAt,
         updatedAt: bot.updatedAt,
@@ -394,7 +398,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
   // Atualiza configurações do bot
   .patch("/bot", async ({ walletPubkey, body }) => {
     const { delayMin, delayMax, proxy, autoRepair, autoRepairMin, autoRepairMax, autoRepairWaitMinMinutes, autoRepairWaitMaxMinutes, autoWaitDurability, autoWaitDurabilityMin, autoWaitDurabilityMax, autoWaitMinutesMin, autoWaitMinutesMax, autoUpgrade, autoRestartMinutes,
-      autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoBuyBaitThresholds, autoUseBaitOrder, autoBuyBaitQty } = body as any;
+      autoBuyBait, autoBuyBaitIds, autoUseBaitId, autoBuyBaitThreshold, autoBuyBaitThresholds, autoUseBaitOrder, autoBuyBaitQty, autoBuyBaitStock } = body as any;
 
     const result = await botManager.updateBotConfig(walletPubkey!, {
       delayMin,
@@ -419,6 +423,7 @@ const protectedApi = new Elysia({ prefix: "/api" })
       autoBuyBaitThresholds,
       autoUseBaitOrder,
       autoBuyBaitQty,
+      autoBuyBaitStock,
     });
 
     return result;
@@ -478,6 +483,113 @@ const protectedApi = new Elysia({ prefix: "/api" })
       return { success: false, error: "baitType inválido (0-10, 0=nenhuma)" };
     }
     return botManager.equipBait(walletPubkey!, baitType);
+  })
+
+  // ===================== BAIT PRESETS =====================
+
+  // Lista presets do usuário
+  .get("/presets", async ({ walletPubkey }) => {
+    const presets = await botManager.listPresets(walletPubkey!);
+    return { presets };
+  })
+
+  // Cria preset manualmente
+  .post("/presets", async ({ walletPubkey, body }) => {
+    const { name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder } = body as any;
+    if (!name || typeof name !== "string") {
+      return { success: false, error: "Nome obrigatório" };
+    }
+    return botManager.createPreset(walletPubkey!, {
+      name,
+      autoBuyBaitIds: autoBuyBaitIds || "",
+      autoBuyBaitThresholds: autoBuyBaitThresholds || "",
+      autoBuyBaitQty: autoBuyBaitQty || "",
+      autoUseBaitOrder: autoUseBaitOrder || "",
+    });
+  })
+
+  // Salva config atual do bot como preset
+  .post("/presets/from-current", async ({ walletPubkey, body }) => {
+    const { name } = body as any;
+    if (!name || typeof name !== "string") {
+      return { success: false, error: "Nome obrigatório" };
+    }
+    return botManager.saveCurrentConfigAsPreset(walletPubkey!, name);
+  })
+
+  // Importa preset pelo código de compartilhamento
+  .post("/presets/import", async ({ walletPubkey, body }) => {
+    const { shareCode } = body as any;
+    if (!shareCode || typeof shareCode !== "string") {
+      return { success: false, error: "Código obrigatório" };
+    }
+    return botManager.importPresetByShareCode(walletPubkey!, shareCode.trim().toUpperCase());
+  })
+
+  // Atualiza preset
+  .patch("/presets/:id", async ({ walletPubkey, params, body }) => {
+    const presetId = parseInt(params.id);
+    if (isNaN(presetId)) {
+      return { success: false, error: "ID inválido" };
+    }
+    const { name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder } = body as any;
+    return botManager.updatePreset(walletPubkey!, presetId, {
+      name, autoBuyBaitIds, autoBuyBaitThresholds, autoBuyBaitQty, autoUseBaitOrder,
+    });
+  })
+
+  // Deleta preset
+  .delete("/presets/:id", async ({ walletPubkey, params }) => {
+    const presetId = parseInt(params.id);
+    if (isNaN(presetId)) {
+      return { success: false, error: "ID inválido" };
+    }
+    return botManager.deletePreset(walletPubkey!, presetId);
+  })
+
+  // Gera/retorna código de compartilhamento
+  .post("/presets/:id/share", async ({ walletPubkey, params }) => {
+    const presetId = parseInt(params.id);
+    if (isNaN(presetId)) {
+      return { success: false, error: "ID inválido" };
+    }
+    return botManager.generatePresetShareCode(walletPubkey!, presetId);
+  })
+
+  // Aplica preset no bot
+  .post("/presets/:id/apply", async ({ walletPubkey, params }) => {
+    const presetId = parseInt(params.id);
+    if (isNaN(presetId)) {
+      return { success: false, error: "ID inválido" };
+    }
+    return botManager.applyPreset(walletPubkey!, presetId);
+  })
+
+  // Executa carrinho de compras do preset
+  .post("/presets/:id/execute", async ({ walletPubkey, params }) => {
+    const presetId = parseInt(params.id);
+    if (isNaN(presetId)) {
+      return { success: false, error: "ID inválido" };
+    }
+    return botManager.executeCart(walletPubkey!, presetId);
+  })
+
+  // Para execucao do carrinho
+  .post("/presets/:id/stop", async ({ walletPubkey, params }) => {
+    const presetId = parseInt(params.id);
+    if (isNaN(presetId)) {
+      return { success: false, error: "ID inválido" };
+    }
+    return botManager.stopCart(walletPubkey!, presetId);
+  })
+
+  // Reseta progresso do carrinho
+  .post("/presets/:id/reset", async ({ walletPubkey, params }) => {
+    const presetId = parseInt(params.id);
+    if (isNaN(presetId)) {
+      return { success: false, error: "ID inválido" };
+    }
+    return botManager.resetCart(walletPubkey!, presetId);
   })
 
   // Resultados do bot
